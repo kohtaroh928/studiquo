@@ -14,12 +14,11 @@
 // Nothing here may ever fail or slow a login: callers hand these promises to
 // ctx.waitUntil, and every failure is only logged.
 import { sha256Hex } from "./auth.ts";
-import { postSlackBlocks } from "./slack.ts";
+import { countAndAlert } from "./ops-alerts.ts";
 import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
 
 export const MONITOR = {
-  windowSeconds: 3_600,
   // Wrong-password and wait-refused local logins per window before alerting.
   // Counted separately so hammering one account (all "throttled") can't be
   // used to set off, and thereby mask, the failure alert.
@@ -74,22 +73,6 @@ export function requestContext(request: Request) {
     network: typeof cf.asOrganization === "string" && cf.asOrganization ? cleanLabel(cf.asOrganization) : `AS${cf.asn}`,
     asn: cf.asn,
   };
-}
-
-async function countAndAlert(env: Env, counterName: string, threshold: number, title: string, detail: string) {
-  // Both counters are named for the clock hour they belong to, so "alert at
-  // most once" lines up exactly with "count per hour" instead of drifting
-  // with whenever each one's first bump happened.
-  const hour = Math.floor(Date.now() / (MONITOR.windowSeconds * 1000));
-  const withinThreshold = await env.RATE_COUNTER.getByName(`${counterName}:${hour}`).bump(threshold, MONITOR.windowSeconds);
-  if (withinThreshold) return;
-  // Over the line: only the first caller in this hour gets to post.
-  const first = await env.RATE_COUNTER.getByName(`${counterName}:${hour}:alerted`).bump(1, MONITOR.windowSeconds);
-  if (!first) return;
-  await postSlackBlocks(env, [
-    { type: "header", text: { type: "plain_text", text: title } },
-    { type: "section", text: { type: "mrkdwn", text: detail } },
-  ]);
 }
 
 /**
@@ -169,7 +152,7 @@ async function sendSignInNotice(env: Env, email: string, context: { key?: string
  * when `notify` is set and it's one the account hasn't used lately — emails
  * the owner. Returns `{ newContext, firstSeen }` for the metrics. Never throws.
  */
-export async function noteSignInContext(env: Env, request: Request, email: string, { notify }: any) {
+export async function noteSignInContext(env: Env, request: Request, email: string, { notify }: { notify: boolean }) {
   try {
     const context = requestContext(request);
     if (!context) return { newContext: false, firstSeen: false };

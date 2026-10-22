@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { appGateRejection } from "./app-gate.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
-function callGate(pathname, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) {
+function callGate(pathname: string, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) {
   const headers = new Headers();
   if (userAgent !== undefined) headers.set("user-agent", userAgent);
   const url = new URL(`https://api.studiquo.app${pathname}`);

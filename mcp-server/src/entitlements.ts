@@ -38,7 +38,7 @@ export const PRODUCT_PLAN_MAP: Record<string, string> = {
  * and a RENEWAL event follows). Taking whichever product has the higher plan
  * gets both right. Unknown products never win over a known one.
  */
-export function productForPlanChange(oldProductId: string, newProductId: string) {
+export function productForPlanChange(oldProductId: string | undefined, newProductId: string | undefined) {
   const rank = (id: string) => PLAN_RANK[PRODUCT_PLAN_MAP[id]] ?? -1;
   if (!newProductId) return oldProductId ?? null;
   if (!oldProductId) return newProductId;
@@ -71,7 +71,7 @@ const ACTIVE_STATUSES = new Set(["active", "billing_issue"]);
 
 // `null` means "this row grants no plan"; the caller decides what that
 // falls back to (see `getPlan`).
-function planFromRow(row: any) {
+function planFromRow(row: { status: string; expires_at: number | null; product_id: string } | null | undefined) {
   if (!row) return null;
   if (!ACTIVE_STATUSES.has(row.status)) return null;
   // expires_at is null for a subscriber whose event never carried
@@ -99,7 +99,7 @@ function planFromRow(row: any) {
  * two valid entitlements at once must resolve to the single most generous
  * plan — pro over plus — rather than whichever happened to be written last.
  */
-export async function getPlan(env: Env, sub: string | (string | undefined)[]) {
+export async function getPlan(env: Env, sub: string | null | undefined | (string | null | undefined)[]) {
   // `sub` may be a list: after accounts are linked, session.sub is the
   // canonical identity while RevenueCat's app_user_id (and a legacy grant)
   // may still be under the identity the app signed in with
@@ -115,19 +115,19 @@ export async function getPlan(env: Env, sub: string | (string | undefined)[]) {
   return (await isLegacyAccount(env, subs)) ? "standard" : "free";
 }
 
-async function subscribedPlan(env: Env, subs: (string | undefined)[]) {
+async function subscribedPlan(env: Env, subs: (string | null | undefined)[]) {
   const plans: string[] = [];
   for (const sub of subs) {
     const { results } = await env.ADMIN_DB.prepare(
       `SELECT status, product_id, expires_at FROM subscribers WHERE app_user_id = ?`
-    ).bind(sub).all();
+    ).bind(sub).all<{ status: string; expires_at: number | null; product_id: string }>();
     plans.push(...(results ?? []).map(planFromRow).filter((plan): plan is string => Boolean(plan)));
   }
   if (plans.length === 0) return null;
   return plans.reduce((best, plan) => (PLAN_RANK[plan] > PLAN_RANK[best] ? plan : best));
 }
 
-async function isLegacyAccount(env: Env, subs: (string | undefined)[]) {
+async function isLegacyAccount(env: Env, subs: (string | null | undefined)[]) {
   for (const sub of subs) {
     const { results } = await env.ADMIN_DB.prepare(
       `SELECT app_user_id FROM legacy_standard_accounts WHERE app_user_id = ?`

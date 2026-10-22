@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleAdminReports } from "./admin-reports.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 function makeAdminEnv() {
   const issueReports = new Map();
@@ -13,19 +13,19 @@ function makeAdminEnv() {
     _appErrors: appErrors,
     _kv: kv,
     STUDIQUO_DATA: {
-      async list({ prefix }) {
+      async list({ prefix }: { prefix?: unknown }) {
         const keys = [...kv.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name }));
         return { keys, list_complete: true };
       },
-      async get(key, type) {
+      async get(key: string, type: string) {
         const val = kv.get(key) ?? null;
         return type === "json" && val ? JSON.parse(val) : val;
       },
     },
     ADMIN_DB: {
-      prepare(sql) {
+      prepare(sql: string | string[]) {
         return {
-          bind(...args) {
+          bind(...args: unknown[]) {
             return {
               async all() {
                 if (sql.includes("FROM issue_reports")) {
@@ -104,7 +104,7 @@ test("returns null for non-admin-report routes and 503 when ADMIN_DB is missing"
 
   const adminUrl = new URL("https://api.studiquo.app/api/admin/issue-reports");
   const unavailable = await handleAdminReports(adminUrl, new Request(adminUrl), partialEnv({}));
-  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable!.status, 503);
 });
 
 test("lists issue reports with screenshot URL mapping and enforces JSON Content-Type on mutations", async () => {
@@ -125,8 +125,8 @@ test("lists issue reports with screenshot URL mapping and enforces JSON Content-
 
   const listUrl = new URL("https://api.studiquo.app/api/admin/issue-reports?status=open");
   const listRes = await handleAdminReports(listUrl, new Request(listUrl), env);
-  assert.equal(listRes.status, 200);
-  const { reports } = await listRes.json();
+  assert.equal(listRes!.status, 200);
+  const { reports } = await listRes!.json();
   assert.equal(reports.length, 1);
   assert.equal(reports[0].hasScreenshot, true);
   assert.equal(reports[0].screenshotURL, `https://api.studiquo.app/api/issue-reports/${id}/screenshot`);
@@ -141,7 +141,7 @@ test("lists issue reports with screenshot URL mapping and enforces JSON Content-
     }),
     env
   );
-  assert.equal(formAttempt.status, 415, "must reject non-JSON writes to prevent cross-site form submissions");
+  assert.equal(formAttempt!.status, 415, "must reject non-JSON writes to prevent cross-site form submissions");
 
   const validUpdate = await handleAdminReports(
     updateUrl,
@@ -152,7 +152,7 @@ test("lists issue reports with screenshot URL mapping and enforces JSON Content-
     }),
     env
   );
-  assert.equal(validUpdate.status, 200);
+  assert.equal(validUpdate!.status, 200);
   assert.equal(env._issueReports.get(id).status, "in_progress");
   assert.equal(env._issueReports.get(id).admin_note, "再現確認中");
 });
@@ -187,7 +187,7 @@ test("updates app errors and records resolved_after_version when marked resolved
     }),
     env
   );
-  assert.equal(res.status, 200);
+  assert.equal(res!.status, 200);
   assert.equal(env._appErrors.get(fp).status, "resolved");
   assert.equal(env._appErrors.get(fp).resolved_after_version, "1.0 (15)");
 });

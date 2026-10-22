@@ -77,8 +77,8 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   // A modern APNs key is scoped to either Sandbox or Production. Cache one
   // signing operation per actual key so mixed device lists use the correct
   // credential, while a legacy all-environments key is still signed once.
-  const jwtByCredential = new Map();
-  const jwtFor = async (environment: any) => {
+  const jwtByCredential = new Map<string, Promise<string>>();
+  const jwtFor = async (environment: string) => {
     const credentials = apnsCredentials(env, environment);
     if (!credentials.authKey || !credentials.keyID) return null;
     const cacheKey = `${credentials.keyID}\u0000${credentials.authKey}`;

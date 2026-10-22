@@ -284,10 +284,10 @@ export class ChatRoom extends DurableObject<Env> {
     return { latestID, unreadCount, closed: false };
   }
 
-  async markRead(userKey: string, throughID: any) {
+  async markRead(userKey: string, throughID: unknown) {
     this.requireParticipant(userKey);
     const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
-    const safeID = Math.min(latestID, Math.max(0, Number.isSafeInteger(throughID) ? throughID : 0));
+    const safeID = Math.min(latestID, Math.max(0, Number.isSafeInteger(throughID) ? (throughID as number) : 0));
     this.ctx.storage.sql.exec(
       "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
       "ON CONFLICT(user_key) DO UPDATE SET message_id = MAX(message_id, excluded.message_id)",
@@ -349,7 +349,7 @@ export class ChatRoom extends DurableObject<Env> {
   // its optimistic local copy with its now-confirmed server echo by exact
   // identity, instead of guessing by text content (which breaks down when
   // two messages with identical text are in flight at once).
-  async sendMessage(userKey: string, text: string, clientMessageID: any = null) {
+  async sendMessage(userKey: string, text: string, clientMessageID: string | null = null) {
     this.requireOpen(userKey);
     // Groups have no blocking (see blockOtherParticipant) and every member's
     // read position is already initialized when they're added (see
@@ -468,7 +468,14 @@ export class ChatRoom extends DurableObject<Env> {
   // ownership check `cancelMessage` uses; a canceled message stays
   // canceled — an edit must never resurrect a retracted message.
   async editMessage(userKey: string, messageID: number, text: string) {
-    this.requireParticipant(userKey);
+    // Same gate as sending: once a room is closed, or the other side has
+    // blocked this user, they must not be able to rewrite what the other
+    // person's screen shows as their earlier words.
+    this.requireOpen(userKey);
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const row = this.ctx.storage.sql.exec(
       "SELECT sender_key, is_canceled FROM messages WHERE id = ?", messageID,
     ).toArray()[0];
@@ -510,8 +517,14 @@ export class ChatRoom extends DurableObject<Env> {
   // uploader's local filesystem or app database — can actually retrieve it.
   // Previously an attachment only ever carried a local file path / local
   // database id, which meant nothing outside the sender's own device.
-  async storeAttachment(userKey: string, contentType: any, base64Data: any) {
+  async storeAttachment(userKey: string, contentType: unknown, base64Data: unknown) {
     this.requireOpen(userKey);
+    // Same gate as sendMessage: someone the other side has blocked gets no
+    // storage in that side's room.
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const type = String(contentType ?? "").slice(0, 100);
     if (!CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
     const data = String(base64Data ?? "");

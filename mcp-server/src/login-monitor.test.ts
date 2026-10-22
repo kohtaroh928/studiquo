@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { forgetSettledAlerts } from "./ops-alerts.ts";
 import { MONITOR, noteSignInContext, recordLoginOutcome, requestContext, touchSeenContext } from "./login-monitor.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 const DAY = 86_400_000;
 
@@ -29,11 +30,11 @@ test("touchSeenContext: entries expire after the ttl and then count as new again
 test("touchSeenContext: keeps at most maxEntries, evicting the oldest", () => {
   let state;
   for (let i = 0; i < 5; i++) state = touchSeenContext(state, `C|${i}`, i * DAY, 3, 365 * 86_400).state;
-  assert.deepEqual(Object.keys(state.entries).sort(), ["C|2", "C|3", "C|4"]);
+  assert.deepEqual(Object.keys(state!.entries).sort(), ["C|2", "C|3", "C|4"]);
 });
 
 test("requestContext needs both country and ASN, and never exposes the IP", () => {
-  const request = (cf, ip = "198.51.100.7") => Object.defineProperty(
+  const request = (cf: { country: string; asn?: number; region?: string; asOrganization?: string; }, ip = "198.51.100.7") => Object.defineProperty(
     new Request("https://example.test/", { headers: { "cf-connecting-ip": ip } }), "cf", { value: cf }
   );
   assert.equal(requestContext(new Request("https://example.test/")), null);
@@ -46,21 +47,22 @@ test("requestContext needs both country and ASN, and never exposes the IP", () =
 // MARK: - fakes
 
 function fakeEnv() {
+  forgetSettledAlerts();
   const counts = new Map();
   const seen = new Map();
   const env = partialEnv({
     RESEND_API_KEY: "test-key",
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.example.test/slack",
     RATE_COUNTER: {
-      getByName(name) {
+      getByName(name: string) {
         return {
-          async bump(limit) {
+          async bump(limit: number) {
             const used = (counts.get(name) ?? 0) + 1;
             if (used > limit) return false;
             counts.set(name, used);
             return true;
           },
-          async seenContext(key, { maxEntries, ttlSeconds }) {
+          async seenContext(key: string, { maxEntries, ttlSeconds }: { maxEntries?: Untyped; ttlSeconds?: Untyped }) {
             const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
             seen.set(name, result.state);
             return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -72,23 +74,23 @@ function fakeEnv() {
   return env;
 }
 
-function withCf(cf) {
+function withCf(cf: { country: string; asn: number; region?: string; asOrganization?: string; }) {
   return Object.defineProperty(new Request("https://example.test/", { headers: { "cf-connecting-ip": "198.51.100.7" } }), "cf", { value: cf });
 }
 
-function captureOutbound(run) {
+function captureOutbound(run: Untyped) {
   const original = globalThis.fetch;
   const originalLog = console.log;
-  const sent = [];
-  const logs = [];
-  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init.body) }); return new Response("{}", { status: 200 }); };
+  const sent: { url: string; body: any; }[] = [];
+  const logs: string[] = [];
+  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init!.body! as string) }); return new Response("{}", { status: 200 }); };
   console.log = line => logs.push(String(line));
   return run(sent, logs).finally(() => { globalThis.fetch = original; console.log = originalLog; });
 }
 
 // MARK: - metrics + alerts
 
-test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent, logs) => {
+test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent: string, logs: any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   await recordLoginOutcome(env, request, "failure");
@@ -100,7 +102,7 @@ test("each outcome is logged as one structured line without the email or IP", ()
   assert.ok(!logs.join("").includes("198.51.100.7"));
 }));
 
-test("failures alert Slack exactly once per hour when they cross the threshold", () => captureOutbound(async (sent) => {
+test("failures alert Slack exactly once per hour when they cross the threshold", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.failureAlert; i++) await recordLoginOutcome(env, request, "failure");
@@ -110,7 +112,7 @@ test("failures alert Slack exactly once per hour when they cross the threshold",
   assert.match(JSON.stringify(sent[0].body), /ログイン失敗が急増/);
 }));
 
-test("throttled tries are counted apart from failures, so hammering one account can't trip or mask the failure alert", () => captureOutbound(async (sent) => {
+test("throttled tries are counted apart from failures, so hammering one account can't trip or mask the failure alert", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.failureAlert + 50; i++) await recordLoginOutcome(env, request, "throttled");
@@ -123,7 +125,7 @@ test("throttled tries are counted apart from failures, so hammering one account 
   assert.match(JSON.stringify(sent[1].body), /待機が多発/);
 }));
 
-test("new-context successes alert separately, and ordinary successes never do", () => captureOutbound(async (sent) => {
+test("new-context successes alert separately, and ordinary successes never do", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < 500; i++) await recordLoginOutcome(env, request, "success", { newContext: false });
@@ -145,7 +147,7 @@ test("a Slack or counter failure never throws out of recordLoginOutcome", async 
 
 // MARK: - new-context notice
 
-test("a sign-in from a context the account hasn't used emails the owner, once", () => captureOutbound(async (sent) => {
+test("a sign-in from a context the account hasn't used emails the owner, once", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const home = withCf({ country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" });
   const abroad = withCf({ country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" });
@@ -169,14 +171,14 @@ test("a sign-in from a context the account hasn't used emails the owner, once", 
   assert.equal(sent.length, 1);
 }));
 
-test("notice mails are capped per account per day", () => captureOutbound(async (sent) => {
+test("notice mails are capped per account per day", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
   for (let i = 0; i < 10; i++) await noteSignInContext(env, withCf({ country: "US", asn: 100 + i }), "person@example.com", { notify: true });
   assert.equal(sent.length, MONITOR.noticesPerDay);
 }));
 
-test("without Cloudflare geo data nothing is recorded or sent", () => captureOutbound(async (sent) => {
+test("without Cloudflare geo data nothing is recorded or sent", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   assert.deepEqual(await noteSignInContext(env, new Request("https://example.test/"), "person@example.com", { notify: true }), { newContext: false, firstSeen: false });
   assert.equal(sent.length, 0);
@@ -198,19 +200,19 @@ test("a failing mail provider is swallowed, doesn't throw, and the context still
   }
 });
 
-test("an account's first recorded sign-in is still mailed but isn't counted as a new-context spike", () => captureOutbound(async (sent) => {
+test("an account's first recorded sign-in is still mailed but isn't counted as a new-context spike", () => captureOutbound(async (sent: Untyped) => {
   const env = fakeEnv();
   for (let i = 0; i < MONITOR.newContextSuccessAlert + 5; i++) {
     const result = await noteSignInContext(env, withCf({ country: "JP", asn: 2516 }), `user${i}@example.com`, { notify: true });
     assert.deepEqual(result, { newContext: false, firstSeen: true });
     await recordLoginOutcome(env, withCf({ country: "JP", asn: 2516 }), "success", result);
   }
-  const notices = sent.filter(item => item.url.includes("resend"));
+  const notices = sent.filter((item: Untyped) => item.url.includes("resend"));
   assert.equal(notices.length, MONITOR.newContextSuccessAlert + 5);
-  assert.equal(sent.filter(item => item.url.includes("hooks.example")).length, 0, "no spike alert for first-seen sign-ins");
+  assert.equal(sent.filter((item: Untyped) => item.url.includes("hooks.example")).length, 0, "no spike alert for first-seen sign-ins");
 }));
 
-test("without a mail API key the notice is skipped and the daily allowance isn't spent", () => captureOutbound(async (sent) => {
+test("without a mail API key the notice is skipped and the daily allowance isn't spent", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   delete env.RESEND_API_KEY;
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
@@ -224,19 +226,19 @@ test("without a mail API key the notice is skipped and the daily allowance isn't
   assert.equal(sent.length, MONITOR.noticesPerDay);
 }));
 
-test("the network name in the mail is a single short printable line", () => captureOutbound(async (sent) => {
+test("the network name in the mail is a single short printable line", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
   const hostile = `Evil Net\r\n\r\nあなたのパスワードを https://phish.example で確認してください${"x".repeat(200)}`;
   await noteSignInContext(env, withCf({ country: "US", asn: 2, asOrganization: hostile }), "person@example.com", { notify: true });
   assert.equal(sent.length, 1);
-  const line = sent[0].body.text.split("\n").find(row => row.startsWith("ネットワーク: "));
+  const line = sent[0].body.text.split("\n").find((row: Untyped) => row.startsWith("ネットワーク: "));
   assert.ok(line.length <= "ネットワーク: ".length + 64);
   assert.ok(!/[\r]/.test(line));
-  assert.equal(sent[0].body.text.split("\n").filter(row => row.startsWith("ネットワーク")).length, 1);
+  assert.equal(sent[0].body.text.split("\n").filter((row: Untyped) => row.startsWith("ネットワーク")).length, 1);
 }));
 
-test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent) => {
+test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.busyAlert; i++) await recordLoginOutcome(env, request, "busy");
@@ -250,7 +252,7 @@ test("hashing-saturation refusals alert Slack once per hour, separately from fai
   assert.equal(sent.length, 1);
 }));
 
-test("a stopped email switch sends no sign-in notice but still remembers the context", () => captureOutbound(async (sent) => {
+test("a stopped email switch sends no sign-in notice but still remembers the context", () => captureOutbound(async (sent: string | any[]) => {
   const env = { ...fakeEnv(), DISABLED_FEATURES: "email" };
   const home = withCf({ country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" });
   const abroad = withCf({ country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" });

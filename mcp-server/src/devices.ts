@@ -44,7 +44,9 @@ export async function removeDevice(env: Env, userKey: string, deviceToken: strin
   return true;
 }
 
-function parseDevice(body: any): Device | null {
+function parseDevice(raw: unknown): Device | null {
+  // A request body: each member is checked before it is used.
+  const body = raw as Record<string, unknown> | null | undefined;
   const token = String(body?.deviceToken ?? "").trim().toLowerCase();
   const environment = String(body?.environment ?? "");
   if (!DEVICE_TOKEN_PATTERN.test(token) || token.length % 2 !== 0) return null;

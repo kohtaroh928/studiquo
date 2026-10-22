@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type Untyped } from "./test-env.ts";
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function request(path) {
+function request(path: string) {
   return new Request(`https://example.test${path}`);
 }
 
 test("GET /invite with a valid token serves an HTML page with a button to the studiquo:// scheme", async () => {
   const response = await worker.fetch(request("/invite?token=ABCD1234"), partialEnv({}), noopCtx);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type"), /text\/html/);
+  assert.match(response.headers.get("content-type")!, /text\/html/);
   const text = await response.text();
   assert.match(text, /<a class="button" href="studiquo:\/\/friend\/add\?token=ABCD1234">/);
 });
@@ -27,8 +27,8 @@ test("the invite page never forwards to the custom scheme on its own", async () 
 test("the invite page's policy allows no script at all", async () => {
   const response = await worker.fetch(request("/invite?token=ABCD1234"), partialEnv({}), noopCtx);
   const policy = response.headers.get("content-security-policy");
-  assert.match(policy, /script-src 'none'/);
-  assert.doesNotMatch(policy, /unsafe-inline'?[^;]*script|script-src[^;]*unsafe-inline/);
+  assert.match(policy!, /script-src 'none'/);
+  assert.doesNotMatch(policy!, /unsafe-inline'?[^;]*script|script-src[^;]*unsafe-inline/);
 });
 
 test("GET /invite with a missing or malformed token is rejected with 400", async () => {
@@ -49,7 +49,7 @@ test("the Apple App Site Association file declares a Universal Link for /invite 
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.webcredentials, { apps: ["972G4VGUA6.com.yabuko.studiquo"] });
-  const detail = body.applinks.details.find(d => d.appIDs.includes("972G4VGUA6.com.yabuko.studiquo"));
+  const detail = body.applinks.details.find((d: Untyped) => d.appIDs.includes("972G4VGUA6.com.yabuko.studiquo"));
   assert.ok(detail, "expected an applinks detail entry for the app");
-  assert.ok(detail.components.some(c => c["/"] === "/invite"), "expected /invite to be a Universal Link path");
+  assert.ok(detail.components.some((c: Untyped) => c["/"] === "/invite"), "expected /invite to be a Universal Link path");
 });

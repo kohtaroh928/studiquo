@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eraseLibraryID, getOrCreateLibraryID, libraryIdObjectName, newLibraryID } from "./library-id.ts";
-import { partialState } from "./test-env.ts";
+import { partialState, type Untyped } from "./test-env.ts";
 
 function fakeContext() {
   const values = new Map();
@@ -10,11 +10,11 @@ function fakeContext() {
   let turn = Promise.resolve();
   return partialState({
     storage: {
-      async get(key) { return values.get(key); },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string) { return values.get(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
-    blockConcurrencyWhile(work) {
+    blockConcurrencyWhile(work: ((value: void) => void | PromiseLike<void>) | null | undefined) {
       const run = turn.then(work);
       turn = run.catch(() => {});
       return run;

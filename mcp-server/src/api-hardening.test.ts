@@ -5,29 +5,29 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
-const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
+const freshToken = (suffix: Untyped) => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 // A RateCounter double that counts like the real one (true while under the
 // limit), per name.
 function countingRateCounter() {
   const counts = new Map();
-  const asked = [];
+  const asked: { name: string; limit: number; windowSeconds: any; }[] = [];
   return {
     asked,
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async bump(limit, windowSeconds) {
+        async bump(limit: number, windowSeconds: string) {
           asked.push({ name, limit, windowSeconds });
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
           counts.set(name, used);
           return true;
         },
-        async take(limit, windowSeconds, amount = 1) {
+        async take(limit: number, windowSeconds: number, amount = 1) {
           const used = (counts.get(name) ?? 0) + amount;
           if (used > limit) return { ok: false };
           counts.set(name, used);
@@ -44,7 +44,7 @@ function environment(extra = {}) {
   return partialEnv({
     raw: values,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         let value = values.get(key) ?? null;
         // A well-formed bearer token counts as a real sign-in unless the test
         // seeded its own session.
@@ -53,8 +53,8 @@ function environment(extra = {}) {
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix = "" }: { prefix?: string } = {}) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
@@ -67,7 +67,7 @@ function environment(extra = {}) {
 // A D1 with no subscriber or legacy rows in it.
 const noRows = { prepare() { return { bind() { return { async all() { return { results: [] }; } }; } }; } };
 
-function call(env, path, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
+function call(env: LooseEnv, path: string, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   const all = { ...headers };
   if (token) all.authorization = `Bearer ${token}`;
   return worker.fetch(new Request(`https://example.test${path}`, { method, headers: all, body }), env, noopCtx);
@@ -149,24 +149,24 @@ test("the list of connected apps shows only what the app displays", async () => 
 
 // ---- HTML pages ------------------------------------------------------------
 
-function assertFrameless(response) {
+function assertFrameless(response: Response) {
   const policy = response.headers.get("content-security-policy");
-  assert.match(policy, /frame-ancestors 'none'/);
-  assert.match(policy, /base-uri 'none'/);
-  assert.match(policy, /form-action 'none'/);
-  assert.match(policy, /default-src 'none'/);
+  assert.match(policy!, /frame-ancestors 'none'/);
+  assert.match(policy!, /base-uri 'none'/);
+  assert.match(policy!, /form-action 'none'/);
+  assert.match(policy!, /default-src 'none'/);
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.match(response.headers.get("content-type"), /^text\/html/);
+  assert.match(response.headers.get("content-type")!, /^text\/html/);
 }
 
 test("the invite page cannot be framed and calls no other origin", async () => {
   const response = await call(environment(), "/invite?token=ABCDEF12");
   assert.equal(response.status, 200);
   assertFrameless(response);
-  assert.doesNotMatch(response.headers.get("content-security-policy"), /connect-src/);
+  assert.doesNotMatch(response.headers.get("content-security-policy")!, /connect-src/);
 });
 
 test("the admin pages cannot be framed and may call only their own origin", async () => {
@@ -174,6 +174,6 @@ test("the admin pages cannot be framed and may call only their own origin", asyn
     const response = await call(environment(), path);
     assert.equal(response.status, 200, path);
     assertFrameless(response);
-    assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/);
+    assert.match(response.headers.get("content-security-policy")!, /connect-src 'self'/);
   }
 });

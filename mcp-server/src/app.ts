@@ -11,7 +11,7 @@ import { handleDocumentCollab } from "./document-collab.ts";
 import { handleLegal } from "./legal.ts";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.ts";
 import { libraryIdObjectName } from "./library-id.ts";
-import { gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.ts";
+import { accountHasEstablishedPasskey, gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.ts";
 import { handleChat } from "./chat.ts";
 import { handleIssueReports } from "./issue-reports.ts";
 import { handleAppErrors } from "./app-errors.ts";
@@ -30,14 +30,16 @@ import { isRevoked, revoke } from "./revocation.ts";
 import { isExpired, remainingValiditySeconds } from "./token.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
 import { realSession } from "./session.ts";
+import { CRON_HEARTBEAT_KEY, OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 import { handleMCPOAuth, externalSession, issueOwnerCode, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.ts";
 import { verifyAppleIdentityToken } from "./apple-auth.ts";
 import { verifyGoogleIdentityToken } from "./google-auth.ts";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.ts";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
-import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.ts";
+import { warnOnUnsafeConfiguration } from "./config-warnings.ts";
+import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./local-auth.ts";
 import { startAccountDeletion } from "./account-deletion.ts";
-import { hasModerationMark, CHAT_SUSPENSION_PREFIX, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
+import { hasModerationMark, CHAT_SUSPENSION_PREFIX, loggedInRecently, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.ts";
 import { isBreachedPassword } from "./pwned-passwords.ts";
@@ -47,6 +49,7 @@ import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Env } from "./env.ts";
+import type { SessionRecord, SnapshotNotebook } from "./records.ts";
 
 /** account:<sub>: the sign-in record kept for a user (an email-less record has just the creation time). */
 interface AccountRecord {
@@ -86,7 +89,7 @@ async function queueAction(env: Env, key: string, action: Record<string, unknown
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined);
 }
 
-function createServer(env: Env, key: string, accountHash: any = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds: any = null) {
+function createServer(env: Env, key: string, accountHash: string | null = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds: number | null = null) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
     { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
@@ -101,12 +104,12 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
     async () => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.notebooks.map((notebook: { id: unknown; title: unknown; tags: unknown; pages: unknown[]; }) => ({
+      return toolResult(data.notebooks.map((notebook: SnapshotNotebook) => ({
         id: notebook.id,
         title: notebook.title,
         tags: notebook.tags ?? [],
         pageCount: notebook.pages.length,
-        pages: notebook.pages.map((page: any) => ({ id: page.id, title: page.title }))
+        pages: notebook.pages.map((page) => ({ id: page.id, title: page.title }))
       })));
     }
   );
@@ -125,7 +128,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
       const data = await loadSnapshot(env, key);
       const needle = query.toLocaleLowerCase("ja");
       const matches = data.notebooks
-        .flatMap((notebook: { pages: unknown[]; title: unknown; id: unknown; }) => notebook.pages.flatMap((page: any) => {
+        .flatMap((notebook: SnapshotNotebook) => notebook.pages.flatMap((page) => {
           const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
           return haystack.includes(needle)
             ? [{
@@ -335,14 +338,31 @@ async function handleMCP(request: Request, env: Env) {
   return transport.handleRequest(request);
 }
 
+const heartbeatMemo = new WeakMap<object, { readAt: number; last: number }>();
+
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
+      warnOnUnsafeConfiguration(env);
       const url = new URL(request.url);
       if (url.pathname === "/health") {
         // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
         const stopped = [...disabledFeatures(env)];
-        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}) });
+        // Seconds since the hourly cron last ran (absent if it never has, or KV is unreachable).
+        // An outside monitor should alert when this passes ~2 hours (docs/MONITORING.md).
+        // The KV read is remembered for 30 s per isolate, so a monitor (or anyone) polling
+        // this unauthenticated route does not turn into KV reads.
+        let cronAgeSeconds: number | undefined;
+        try {
+          let memo = heartbeatMemo.get(env);
+          if (!memo || Date.now() - memo.readAt > 30_000) {
+            memo = { readAt: Date.now(), last: Number(await env.STUDIQUO_DATA?.get(CRON_HEARTBEAT_KEY)) };
+            heartbeatMemo.set(env, memo);
+          }
+          const last = memo.last;
+          if (Number.isFinite(last) && last > 0) cronAgeSeconds = Math.max(0, Math.round((Date.now() - last) / 1000));
+        } catch { /* health must answer even when KV does not */ }
+        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}), ...(cronAgeSeconds !== undefined ? { cronAgeSeconds } : {}) });
       }
       const gate = appGateRejection(request, env, url);
       if (gate) return gate;
@@ -469,6 +489,18 @@ const handler = {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
         if (needsPasskey) return needsPasskey;
+        // Accounts without a passkey have no second check: a stolen or left-behind
+        // session would be enough to delete everything. Ask for a sign-in from the
+        // last few minutes instead. Off until the app that explains it is out
+        // (an older app would only show "could not delete").
+        if (env.REQUIRE_RECENT_LOGIN_FOR_DELETION === "true"
+          && !(await accountHasEstablishedPasskey(env, session.sub, null))
+          && !loggedInRecently(session)) {
+          return json({
+            error: "安全のため、いったんサインアウトして、もう一度サインインしてからアカウントを削除してください。",
+            code: "recent_login_required",
+          }, 403);
+        }
         const body = await readJSONLimited(request, 1_000);
         if (body?.confirmation !== "DELETE") return json({ error: "Confirmation is required." }, 400);
         const result = await startAccountDeletion(env, session.sub);
@@ -525,6 +557,7 @@ const handler = {
           if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, await sealSnapshot(env, `snapshot:${accountHash}`, body), { expirationTtl: ACCOUNT_SNAPSHOT_TTL_SECONDS });
         } catch (error) {
           console.error(JSON.stringify({ message: "snapshot could not be stored", error: error instanceof Error ? error.message : String(error) }));
+          inBackground(ctx, raiseAlert(env, OPS_ALERTS.snapshotStore));
           return json({ error: "The snapshot could not be stored." }, 503);
         }
         return json({ synced: true, exportedAt: parsed.exportedAt });
@@ -598,6 +631,7 @@ const handler = {
       return json({ error: "Not found" }, 404);
     } catch (error) {
       console.error(JSON.stringify({ message: "request failed", error: error instanceof Error ? error.message : String(error) }));
+      inBackground(ctx, raiseAlert(env, OPS_ALERTS.serverError));
       return json({ error: "Internal server error." }, 500);
     }
   }
@@ -636,7 +670,7 @@ const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
-async function handleSessionRefresh(request: Request, env: Env, token: string, session: any) {
+async function handleSessionRefresh(request: Request, env: Env, token: string, session: SessionRecord | null) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
@@ -646,6 +680,11 @@ async function handleSessionRefresh(request: Request, env: Env, token: string, s
   const originMs = session.originIssuedAtMs ?? session.issuedAtMs ?? issuedAt * 1000;
   const maxDays = Number(env.SESSION_MAX_DAYS) > 0 ? Number(env.SESSION_MAX_DAYS) : DEFAULT_SESSION_MAX_DAYS;
   if (Date.now() - originMs > maxDays * 24 * 60 * 60 * 1000) return json({ refreshed: false, reason: "session_too_old" });
+  // One refresh per token. The KV marker below can be read stale, so the claim
+  // is made on the counter object, which admits exactly one caller.
+  if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`session-refresh:${oldKey}`).bump(1, remainingValiditySeconds(token)))) {
+    return json({ refreshed: false });
+  }
   const refreshed = await mintSession(env, session.originalSub ?? session.sub, undefined, { originIssuedAtMs: originMs });
   if (!refreshed) return json({ error: "Signing in is not available for this account right now." }, 400);
   const newKey = await sha256Hex(refreshed);
@@ -895,8 +934,19 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
   const { email, code, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof code !== "string" || !code) return json({ error: "code is required." }, 400);
-  if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
+  if (typeof password !== "string" || password.length > MAX_PASSWORD_LENGTH) {
     return json({ error: "password is required." }, 400);
+  }
+  // 12 or more for a password being set (signup, reset). Sign-in is not
+  // limited: an existing 8-11 character password keeps working until it is
+  // next changed. The app shows `error` as is, so an older app that still
+  // accepts 8 characters tells the person what to fix.
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return json({
+      error: `パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`,
+      code: "password_too_short",
+      minLength: MIN_PASSWORD_LENGTH,
+    }, 400);
   }
 
   // Checked before the code is: a refused password costs the caller no code

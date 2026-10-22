@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { handleAnnouncements } from "./announcements.ts";
-import { readMigration } from "./test-env.ts";
+import { readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { const info = this.db.prepare(this.sql).run(...this.params); return { success: true, meta: { changes: info.changes } }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
   async first() { return this.db.prepare(this.sql).get(...this.params) ?? null; }
@@ -30,15 +30,15 @@ async function fixture(extra = {}) {
   const values = new Map();
   const { privateKey } = await generateKeyPair("ES256", { extractable: true });
   const env = {
-    ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
+    ADMIN_DB: { prepare: (sql: Untyped) => new FakeD1Statement(db, sql) },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
     APNS_AUTH_KEY: await exportPKCS8(privateKey),
     APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo",
     STUDIQUO_DATA: {
-      async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix, cursor, limit = 1000 }) {
+      async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix, cursor, limit = 1000 }: { prefix?: unknown; cursor?: unknown; limit?: Untyped }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + limit);
@@ -53,14 +53,14 @@ async function fixture(extra = {}) {
   return { env, values };
 }
 
-const token = n => String(n).repeat(64).slice(0, 64);
-function seedUser(values, name, devices) {
+const token = (n: unknown) => String(n).repeat(64).slice(0, 64);
+function seedUser(values: Map<any,any>, name: string, devices: unknown[]) {
   values.set(`chat:devices:${name}`, JSON.stringify(devices));
 }
 
 // Records every APNs call: which language's text, which device.
-function apns(calls, { failFor = new Set() } = {}) {
-  return async (url, init) => {
+function apns(calls: any[], { failFor = new Set() } = {}) {
+  return async (url: Untyped, init: Untyped) => {
     const body = JSON.parse(init.body);
     const device = url.split("/").pop();
     calls.push({ device, title: body.aps.alert.title, body: body.aps.alert.body, category: body.aps.category, route: body.route, id: body.announcementID });
@@ -68,27 +68,27 @@ function apns(calls, { failFor = new Set() } = {}) {
   };
 }
 
-async function call(env, path, { method = "POST", body, fetchImpl }: { method?: string; body?: any; fetchImpl?: any } = {}) {
+async function call(env: Untyped, path: string, { method = "POST", body, fetchImpl }: { method?: string; body?: unknown; fetchImpl?: typeof fetch } = {}) {
   const request = new Request(`https://example.test${path}`, {
     method, headers: { "cf-access-jwt-assertion": accessToken, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined,
   });
   return handleAnnouncements(new URL(request.url), request, env, { fetchImpl });
 }
 
-async function create(env, over = {}) {
+async function create(env: unknown, over = {}) {
   const response = await call(env, "/api/admin/announcements", { body: {
     kind: "update", status: "published",
     translations: { ja: { title: "更新のお知らせ", body: "新機能が増えました" }, en: { title: "Update", body: "New features" } },
     ...over,
   } });
-  return (await response.json()).id;
+  return (await response!.json()).id;
 }
 
-async function pushAll(env, id, fetchImpl) {
+async function pushAll(env: unknown, id: string, fetchImpl: Untyped) {
   let last;
   for (let i = 0; i < 20; i++) {
     const response = await call(env, `/api/admin/announcements/${id}/push`, { fetchImpl });
-    last = await response.json();
+    last = await response!.json();
     if (last.done) return last;
   }
   throw new Error("push never finished");
@@ -103,7 +103,7 @@ test("push walks every user in batches, in each device's language, honoring the 
   seedUser(values, "u5", [{ token: token(5), environment: "production" }, { token: token(6), environment: "sandbox", language: "ja" }]); // no language → en
   const id = await create(env);
 
-  const calls = [];
+  const calls: any[] = [];
   const result = await pushAll(env, id, apns(calls));
   assert.equal(result.done, true);
   assert.equal(result.users, 5);
@@ -122,12 +122,12 @@ test("a finished push cannot be sent twice", async () => {
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env);
-  const calls = [];
+  const calls: string | any[] = [];
   await pushAll(env, id, apns(calls));
   const again = await call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) });
-  assert.equal(again.status, 409);
+  assert.equal(again!.status, 409);
   assert.equal(calls.length, 1);
-  const list = await (await call(env, "/api/admin/announcements", { method: "GET" })).json();
+  const list = await (await call(env, "/api/admin/announcements", { method: "GET" }))!.json();
   assert.equal(list.announcements[0].pushState, "sent");
   assert.equal(list.announcements[0].pushDelivered, 1);
 });
@@ -143,12 +143,12 @@ test("failures are counted and do not stop the walk", async () => {
 
 test("push is refused for news, drafts, scheduled and expired items", async () => {
   const { env } = await fixture();
-  const push = async over => (await call(env, `/api/admin/announcements/${await create(env, over)}/push`, { fetchImpl: apns([]) })).status;
+  const push = async (over: Untyped) => (await call(env, `/api/admin/announcements/${await create(env, over)}/push`, { fetchImpl: apns([]) }))!.status;
   assert.equal(await push({ kind: "news" }), 400);
   assert.equal(await push({ status: "draft" }), 400);
   assert.equal(await push({ publishAt: Date.now() + 3_600_000 }), 400);
   assert.equal(await push({ publishAt: Date.now() - 7_200_000, expiresAt: Date.now() - 3_600_000 }), 400);
-  assert.equal((await call(env, "/api/admin/announcements/nope/push", { fetchImpl: apns([]) })).status, 404);
+  assert.equal((await call(env, "/api/admin/announcements/nope/push", { fetchImpl: apns([]) }))!.status, 404);
 });
 
 test("an overlapping batch request cannot claim the same batch", async () => {
@@ -160,24 +160,24 @@ test("an overlapping batch request cannot claim the same batch", async () => {
   // batch, so both hold the same (stale) batch counter.
   const realPrepare = env.ADMIN_DB.prepare;
   let arrived = 0;
-  let release;
+  let release: Untyped;
   const barrier = new Promise(resolve => { release = resolve; });
-  (env.ADMIN_DB as any).prepare = sql => {
+  (env.ADMIN_DB as any).prepare = (sql: Untyped) => {
     const statement = realPrepare(sql);
     if (!sql.startsWith("SELECT * FROM announcements WHERE id")) return statement;
-    return { bind: (...params) => ({ first: async () => {
+    return { bind: (...params: unknown[]) => ({ first: async () => {
       const row = await statement.bind(...params).first();
       if (++arrived <= 2) { if (arrived === 2) release(); await barrier; }
       return row;
     } }) };
   };
 
-  const calls = [];
+  const calls: any[] = [];
   const [a, b] = await Promise.all([
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
   ]);
-  assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+  assert.deepEqual([a!.status, b!.status].sort(), [200, 409]);
   assert.equal(calls.length, 2, "only one batch of two users was sent");
   assert.equal(new Set(calls.map(c => c.device)).size, calls.length, "no device was pushed twice");
 });
@@ -188,13 +188,13 @@ test("test push goes only to the user behind a friend code, marked as a test", a
   seedUser(values, "other", [{ token: token(2), environment: "production" }]);
   values.set("chat:code:ABC123", "me");
   const id = await create(env, { status: "draft" });
-  const calls = [];
+  const calls: any[] = [];
   const ok = await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "abc123" }, fetchImpl: apns(calls) });
-  assert.equal(ok.status, 200);
+  assert.equal(ok!.status, 200);
   assert.deepEqual(calls.map(c => [c.device, c.title]), [[token(1), "[テスト] Update"]]);
-  assert.equal((await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "ZZZZZZ" }, fetchImpl: apns(calls) })).status, 404);
-  assert.equal((await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "x" }, fetchImpl: apns(calls) })).status, 400);
-  const list = await (await call(env, "/api/admin/announcements", { method: "GET" })).json();
+  assert.equal((await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "ZZZZZZ" }, fetchImpl: apns(calls) }))!.status, 404);
+  assert.equal((await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "x" }, fetchImpl: apns(calls) }))!.status, 400);
+  const list = await (await call(env, "/api/admin/announcements", { method: "GET" }))!.json();
   assert.equal(list.announcements[0].pushState, null, "a test never changes the real push state");
 });
 
@@ -202,7 +202,7 @@ test("long bodies are shortened in the notification", async () => {
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env, { translations: { ja: { title: "t", body: "あ".repeat(500) } } });
-  const calls = [];
+  const calls: any[] = [];
   await pushAll(env, id, apns(calls));
   assert.equal(Array.from(calls[0].body).length, 141);
   assert.ok(calls[0].body.endsWith("…"));
@@ -212,13 +212,13 @@ test("while the push switch is stopped an announcement is refused, not counted a
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env);
-  const calls = [];
+  const calls: string | any[] = [];
 
   const stopped = await call({ ...env, DISABLED_FEATURES: "push" }, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) });
-  assert.equal(stopped.status, 503);
-  assert.equal((await stopped.json()).code, "feature_disabled");
+  assert.equal(stopped!.status, 503);
+  assert.equal((await stopped!.json()).code, "feature_disabled");
   assert.equal(calls.length, 0);
-  const list = await (await call(env, "/api/admin/announcements", { method: "GET" })).json();
+  const list = await (await call(env, "/api/admin/announcements", { method: "GET" }))!.json();
   assert.equal(list.announcements[0].pushState, null, "nothing was recorded");
 
   await pushAll(env, id, apns(calls));

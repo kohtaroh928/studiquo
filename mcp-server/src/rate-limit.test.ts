@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
+import type { Untyped } from "./test-env.ts";
 
 // Mirrors the real Cloudflare Rate Limiting binding's shape: an object with
 // a `limit({ key })` method resolving to `{ success: boolean }`.
-function fakeCloudflareLimiter(limit) {
+function fakeCloudflareLimiter(limit: number) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };

@@ -6,13 +6,15 @@
 
 import { assetKey } from './osv.ts';
 import { nvdHintFor } from './nvd.ts';
+import type { HttpClient } from './http.ts';
+import type { Asset, Finding, JvnItem, NvdHint } from './types.ts';
 
 const BASE = 'https://jvndb.jvn.jp/myjvn';
 const PAGE = 50;
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
-export function decodeXml(s: any) {
+export function decodeXml(s: string) {
   return String(s)
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&(#x[0-9a-fA-F]+|#\d+|[a-z]+);/g, (m, e) => {
@@ -24,19 +26,19 @@ export function decodeXml(s: any) {
     });
 }
 
-const tag = (block: any, name: any) => {
+const tag = (block: string, name: string) => {
   const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`).exec(block);
   return m ? decodeXml(m[1]).trim() : null;
 };
 
-const attr = (openTag: any, name: any) => {
+const attr = (openTag: string, name: string) => {
   const m = new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(openTag);
   return m ? decodeXml(m[1]) : null;
 };
 
 /** getVulnOverviewList の応答から、項目と総件数を取り出す。 */
-export function parseOverview(xml: any) {
-  const items = [];
+export function parseOverview(xml: string) {
+  const items: JvnItem[] = [];
   for (const m of String(xml).matchAll(/<item\s[^>]*>([\s\S]*?)<\/item>/g)) {
     const b = m[1];
     const jvndb = tag(b, 'sec:identifier');
@@ -44,7 +46,7 @@ export function parseOverview(xml: any) {
     const cves = [...b.matchAll(/<sec:references\s([^>]*)>/g)]
       .filter((r) => attr(r[1], 'source') === 'CVE')
       .map((r) => attr(r[1], 'id'))
-      .filter((id) => /^CVE-\d{4}-\d{4,}$/.test(id ?? ''));
+      .filter((id): id is string => /^CVE-\d{4}-\d{4,}$/.test(id ?? ''));
     const cpes = [...b.matchAll(/<sec:cpe\s[^>]*>([^<]*)<\/sec:cpe>/g)].map((r) => {
       const p = decodeXml(r[1]).trim().split(':'); // cpe:/a:vendor:product[:version]
       return { part: p[1]?.replace('/', ''), vendor: p[2]?.toLowerCase() ?? '', product: p[3]?.toLowerCase() ?? '', version: p[4] ?? null };
@@ -76,18 +78,18 @@ export function parseOverview(xml: any) {
   };
 }
 
-const norm = (s: any) => String(s).toLowerCase().replace(/[-_\s]/g, '');
+const norm = (s: unknown) => String(s).toLowerCase().replace(/[-_\s]/g, '');
 
 /**
  * 項目が資産に関係しそうか。'cpe'=CPEのproductがヒントと一致 / 'text'=CPE無しで題名・概要に語がある / null=無関係。
  * CPEがあって一致しないもの(例: npmのjoseに対するGo JOSE)は捨てる。
  */
-export function relevance(item: any, hint: any) {
+export function relevance(item: Pick<JvnItem, 'cpes' | 'titleJa' | 'description'>, hint: Partial<NvdHint>) {
   const products = (hint.products ?? []).map(norm);
   const vendors = (hint.vendors ?? []).map(norm);
-  const apps = item.cpes.filter((c: any) => c.part === 'a');
+  const apps = item.cpes.filter((c) => c.part === 'a');
   if (apps.length) {
-    const hit = apps.some((c: any) => products.includes(norm(c.product)) && (vendors.length === 0 || vendors.includes(norm(c.vendor))));
+    const hit = apps.some((c) => products.includes(norm(c.product)) && (vendors.length === 0 || vendors.includes(norm(c.vendor))));
     return hit ? 'cpe' : null;
   }
   // 短い語(zodなど)が別の単語の一部に当たらないよう、語の境界で探す
@@ -98,8 +100,8 @@ export function relevance(item: any, hint: any) {
   return re.test(hay) ? 'text' : null;
 }
 
-async function fetchAll(client: any, keyword: any, { maxPages = 4 } = {}) {
-  const all = [];
+async function fetchAll(client: Pick<HttpClient, 'text'>, keyword: string, { maxPages = 4 } = {}) {
+  const all: JvnItem[] = [];
   let start = 1;
   let total = 0;
   for (let page = 0; page < maxPages; page++) {
@@ -118,7 +120,7 @@ async function fetchAll(client: any, keyword: any, { maxPages = 4 } = {}) {
 }
 
 /** 1項目×CVE番号ごとに指摘を作る。CVE番号が無ければJVNDB番号で1件。 */
-export function jvnFindings(item: any, asset: any, via: any) {
+export function jvnFindings(item: Omit<JvnItem, 'cpes'>, asset: Asset, via: string): Finding[] {
   const base = {
     sources: ['jvn'],
     asset: assetKey(asset),
@@ -134,14 +136,14 @@ export function jvnFindings(item: any, asset: any, via: any) {
     references: item.link ? [item.link] : [],
     published: item.published,
   };
-  const ids = (cve: any) => [...new Set([item.jvndb, ...(cve ? [cve] : [])])];
+  const ids = (cve: string | null) => [...new Set([item.jvndb, ...(cve ? [cve] : [])])];
   return item.cves.length
-    ? item.cves.map((cve: any) => ({ ...base, ids: ids(cve), cve }))
+    ? item.cves.map((cve) => ({ ...base, ids: ids(cve), cve }))
     : [{ ...base, ids: ids(null), cve: null }];
 }
 
-export async function queryJvn(client: any, assets: any, { onWarning = (_message: string) => {} } = {}) {
-  const findings = [];
+export async function queryJvn(client: Pick<HttpClient, 'text'>, assets: Asset[], { onWarning = (_message: string) => {} } = {}) {
+  const findings: Finding[] = [];
   for (const asset of assets) {
     const hint = nvdHintFor(asset);
     if (!hint || !asset.version) continue;

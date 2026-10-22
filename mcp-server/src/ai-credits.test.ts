@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { consumeCredits, creditCost, PLAN_BUDGETS, MODEL_CREDITS } from "./ai-credits.ts";
+import type { LooseEnv } from "./test-env.ts";
+import type { Untyped } from "./test-env.ts";
 
 function counters() {
   const used = new Map();
   return {
     used,
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async take(limit, _seconds, amount = 1) {
+        async take(limit: number, _seconds: string, amount = 1) {
           const next = (used.get(name) ?? 0) + amount;
           if (next > limit) return { ok: false };
           used.set(name, next);
@@ -20,7 +22,7 @@ function counters() {
   };
 }
 
-const call = (env, overrides = {}) => consumeCredits(env, {
+const call = (env: Untyped, overrides = {}) => consumeCredits(env, {
   accountKey: "acct", plan: "pro", kind: "chat", model: "openai-luna",
   globalBucket: "chat", globalLimit: 1_000_000, now: Date.UTC(2026, 9, 12, 3, 0, 0), ...overrides,
 });
@@ -48,7 +50,7 @@ test("the published budgets are what the Worker enforces", () => {
 
 // Clears the minute / 5-hour / day counters between calls so only the month
 // window is being tested.
-async function spendUntilStopped(env, options, limit = 5000) {
+async function spendUntilStopped(env: { RATE_COUNTER: any; }, options: {} | undefined, limit = 5000) {
   let ok = 0;
   for (let i = 0; i < limit; i += 1) {
     for (const name of [...env.RATE_COUNTER.used.keys()]) if (!name.includes(":mon:") && !name.startsWith("ai:global:")) env.RATE_COUNTER.used.delete(name);
@@ -156,8 +158,8 @@ test("refund() hands everything back once, and a second call does nothing", asyn
   const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
   assert.equal(result.ok, true);
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 40);
-  await result.refund();
-  await result.refund();
+  await result.refund!();
+  await result.refund!();
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
 
@@ -165,10 +167,10 @@ test("a refund still returns the other windows when one give throws", async () =
   const env = { RATE_COUNTER: counters() };
   const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-  env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:5h:")
+  (env.RATE_COUNTER as { getByName: (name: string) => unknown }).getByName = (name: string) => name.startsWith("ai:cr:5h:")
     ? { async give() { throw new Error("boom"); } }
     : real(name);
-  await result.refund(); // must not throw
+  await result.refund!(); // must not throw
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 0);
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct"), 40, "the failed give leaves only its own window held");
 });

@@ -1,5 +1,6 @@
 import { sha256Hex } from "./auth.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 import { nextCursor } from "./kv.ts";
 
 const DAY = 86_400_000;
@@ -41,15 +42,18 @@ export async function retryRevenueCatDeletion(env: Env, key: string, job: { iden
   return true;
 }
 
-async function processJobs(env: Env, prefix: string, callback: any, limit = 10) {
+async function processJobs<Job>(env: Env, prefix: string, callback: (key: string, job: Job) => Promise<unknown>, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
   const page = await env.STUDIQUO_DATA.list({ prefix, limit, cursor });
   for (const key of page.keys) {
-    const job = await env.STUDIQUO_DATA.get(key.name, "json");
+    const job = await env.STUDIQUO_DATA.get<Job>(key.name, "json");
     if (!job) continue;
     try { await callback(key.name, job); }
-    catch { console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix })); }
+    catch {
+      console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix }));
+      await raiseAlert(env, OPS_ALERTS.deletionRetry);
+    }
   }
   if (page.list_complete) await env.STUDIQUO_DATA.delete(cursorKey);
   else await env.STUDIQUO_DATA.put(cursorKey, nextCursor(page)!);
@@ -68,7 +72,7 @@ async function processJobs(env: Env, prefix: string, callback: any, limit = 10) 
 export async function processPendingDeletions(env: Env, fetcher = fetch, { limit = 10 } = {}) {
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
   const { deleteAccount } = await import("./account-deletion.ts");
-  await processJobs(env, "privacy-account-delete:", async (_key: any, job: { canonicalSub: string; }) => deleteAccount(env, job.canonicalSub), limit);
+  await processJobs(env, "privacy-account-delete:", async (_key: string, job: { canonicalSub: string; }) => deleteAccount(env, job.canonicalSub), limit);
   // Without the provider secret every attempt fails, so skip the pass: it
   // would only spend subrequests and keep cycling the same jobs. Say so when
   // jobs are waiting, so queued erasures don't pile up unnoticed.
@@ -76,7 +80,10 @@ export async function processPendingDeletions(env: Env, fetcher = fetch, { limit
     await processJobs(env, "privacy-rc-delete:", (key: string, job: { identity: string | number | boolean; }) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
   } else {
     const waiting = await env.STUDIQUO_DATA.list({ prefix: "privacy-rc-delete:", limit: 1 });
-    if (waiting.keys?.length) console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
+    if (waiting.keys?.length) {
+      console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
+      await raiseAlert(env, OPS_ALERTS.providerDeletionKey);
+    }
   }
 }
 
@@ -124,6 +131,9 @@ export async function runPrivacyRetention(env: Env, now = Date.now(), fetcher = 
       OR EXISTS(SELECT 1 FROM app_error_users WHERE last_seen_at <= ?)
       OR EXISTS(SELECT 1 FROM app_errors WHERE last_seen_at <= ?)) AS pending`
   ).bind(personalCutoff, personalCutoff, personalCutoff, now - ERROR_RETENTION_MS).first();
-  if (overdue?.pending) console.warn(JSON.stringify({ message: "privacy retention backlog requires attention" }));
+  if (overdue?.pending) {
+    console.warn(JSON.stringify({ message: "privacy retention backlog requires attention" }));
+    await raiseAlert(env, OPS_ALERTS.retentionBacklog);
+  }
   return { enabled: true, reportsDeleted: reports.results.length, errorsDeleted: errors.results.length };
 }

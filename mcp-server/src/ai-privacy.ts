@@ -57,7 +57,7 @@ export async function aiPrivacyRejection(request: Request, env: Env) {
 export async function ragPrivacyRejection(request: Request, env: Env, pathname: string) {
  if(request.method !== 'POST') return null;
  let sends = ['/api/rag/index', '/api/rag/documents/prepare'].includes(pathname);
- if(pathname === '/api/rag/consent' || /^\/api\/rag\/documents\/[A-Za-z0-9_-]{1,64}\/state$/u.test(pathname)) {
+ if(pathname === '/api/rag/consent' || /^\/api\/rag\/documents\/([A-Za-z0-9_-]{1,64})\/state$/u.test(pathname)) {
   const body = await readJSONLimited(request.clone(), 8192);
   if(!body || typeof body !== 'object' || Array.isArray(body)) return json({error:'Invalid RAG request.'},400);
   sends = body.enabled === true || body.state === 'eligible';

@@ -19,7 +19,7 @@ import { revokeAllConnections } from "./mcp-oauth.ts";
 import { revokeSessionsIssuedBefore } from "./session.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
-import type { PasskeyRecord } from "./records.ts";
+import type { PasskeyRecord, SessionRecord } from "./records.ts";
 
 const MAX_PER_ACCOUNT = 10;
 export const RECOVERY_DELAY_SECONDS = 48 * 60 * 60;
@@ -41,7 +41,7 @@ export async function resolveAccountKey(env: Env, key: string) {
 }
 
 // Every key the same person's passkeys could be listed under.
-export async function passkeyAccountKeys(env: Env, accountKey: string, email: string | null) {
+export async function passkeyAccountKeys(env: Env, accountKey: string, email: string | null | undefined) {
   const keys = new Set([await resolveAccountKey(env, accountKey)]);
   if (email) keys.add(`email:${email.trim().toLowerCase()}`);
   return [...keys];
@@ -107,11 +107,11 @@ export async function loadAccountPasskeys(env: Env, accountKey: string, email: s
 // predates any reset that wrote this.
 const validFromKey = async (accountKey: string) => `passkey-valid-from:${await sha256Hex(accountKey)}`;
 
-export async function setPasskeyValidFrom(env: Env, keys: any, now = Date.now()) {
+export async function setPasskeyValidFrom(env: Env, keys: Iterable<string>, now = Date.now()) {
   for (const key of keys) await env.STUDIQUO_DATA.put(await validFromKey(key), String(now));
 }
 
-export async function passkeyRevokedByReset(env: Env, record: any, keys: any = null) {
+export async function passkeyRevokedByReset(env: Env, record: Partial<PasskeyRecord> | null | undefined, keys: string[] | null = null) {
   let checked = keys;
   if (!checked) {
     const email = String(record?.email ?? "").trim().toLowerCase();
@@ -140,7 +140,7 @@ export async function passkeyIndexComplete(env: Env) {
  * is true when a list is at its size limit: the oldest ids drop off a full list,
  * so it can no longer be taken as everything the account has.
  */
-export async function indexedPasskeyIds(env: Env, keys: any) {
+export async function indexedPasskeyIds(env: Env, keys: Iterable<string>) {
   const ids = new Set<string>();
   let full = false;
   for (const key of keys) {
@@ -151,13 +151,13 @@ export async function indexedPasskeyIds(env: Env, keys: any) {
   return { ids: [...ids], full };
 }
 
-export async function dropPasskeyIndex(env: Env, keys: any) {
+export async function dropPasskeyIndex(env: Env, keys: Iterable<string>) {
   for (const key of keys) await env.STUDIQUO_DATA.delete(await indexKey(key));
 }
 
-export function isEstablishedPasskey(record: any, now = Date.now()) {
+export function isEstablishedPasskey(record: Pick<PasskeyRecord, "createdAt">, now = Date.now()) {
   // Records from before registration times were kept count as established.
-  return !Number.isFinite(record.createdAt) || now >= record.createdAt + ESTABLISH_AFTER_SECONDS * 1000;
+  return !Number.isFinite(record.createdAt) || now >= (record.createdAt as number) + ESTABLISH_AFTER_SECONDS * 1000;
 }
 
 export async function listAccountPasskeys(env: Env, accountKey: string, email: string | null) {
@@ -176,7 +176,7 @@ export async function accountHasEstablishedPasskey(env: Env, accountKey: string,
   return (await listEstablishedPasskeys(env, accountKey, email, now)).length > 0;
 }
 
-export async function indexAccountPasskey(env: Env, accountKey: string, email: string, credentialID: string) {
+export async function indexAccountPasskey(env: Env, accountKey: string, email: string | null, credentialID: string) {
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     const k = await indexKey(key);
     const ids = (await env.STUDIQUO_DATA.get<string[]>(k, "json")) ?? [];
@@ -265,7 +265,7 @@ export async function sendPasskeyNotice(env: Env, email: string | null, subject:
  *
  * `notify` runs the mail in the background (waitUntil) when given.
  */
-export async function gatePasskeyAccount(env: Env, accountKey: string, email: string | null, { now = Date.now(), notify = (work: any) => work } = {}) {
+export async function gatePasskeyAccount(env: Env, accountKey: string, email: string | null, { now = Date.now(), notify = (work: Promise<unknown>): unknown => work } = {}) {
   if (!(await accountHasEstablishedPasskey(env, accountKey, email, now))) return null;
   const key = await recoveryKey(await resolveAccountKey(env, accountKey));
   const pending = await env.STUDIQUO_DATA.get<{ requestedAt?: number }>(key, "json");
@@ -326,7 +326,7 @@ export async function markRecentPasskey(env: Env, tokenHash: string, action = "*
  * passkey must have used it a moment ago in this session, for this action.
  * Returns null to proceed.
  */
-export async function requireRecentPasskey(env: Env, token: string, session: any, action: string) {
+export async function requireRecentPasskey(env: Env, token: string, session: Pick<SessionRecord, "sub">, action: string) {
   if (!(await accountHasEstablishedPasskey(env, session.sub, null))) return null;
   const key = `passkey-reauth:${await sha256Hex(token)}`;
   const marked = await env.STUDIQUO_DATA.get(key);

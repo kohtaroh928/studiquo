@@ -26,7 +26,7 @@
 | 管理項目 | 状態 | 根拠 | 満たさない/一部の点と次の一手 |
 |---|---|---|---|
 | STORAGE-1 機微データを安全に保存する | △ | セッションはKeychain `AfterFirstUnlockThisDeviceOnly`(`AuthenticationStore.swift`)。保護ノートはAES-GCMで暗号化(`NotebookEncryptionService.swift`、`NotebookEncryptionServiceTests`)。書き出し・一時ファイルは`completeFileProtection`(`ExportService.swift`、`StudiquoWorkFiles.swift`、`StudiquoWorkFilesTests`)。自動バックアップは`completeFileProtectionUnlessOpen`(`NotebookBackupService.swift`) | 保護ノートの鍵は`ThisDeviceOnly`ではなく、iCloud Keychainで端末の外へ同期される(意図した設計)。SwiftData本体と共有受信箱の保護クラスが既定のまま(カード「端末上の機微データのData Protectionと復号中データの露出を強化する」)。自動バックアップは保護ノートでも平文JSON(`SECURITY_AND_PRIVACY.md`)。保護ノートの鍵が上書きされうる不具合(ブランチ`claude/key-safety`で修正、**未マージ**) |
-| STORAGE-2 機微データの漏えいを防ぐ | △ | URLキャッシュは退会で消去(`AccountFileEraser.swift`)。ログにノート本文を出さない運用 | 一時計測の`print`が製品に残る(`GestureDiagnostics`、カード「一時計測のprintを製品から外す」)。アプリスイッチャー・ペーストボード・ブラウザデータはブランチ`claude/switcher-privacy`・`claude/net-app`で修正、**未マージ**。ロック画面の通知プレビューを隠す設定が無い(カード「チャット通知のプレビューを隠す設定」)。画面収録の検知は無い(カード「画面収録・スクリーンショット時の保護ノート…」) |
+| STORAGE-2 機微データの漏えいを防ぐ | △ | URLキャッシュは退会で消去(`AccountFileEraser.swift`)。ログにノート本文を出さない運用 | 一時計測の`print`(`GestureDiagnostics`)はDEBUGビルドだけに限った(呼び出し自体は残っている)。アプリスイッチャー・ペーストボード・ブラウザデータはブランチ`claude/switcher-privacy`・`claude/net-app`で修正、**未マージ**。ロック画面の通知プレビューを隠す設定が無い(カード「チャット通知のプレビューを隠す設定」)。画面収録の検知は無い(カード「画面収録・スクリーンショット時の保護ノート…」) |
 
 ### CRYPTO
 
@@ -39,9 +39,9 @@
 
 | 管理項目 | 状態 | 根拠 | 満たさない/一部の点と次の一手 |
 |---|---|---|---|
-| AUTH-1 認証・認可のプロトコルを安全に使う | △ | Apple/Googleは署名・audience・issuer・期限・nonceを検証(`apple-auth.test.js`、`google-auth.test.js`、`REQUIRE_ID_TOKEN_NONCE`)。パスキー(`passkeys.test.js`)。トークンは署名つき(`token-signature.test.js`)・90日・失効可(`revocation.test.js`)。アプリはnonceを生成(`SignInNonceTests`) | パスワードの最小長が8(カード「パスワードの最小長…」)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策…」) |
+| AUTH-1 認証・認可のプロトコルを安全に使う | △ | Apple/Googleは署名・audience・issuer・期限・nonceを検証(`apple-auth.test.js`、`google-auth.test.js`、`REQUIRE_ID_TOKEN_NONCE`)。パスキー(`passkeys.test.js`)。トークンは署名つき(`token-signature.test.js`)・90日・失効可(`revocation.test.js`)。アプリはnonceを生成(`SignInNonceTests`) | 最小長を12文字にした(2026-10-21、ブランチ`claude/sec-ops`、`app.test.ts`「a password under 12 characters…」)。既存の8〜11文字のパスワードはサインインできる(次の変更時から12文字)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策…」) |
 | AUTH-2 端末上の認証 | △ | `DeviceAuthentication`(`.deviceOwnerAuthentication`、`DeviceAuthenticationTests`)で保護ノートを開く前に確認 | 鍵そのものは生体認証に結合されない(同期との両立のため)。手続き上のゲートであることを`NotebookEncryptionKeyStore`の注記とポリシーに明記済み(意図した制限) |
-| AUTH-3 機微な操作の追加認証 | △ | 保護の**解除**は端末認証が必要(`ContentView.toggleNotebookProtection`。有効化は認証なし)。退会は確認文字列の入力が必要(`AccountDeletionUI.requiredConfirmation`、`AccountDeletionIOSTests`)。パスキーを持つアカウントの退会はパスキーの再認証が必要(`/api/passkeys/reauth/*`、`PasskeyReauth.isRequired`) | パスワード/Apple/Googleのアカウントの退会は、Bearerと「削除」の入力だけで行える。確認文字列は誤操作の防止で、追加認証ではない(盗まれたセッションや触られた端末で退会されうる)。カード「パスキー未登録アカウントの退会に再認証を求める」 |
+| AUTH-3 機微な操作の追加認証 | △ | 保護の**解除**は端末認証が必要(`ContentView.toggleNotebookProtection`。有効化は認証なし)。退会は確認文字列の入力が必要(`AccountDeletionUI.requiredConfirmation`、`AccountDeletionIOSTests`)。パスキーを持つアカウントの退会はパスキーの再認証が必要(`/api/passkeys/reauth/*`、`PasskeyReauth.isRequired`) | 実装した(ブランチ`claude/sec-ops`): アプリは退会の前に端末認証(Face ID/パスコード。端末にパスコードが無ければ省く)を求める。サーバーは`REQUIRE_RECENT_LOGIN_FOR_DELETION="true"`のとき、パスキー未登録のアカウントに**直近10分以内のサインイン**を求める(`recent_login_required`)。**この設定は、アプリが出てから有効にする**(旧アプリは403を「削除できません」としか表示しない)。有効にするまでは、サーバー側の追加認証は無い |
 
 ### NETWORK
 
@@ -86,13 +86,13 @@
 
 | 章 | 状態 | 根拠 | 満たさない/一部の点と次の一手 |
 |---|---|---|---|
-| V1 アーキテクチャ・設計 | △ | `ARCHITECTURE.md`、`THREAT_MODEL.md`、信頼境界の整理、段階配備のフラグ | 認可の網羅表が無い(カード「認可の網羅テスト」) |
-| V2 認証 | △ | Argon2id+PBKDF2の旧形式対応(`local-auth.test.js`)、漏えいPW照合(`pwned-passwords.test.js`)、失敗の段階的待機(`login-throttle.test.js`)、確認コードは1回・15分・5回(`email-verification.test.js`)、パスキー(`passkeys.test.js`)、新環境のサインイン通知(`login-monitor.test.js`) | パスワードの最小長が8。多要素の強制(パスキー)は配備待ち |
+| V1 アーキテクチャ・設計 | △ | `ARCHITECTURE.md`、`THREAT_MODEL.md`、信頼境界の整理、段階配備のフラグ | `app.test.ts`の`ROUTES`表に全`/api`ルートと認証の種別を列挙し、表に無いルートがあるとテストが落ちる。トークン無し・未発行のトークン・Access無しの拒否を全ルートで確認する(ブランチ`claude/sec-ops`)。所有者/メンバー/非メンバーの網羅は、ルーム系の個別テスト(`chat.test.ts`、`document-collab.test.ts`)のまま |
+| V2 認証 | △ | Argon2id+PBKDF2の旧形式対応(`local-auth.test.js`)、漏えいPW照合(`pwned-passwords.test.js`)、失敗の段階的待機(`login-throttle.test.js`)、確認コードは1回・15分・5回(`email-verification.test.js`)、パスキー(`passkeys.test.js`)、新環境のサインイン通知(`login-monitor.test.js`) | 最小長は12文字(新規登録・再設定)。サインインは従来のパスワードも通る。多要素の強制(パスキー)は配備待ち |
 | V3 セッション管理 | △ | 絶対期限(90日、更新しても開始から既定365日)、署名つきトークン(`token-signature.test.js`)、実在セッション確認(`session.test.js`)、90日の有効期限と更新(`token.test.js`、`low-priority-hardening.test.js`の「SESSION_MAX_DAYS」)、ログアウトで失効(`app.test.js`「a previously issued token is rejected…after logout revokes it」)、パスワード変更で古いセッションを失効(`session-revocation.test.js`) | 「すべての端末からサインアウト」を利用者が行う機能が無い(カード「すべての端末からサインアウト」) |
-| V4 アクセス制御 | △ | ルーム/文書のメンバー確認(`chat.test.js`「someone outside the room cannot…」、`document-collab.test.js`)、アカウント間の分離(`entitlements.test.js`)、管理APIはAccessで毎回検証(`access.ts`、`admin.test.js`)、他サイトからの書き込み拒否(`isCrossSiteWrite`) | 経路の網羅表が無い(同上のカード) |
+| V4 アクセス制御 | △ | ルーム/文書のメンバー確認(`chat.test.js`「someone outside the room cannot…」、`document-collab.test.js`)、アカウント間の分離(`entitlements.test.js`)、管理APIはAccessで毎回検証(`access.ts`、`admin.test.js`)、他サイトからの書き込み拒否(`isCrossSiteWrite`) | 認証の種別の網羅表は上記。メンバー確認の網羅は個別テスト |
 | V5 入力の検証・エンコード | ○ | 本文の上限(`app.test.js`「…oversized body is rejected with 413」)、D1は全て`bind`(文字列連結は定数の表名のみ、`privacy-retention.ts`)、HTMLは`htmlEscape`+CSP(`api-hardening.test.js`、`invite.test.js`)、プロンプト区切りの無害化(`ai.ts`) | ファジングが無い(カード) |
 | V6 保存時の暗号 | △ | スナップショットはAES-256-GCMで鍵名をAADに束縛(`snapshot-crypto.test.js`)、パスワードはArgon2id、トークンはハッシュで保存 | 鍵が未設定だと平文。チャット本文などのサーバー側暗号化は保留(カード「サーバー側の保存データの暗号化方針」)。配備はカード「スナップショット暗号化…」 |
-| V7 エラー処理・ログ | △ | 本文・画像・鍵をログに出さない運用、`invocation_logs`無効、エラー応答は汎用 | OpenAIのエラー応答の本文(最大300文字)をログに出す箇所(カード「外部エラー応答の本文をログに出す箇所」)。異常検知のアラートが3種だけ(カード「異常検知のアラート」) |
+| V7 エラー処理・ログ | △ | 本文・画像・鍵をログに出さない運用、`invocation_logs`無効、エラー応答は汎用 | OpenAIのエラー本文のログ出力はやめた(`type`と`code`だけ。`ai.test.ts`)。アラートは[MONITORING.md](MONITORING.md)の一覧に拡張した(500・AI上流・スナップショット・保持ジョブ・削除ジョブ・MCPトークン再利用)。Cloudflare側の通知と外部の死活監視は未設定 |
 | V8 データ保護 | △ | 保持期間と削除(`privacy-retention.test.js`、`account-deletion.test.js`)、`store:false`でAIへ送る(`ai.test.js`) | バックアップと復元の訓練が無い(カード「バックアップと復元」) |
 | V9 通信 | △ | TLS、HSTS・平文http拒否はブランチ`claude/net-server`、**未マージ** | `main`はHSTSが無く、平文httpに応答する |
 | V10 悪意あるコード | △ | 秘密スキャンを手動で実施 | CI・静的解析が無い(ブランチ`claude/ci-setup`、**未マージ**。カード「静的解析を入れる…」) |

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 // A hand-rolled stand-in for the ADMIN_DB D1 binding: real SQL text is
 // ignored (admin.test.js already exercises the real schema against a real
@@ -11,12 +11,12 @@ import { partialEnv } from "./test-env.ts";
 // app_user_id — not something today's real schema (app_user_id is its
 // primary key) can actually produce, but exactly the shape `getPlan` is
 // written to tolerate; see its own doc comment.
-function fakeAdminDB(subscribers) {
+function fakeAdminDB(subscribers: any[]) {
   return partialEnv({
     ADMIN_DB: {
       prepare() {
         return {
-          bind(appUserId) {
+          bind(appUserId: string) {
             return {
               async all() {
                 return { results: subscribers.filter(row => row.app_user_id === appUserId) };
@@ -124,15 +124,15 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subs
   return partialEnv({
     ...(paywall ? { PAYWALL_ENABLED: "true" } : {}),
     ADMIN_DB: {
-      prepare(sql) {
+      prepare(sql: string | string[]) {
         return {
-          bind(appUserId) {
+          bind(appUserId: string) {
             return {
               async all() {
                 if (sql.includes("legacy_standard_accounts")) {
-                  return { results: legacy.filter(id => id === appUserId).map(id => ({ app_user_id: id })) };
+                  return { results: legacy.filter((id: unknown) => id === appUserId).map((id: unknown) => ({ app_user_id: id })) };
                 }
-                return { results: subscribers.filter(row => row.app_user_id === appUserId) };
+                return { results: subscribers.filter((row: Untyped) => row.app_user_id === appUserId) };
               },
             };
           },

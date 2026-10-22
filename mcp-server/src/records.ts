@@ -24,6 +24,8 @@ export interface SessionRecord {
   sub: string;
   issuedAt?: number;
   issuedAtMs?: number;
+  /** When the login this session descends from began (carried through each refresh). */
+  originIssuedAtMs?: number;
   /** The identity the session was minted for, when `sub` has since been replaced by the canonical account. */
   originalSub?: string;
   [field: string]: unknown;
@@ -118,3 +120,15 @@ export interface DeletionJob {
   requestedAt: number;
   generation?: number;
 }
+
+/** A page of a notebook in the snapshot the app uploads (only the members the tools read). */
+export interface SnapshotPage { id: unknown; title: unknown; recognizedText?: string }
+
+/** A notebook in the snapshot the app uploads (only the members the tools read). */
+export interface SnapshotNotebook { id: unknown; title: unknown; tags?: unknown[]; pages: SnapshotPage[] }
+
+/** Today's study time as the app reports it (chat.ts parseStudyStats checks it). */
+export interface StudyStats { seconds: number; date: string }
+
+/** An entry of `ChatUser.blockedContacts`. */
+export type BlockedContact = NonNullable<ChatUser["blockedContacts"]>[number];

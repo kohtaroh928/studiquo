@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { idTokenNonceRefused } from "./id-token-nonce.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
   const used = new Set();
@@ -10,9 +10,9 @@ function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
   return partialEnv({
     REQUIRE_ID_TOKEN_NONCE: requireNonce,
     RATE_COUNTER: {
-      getByName(name) {
+      getByName(name: unknown) {
         return {
-          async bump(limit, windowSeconds) {
+          async bump(limit: string, windowSeconds: string) {
             ttlRecorded.set(name, { limit, windowSeconds });
             if (used.has(name)) return false;
             used.add(name);
@@ -25,9 +25,9 @@ function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
   });
 }
 
-async function captureLogs(fn) {
+async function captureLogs(fn: Untyped) {
   const original = console.log;
-  const lines = [];
+  const lines: string[] = [];
   console.log = (...args) => lines.push(args.join(" "));
   try {
     const result = await fn();

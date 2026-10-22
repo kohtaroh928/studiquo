@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Covers app.ts's own usage of the MCP_INBOX contract — how the /mcp tool
 // handlers and the /api/mcp/inbox routes route between a paired external
@@ -12,20 +12,20 @@ import { partialCtx, partialEnv } from "./test-env.ts";
 // mechanics (PKCE, token exchange, grants), which mcp-oauth.test.js already
 // covers end to end.
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 
 function fakeMCPInboxBinding() {
   const accounts = new Map();
-  function items(account) {
+  function items(account: string) {
     if (!accounts.has(account)) accounts.set(account, new Map());
     return accounts.get(account);
   }
   const consumed = new Set();
   return {
-    getByName(account) {
+    getByName(account: string) {
       const store = items(account);
       return {
-        async enqueue(id, kind, payload, source) {
+        async enqueue(id: string, kind: string, payload: unknown[], source: string) {
           const pendingCount = [...store.values()].filter(item => item.status === "pending").length;
           if (pendingCount >= 100) throw new Error("Studiquo has 100 pending imports. Open the iPad app before sending more.");
           if (!store.has(id)) {
@@ -36,13 +36,13 @@ function fakeMCPInboxBinding() {
         async list() {
           return [...store.values()].filter(item => item.status === "pending").sort((a, b) => a.createdAt - b.createdAt);
         },
-        async status(id) { return store.get(id) ?? null; },
-        async acknowledge(id) {
+        async status(id: string) { return store.get(id) ?? null; },
+        async acknowledge(id: string) {
           const item = store.get(id);
           if (item?.status === "pending") item.status = "imported";
           return { id, status: item?.status ?? "missing" };
         },
-        async consumeOnce(id) {
+        async consumeOnce(id: string) {
           const key = `${account}:${id}`;
           if (consumed.has(key)) return false;
           consumed.add(key);
@@ -57,13 +57,13 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     MCP_INBOX: fakeMCPInboxBinding(),
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
@@ -76,14 +76,14 @@ function environment() {
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function freshDeviceToken(suffix) {
+function freshDeviceToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(64)}`;
 }
 
-const fetchApp = (env, path, options = {}) =>
+const fetchApp = (env: LooseEnv, path: string, options = {}) =>
   worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
 
-async function signIn(env, deviceToken, sub) {
+async function signIn(env: LooseEnv, deviceToken: string, sub: string) {
   await env.STUDIQUO_DATA.put(`session:${hash(deviceToken)}`, JSON.stringify({ sub }));
 }
 
@@ -92,7 +92,7 @@ async function signIn(env, deviceToken, sub) {
 // access token — the same sequence mcp-oauth.test.js's one big test
 // performs inline, pulled out here so each test below can ask for exactly
 // the scope it needs.
-async function pairMCPClient(env, deviceToken, { scope }: { scope?: any } = {}) {
+async function pairMCPClient(env: LooseEnv, deviceToken: string, { scope }: { scope?: string } = {}) {
   const redirectUri = "https://claude.example/callback";
   const registered = await fetchApp(env, "/oauth/register", {
     method: "POST",
@@ -127,14 +127,14 @@ async function pairMCPClient(env, deviceToken, { scope }: { scope?: any } = {}) 
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: verifier,
+      grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code: code!, code_verifier: verifier,
     }),
   });
   const { access_token } = await token.json();
   return access_token;
 }
 
-async function callTool(env, accessToken, name, args) {
+async function callTool(env: LooseEnv, accessToken: string, name: string, args: unknown) {
   const response = await fetchApp(env, "/mcp", {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
@@ -173,7 +173,7 @@ test("a device connection with no paired MCP account queues writes locally inste
   // paired-account shape ({ id, status: "pending" }) — no MCP_INBOX id at all.
   assert.deepEqual(value, { queued: true, deckTitle: "英単語", cardCount: 1 });
 
-  const queued: any = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
+  const queued = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
   assert.equal(queued.length, 1);
   assert.equal(queued[0].type, "create_flashcards");
 });

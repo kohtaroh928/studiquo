@@ -244,10 +244,10 @@ async function sessionCutoff(env: Env, identityKey: string) {
  * second. An older record that only has whole seconds is judged as a whole
  * second, and one with no issue time at all can't be shown to be newer.
  */
-export function sessionIsBeforeCutoff(session: any, cutoff: number) {
+export function sessionIsBeforeCutoff(session: Pick<SessionRecord, "issuedAt" | "issuedAtMs">, cutoff: number) {
   if (!cutoff) return false;
-  if (Number.isFinite(session.issuedAtMs)) return session.issuedAtMs < cutoff;
-  if (Number.isFinite(session.issuedAt)) return (session.issuedAt + 1) * 1000 <= cutoff;
+  if (Number.isFinite(session.issuedAtMs)) return (session.issuedAtMs as number) < cutoff;
+  if (Number.isFinite(session.issuedAt)) return ((session.issuedAt as number) + 1) * 1000 <= cutoff;
   return true;
 }
 
@@ -264,4 +264,20 @@ export async function revokeSessionsIssuedBefore(env: Env, identityKey: string, 
   const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(identityKey)}`, "json");
   if (state?.status === "deleting" || state?.status === "deleted") return;
   await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
+}
+
+/**
+ * How long after the person actually signed in (not after the last token
+ * refresh) a session may do something that cannot be undone, such as deleting
+ * the account. A stolen or left-behind session is usually older than this.
+ */
+export const RECENT_LOGIN_SECONDS = 10 * 60;
+
+/** True when the login this session descends from began within RECENT_LOGIN_SECONDS. */
+export function loggedInRecently(session: Pick<SessionRecord, "issuedAt" | "issuedAtMs" | "originIssuedAtMs">, now = Date.now()) {
+  const began = Number.isFinite(session.originIssuedAtMs) ? session.originIssuedAtMs
+    : Number.isFinite(session.issuedAtMs) ? session.issuedAtMs
+    : Number.isFinite(session.issuedAt) ? (session.issuedAt as number) * 1000
+    : null;
+  return began !== null && now - (began as number) <= RECENT_LOGIN_SECONDS * 1000;
 }

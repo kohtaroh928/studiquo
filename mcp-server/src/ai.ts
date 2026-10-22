@@ -19,13 +19,15 @@ import { ragAnswerPolicy } from "./rag/answer-policy.ts";
 import { normalizeRetrieval } from "./rag/contract.ts";
 import { filterReply } from "./rag/output-filter.ts";
 import { groundingCheck } from "./rag/grounding-check.ts";
-import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.ts";
+import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES, type CreditRequest } from "./ai-credits.ts";
+import type { SessionRecord } from "./records.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
 import { sendPush } from "./push.ts";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.ts";
 import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 
 /**
  * Which chat models each plan may pick (see entitlements.ts's `getPlan` for
@@ -103,6 +105,34 @@ const AI_UPSTREAM_ERROR_MESSAGE = "AIとの通信でエラーが発生しまし�
 const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから、もう一度送信してください。";
 
 /**
+ * What goes in the log when the AI provider refuses a request: only the error's
+ * `type` and `code` (short identifiers such as "invalid_request_error"), never
+ * the body, which can quote the request. Anything that is not a short
+ * identifier is dropped.
+ */
+async function upstreamErrorKind(upstream: Response): Promise<{ errorType?: string; errorCode?: string }> {
+  try {
+    const body = await upstream.clone().json() as { error?: unknown };
+    return errorKindOf(body?.error);
+  } catch {
+    return {};
+  }
+}
+
+/** The short identifiers of a provider's error object (never its `message`, which can quote the request). */
+function errorKindOf(error: unknown): { errorType?: string; errorCode?: string } {
+  const pick = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined;
+  const { type, code } = (error ?? {}) as { type?: unknown; code?: unknown };
+  return { errorType: pick(type), errorCode: pick(code) };
+}
+
+/** Counts a provider failure toward the hourly alert without making the request wait for Slack. */
+function alertInBackground(env: Env, ctx: ExecutionContext | undefined) {
+  const work = raiseAlert(env, OPS_ALERTS.aiUpstream);
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+}
+
+/**
  * The response for a failed upstream call. Congestion becomes one friendly
  * Japanese message with a 503 — it used to pass the provider's English
  * "high demand" text straight through, and a provider 429
@@ -151,7 +181,7 @@ const DAY_SECONDS = 86_400;
  * when the upstream refuses before producing anything. `kind` is the feature, `model` the
  * model that will answer.
  */
-async function creditGate(env: Env, { account, plan, kind, model, globalBucket, globalLimit }: any) {
+async function creditGate(env: Env, { account, plan, kind, model, globalBucket, globalLimit }: Omit<CreditRequest, "accountKey" | "now"> & { account: string }) {
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, globalBucket, globalLimit });
   if (result.ok) return { response: null, refund: result.refund! };
   const response = json({ error: LIMIT_MESSAGES[result.window!], code: "ai_limit", window: result.window }, 429);
@@ -164,7 +194,7 @@ async function creditGate(env: Env, { account, plan, kind, model, globalBucket, 
  * screening is a call to the provider, and an account that is over its limits
  * must be refused without costing one). A rejection hands the credits back.
  */
-async function moderateOrRefund(env: Env, gate: any, texts: any) {
+async function moderateOrRefund(env: Env, gate: { refund: () => Promise<void> }, texts: string[]) {
   const blocked = await moderationRejection(env, texts);
   if (!blocked) return null;
   await gate.refund();
@@ -213,12 +243,12 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string | number, account: any, session?: any) {
+async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string, session?: Pick<SessionRecord, "sub"> | null) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
   const requestedImages = Array.isArray(payload?.images)
-    ? payload.images.map((image: any) => String(image ?? "")).filter(Boolean).slice(0, 4)
+    ? payload.images.map((image: unknown) => String(image ?? "")).filter(Boolean).slice(0, 4)
     : [];
   const images = requestedImages.filter(isPNGBase64);
   const requiresImage = payload?.requiresImage === true;
@@ -242,11 +272,18 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   });
   if (gate.response) return gate.response;
 
-  // Every user-written turn and the attached note text are screened, not just
-  // the latest message (images are not screened).
+  // Every user turn and the attached note text are screened, not just the
+  // latest message (images are not screened), each cut to the length that is
+  // actually sent on. Assistant turns come from the client too, so the latest
+  // two are screened as well; older ones are not, or one flagged reply would
+  // block the whole conversation for as long as it stayed in the history.
+  const recent = turns.slice(-20);
+  const latestAssistant = new Set(recent.map((turn: { role: string }, index: number) => (turn?.role === "assistant" ? index : -1)).filter((index: number) => index >= 0).slice(-2));
   const rejected = await moderateOrRefund(env, gate, [
-    ...turns.slice(-20).filter((turn: { role: string; }) => turn?.role !== "assistant").map((turn: { text: unknown; }) => turn?.text),
-    payload?.noteContext,
+    ...recent
+      .filter((turn: { role: string }, index: number) => turn?.role !== "assistant" || latestAssistant.has(index))
+      .map((turn: { text: unknown; }) => String(turn?.text ?? "").slice(0, 20_000)),
+    String(payload?.noteContext ?? "").trim().slice(0, 8000),
   ]);
   if (rejected) return rejected;
 
@@ -346,7 +383,8 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
 
     if (!upstream.ok || !upstream.body) {
       await gate.refund();
-      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+      if (upstream.status >= 500) alertInBackground(env, ctx);
       return upstreamFailureResponse(upstream);
     }
   } catch (error) {
@@ -382,7 +420,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream: Response, extractText: any, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}, citations: unknown[] = [], ragStatus?: string, redactRagLinks = false, moderateOutput = false, groundingSource: string | null = null, groundingStatus?: string) {
+function streamNormalizedText(upstream: Response, extractText: (event: unknown) => string, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}, citations: unknown[] = [], ragStatus?: string, redactRagLinks = false, moderateOutput = false, groundingSource: string | null = null, groundingStatus?: string) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -393,6 +431,12 @@ function streamNormalizedText(upstream: Response, extractText: any, ctx: Executi
     let clientGone = false;
     let completed = false;
     let failed = false;
+    // Hit the output limit while answering: the model did the work and the
+    // student has the text, so the credits stay spent (refunding them would
+    // make long outputs free).
+    let truncated = false;
+    // A real failure (not just running out of output room) always refunds.
+    let hardFailed = false;
     let produced = 0;
     let providerCompleted = false;
     const requiresCompletion = extractText === openaiDeltaText;
@@ -447,10 +491,14 @@ function streamNormalizedText(upstream: Response, extractText: any, ctx: Executi
           try {
             const event = JSON.parse(raw);
             if (event?.type === "response.completed" && event.response?.status === "completed") providerCompleted = true;
+            if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
+              truncated = true;
+            }
+            if (event?.type === "response.failed" || event?.type === "error") hardFailed = true;
             if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
               failed = true;
               // Type and error code/message only — never the content.
-              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, error: event?.response?.error ?? event?.error ?? null, incomplete: event?.response?.incomplete_details ?? null }));
+              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error), incomplete: typeof event?.response?.incomplete_details?.reason === "string" ? event.response.incomplete_details.reason.slice(0, 64) : null }));
             }
             text = extractText(event);
           } catch {
@@ -489,7 +537,9 @@ function streamNormalizedText(upstream: Response, extractText: any, ctx: Executi
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
       // answer: tell the student, give the credits back, and send no "done" push.
-      if (failed || produced === 0 || (requiresCompletion && !providerCompleted)) {
+      if (truncated && produced > 0 && !hardFailed) {
+        await send("\n\n（回答が長さの上限で途中までになりました。続きは「続けて」と送ってください）");
+      } else if (failed || produced === 0 || (requiresCompletion && !providerCompleted)) {
         completed = false;
         if (!failed) console.error(JSON.stringify({ message: "AI stream ended with no text" }));
         await send("\n\n（AIが回答を完了できませんでした。もう一度お試しください）");
@@ -586,7 +636,7 @@ const GRADE_SYSTEM = `あなたは数学の証明を採点する教員です。�
 
 const GRADE_SCHEMA = structuredOutputJSONSchema("grade");
 
-async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
@@ -640,7 +690,20 @@ async function handleRubric(request: Request, env: Env, key: string, ctx: Execut
  * last event. It also gives the app something real to show a student who is
  * watching a spinner.
  */
-function streamJSON(env: Env, { refund = async () => {}, model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }: any, ctx: ExecutionContext) {
+/** One structured-output call for streamJSON. */
+interface StreamJSONOptions {
+  refund?: () => Promise<void>;
+  model: string;
+  account: string;
+  systemInstruction: string;
+  parts: { image?: string; text?: unknown }[];
+  responseSchema: unknown;
+  schemaName: string;
+  maxOutputTokens: number;
+  failureMessage: string;
+}
+
+function streamJSON(env: Env, { refund = async () => {}, model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }: StreamJSONOptions, ctx: ExecutionContext) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -678,7 +741,8 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
 
       if (!upstream.ok) {
         await refund();
-        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+        if (upstream.status >= 500) alertInBackground(env, ctx);
         await emit({ error: isUpstreamOverloaded(upstream.status) ? AI_BUSY_MESSAGE : failureMessage });
       } else {
         let buffer = "";
@@ -686,6 +750,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
         let upstreamError: string | null = null;
         let providerCompleted = false;
         let refusalObserved = false;
+        let truncated = false;
         for await (const chunk of upstream.body!) {
           buffer += decoder.decode(chunk, { stream: true });
           if (buffer.length > MAX_STRUCTURED_OUTPUT_BYTES * 4) throw new Error("structured_stream_limit");
@@ -703,9 +768,12 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
                 refusalObserved ||= (event.response.output ?? []).some((item: any) => item.type === "message" && item.content?.some((part: any) => part.type === "refusal"));
               }
               if (event?.type === "response.refusal.delta" || event?.type === "response.refusal.done") refusalObserved = true;
-              if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
+              if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
+                truncated = true;
+              }
+              if (event?.type === "response.failed" || (event?.type === "response.incomplete" && !truncated) || event?.type === "error") {
                 upstreamError = failureMessage;
-                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, error: event?.response?.error ?? event?.error ?? null }));
+                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error) }));
               }
               assembled += openaiDeltaText(event);
             } catch {
@@ -717,7 +785,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
           // one more reason for the client's connection to stay open.
           await emit({ phase: "working", received: assembled.length });
         }
-        if (upstreamError || !providerCompleted || refusalObserved) {
+        if (upstreamError || (!providerCompleted && !truncated) || refusalObserved) {
           await refund();
           await emit({ error: failureMessage });
         } else {
@@ -725,9 +793,12 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
           try {
             parsed = parseStructuredOutput(schemaName, assembled);
           } catch {
-            console.error(JSON.stringify({ message: "AI structured output validation failed", length: assembled.length }));
-            await refund();
-            await emit({ error: failureMessage });
+            console.error(JSON.stringify({ message: "AI structured output validation failed", length: assembled.length, truncated }));
+            // Cut off after producing output is work the model already did;
+            // an empty answer (e.g. all room spent reasoning) is refunded.
+            const keepCredits = truncated && assembled.length > 0;
+            if (!keepCredits) await refund();
+            await emit({ error: keepCredits ? "回答が長さの上限で途中までになりました。入力を短くして、もう一度お試しください。" : failureMessage });
           }
           if (parsed !== undefined) {
             delivered = true;
@@ -754,13 +825,13 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
   });
 }
 
-async function handleGrade(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleGrade(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
   const image = String(payload?.imageBase64 ?? "");
   const questionImage = String(payload?.questionImageBase64 ?? "");
-  const criteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
+  const rawCriteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
   // The answer may be a photograph of handwriting or typed out in the chat.
   if ((image && !isPNGBase64(image)) || (questionImage && !isPNGBase64(questionImage))) {
     return json({ error: "Invalid image data." }, 400);
@@ -768,12 +839,23 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
   if (!image && !answerText) {
     return json({ error: "imageBase64 or answerText is required." }, 400);
   }
-  if (criteria.length === 0) return json({ error: "criteria is required." }, 400);
+  if (rawCriteria.length === 0) return json({ error: "criteria is required." }, 400);
+  // Each criterion is checked and bounded here, so a malformed one is the
+  // caller's 400 (not a 500 that also raises a false "provider down" alert)
+  // and an overlong one cannot make the request arbitrarily large.
+  const criteria: { name: string; maxPoints: number; requirement: string }[] = [];
+  for (const item of rawCriteria) {
+    if (!item || typeof item !== "object" || typeof item.name !== "string" || typeof item.requirement !== "string"
+      || typeof item.maxPoints !== "number" || !Number.isFinite(item.maxPoints)) {
+      return json({ error: "criteria must be a list of { name, maxPoints, requirement }." }, 400);
+    }
+    criteria.push({ name: item.name.slice(0, 200), maxPoints: item.maxPoints, requirement: item.requirement.slice(0, 1000) });
+  }
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
   const rubricText = criteria
-    .map((item: { name: unknown; maxPoints: unknown; requirement: unknown; }) => `・${escapeForPromptTag(String(item.name))}（${item.maxPoints}点）: ${escapeForPromptTag(String(item.requirement))}`)
+    .map(item => `・${escapeForPromptTag(item.name)}（${item.maxPoints}点）: ${escapeForPromptTag(item.requirement)}`)
     .join("\n");
 
   // The question goes in first so the model reads what was asked before it
@@ -783,7 +865,7 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
     globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
   });
   if (gate.response) return gate.response;
-  const rejected = await moderateOrRefund(env, gate, [question, answerText]);
+  const rejected = await moderateOrRefund(env, gate, [question, answerText, ...criteria.flatMap(item => [item.name, item.requirement])]);
   if (rejected) return rejected;
 
   const parts = [];
@@ -834,7 +916,7 @@ const REVIEW_SYSTEM = `あなたは学習アプリ「Studiquo」の復習教材�
 
 const REVIEW_SCHEMA = structuredOutputJSONSchema("review");
 
-async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
@@ -896,7 +978,7 @@ export function subscriptionRequiredResponse(plan: string, url: URL, request: Re
   return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
 }
 
-export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session?: any, plan?: string) {
+export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session?: Pick<SessionRecord, "sub"> | null, plan?: string) {
   const effectivePlan = plan ?? "standard";
   // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
   if (url.pathname === "/api/ai/usage" && request.method === "GET") {
@@ -922,6 +1004,7 @@ export async function handleAI(url: URL, request: Request, env: Env, key: string
     // Without this, a missing OPENAI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
     console.error(JSON.stringify({ message: "AI request failed", error: error instanceof Error ? error.message : String(error) }));
+    alertInBackground(env, ctx);
     return json({ error: "AI request failed." }, 500);
   }
 }

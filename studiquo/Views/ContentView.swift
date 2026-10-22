@@ -2741,6 +2741,20 @@ struct ContentView: View {
     }
 
     var body: some View {
+        bodyWithLifecycle(
+            bodyWithNotificationRouting(
+                bodyWithOnReceive(
+                    bodyWithSheets(
+                        bodyWithImportHosts(
+                            bodyWithAlerts(bodyRoot)
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    private var bodyRoot: some View {
         Group {
             if homeSection == .friends {
                 // FriendsHomeView owns its NavigationSplitView. An outer
@@ -2756,6 +2770,10 @@ struct ContentView: View {
                 LibraryViewSection { AnyView(librarySplitView) }
             }
         }
+    }
+
+    private func bodyWithAlerts(_ content: some View) -> some View {
+        content
         .sheet(isPresented: $isShowingNewNotebookAlert) {
             NewNotebookSheet(
                 name: $newNotebookName,
@@ -2855,6 +2873,10 @@ struct ContentView: View {
             onCreateFolder: createFolderForSharedImport,
             onImport: runSharedImport
         ))
+    }
+
+    private func bodyWithImportHosts(_ content: some View) -> some View {
+        content
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
@@ -2927,6 +2949,172 @@ struct ContentView: View {
             pdfUnlockedResult: $pdfUnlockedResult,
             pdfPasswordError: $pdfPasswordError
         ))
+    }
+
+    private var mcpCloudSettingsSheet: some View {
+    NavigationStack {
+        Form {
+            Section("Cloudflare MCP") {
+                LabeledContent("サーバーURL") {
+                    HStack {
+                        TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            // A released build always uses the production Worker.
+                            .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
+                            .onAppear {
+                                if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
+                            }
+                        Button {
+                            let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                            UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
+                                ? endpoint
+                                : "\(endpoint)/mcp"
+                            mcpCloudStatus = L("MCP URLをコピーしました。")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("MCP URLをコピー")
+                        .disabled(mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+
+                LabeledContent("接続トークン") {
+                    HStack {
+                        Group {
+                            if isMCPCloudTokenVisible {
+                                TextField("接続トークン", text: $mcpCloudToken)
+                            } else {
+                                SecureField("接続トークン", text: $mcpCloudToken)
+                            }
+                        }
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                        Button {
+                            isMCPCloudTokenVisible.toggle()
+                        } label: {
+                            Image(systemName: isMCPCloudTokenVisible ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
+
+                        Button {
+                            // This device only, and gone after a minute.
+                            SecretPasteboard.copy(mcpCloudToken)
+                            mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("接続トークンをコピー")
+                        .disabled(mcpCloudToken.count < 32)
+                    }
+                }
+                // A revealed token must not show in the app switcher.
+                .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
+                Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
+                    mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
+                }
+            }
+            Section {
+                Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
+                    Task { await syncMCPCloud() }
+                }
+                Button("受信した資料を確認", systemImage: "tray.and.arrow.down") {
+                    Task { await pullMCPInbox() }
+                }
+                .disabled(isMCPCloudSyncing || mcpCloudEndpoint.isEmpty || mcpCloudToken.count < 32)
+                if isMCPCloudSyncing { ProgressView() }
+                if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
+            } footer: {
+                Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
+            }
+            Section {
+                Picker("接続するAIアプリ", selection: $mcpPairKind) {
+                    ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
+                }
+                Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if context.date < expiresAt {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(issued.groupedCode)
+                                    .font(.system(.title, design: .monospaced).weight(.semibold))
+                                    .textSelection(.enabled)
+                                Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                Button("コードをコピー", systemImage: "doc.on.doc") {
+                                    UIPasteboard.general.string = issued.code
+                                }
+                            }
+                        } else {
+                            Text("コードの期限が切れました。必要なら発行し直してください。").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("AIアプリを接続する")
+            } footer: {
+                Text("発行したコードは、接続したいAIアプリの画面にご自身で入力してください。他の人から頼まれても、コードを教えたり入力したりしないでください。コードは5分間、1回だけ使えます。")
+            }
+            Section("接続済みのアプリ") {
+                if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
+                ForEach(mcpConnections) { connection in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(connection.clientName)
+                            if let kind = connection.kind {
+                                Text(kind.displayName).font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("解除", role: .destructive) {
+                            Task { await disconnectMCP(connection) }
+                        }
+                    }
+                }
+            }
+            Section("受信した資料") {
+                if mcpInboxCount > 0 { Text("受信待ち：\(mcpInboxCount)件") }
+                if !mcpInboxError.isEmpty { Text(mcpInboxError).foregroundStyle(.red) }
+                if mcpImportReceipts.isEmpty { Text("まだありません").foregroundStyle(.secondary) }
+                ForEach(mcpImportReceipts.prefix(30)) { item in
+                    Button { openMCPImport(item) } label: {
+                        VStack(alignment: .leading) {
+                            Text(item.title)
+                            Text(item.source).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+            .themeScreenBackground()
+        .navigationTitle("MCPクラウド連携")
+        .task {
+            // The token may have been exchanged for a newer one (or the
+            // screen built while the Keychain was unreadable) since this
+            // state was created; show what is actually stored.
+            if let stored = MCPCloudCredentials.currentToken(), stored.count >= 32 { mcpCloudToken = stored }
+            await loadMCPConnections()
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("完了") {
+                    if mcpCloudToken.count >= 32 { MCPCloudCredentials.save(mcpCloudToken) }
+                    showsMCPCloudSettings = false
+                }
+            }
+        }
+    }
+    }
+
+    private func bodyWithSheets(_ content: some View) -> some View {
+        content
         .sheet(isPresented: $showsAutomaticBackups) {
             AutomaticBackupRestoreView { url in
                 if let notebook = NotebookBackupService.restore(from: url) {
@@ -2937,165 +3125,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showsMCPCloudSettings) {
-            NavigationStack {
-                Form {
-                    Section("Cloudflare MCP") {
-                        LabeledContent("サーバーURL") {
-                            HStack {
-                                TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
-                                    .multilineTextAlignment(.trailing)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    // A released build always uses the production Worker.
-                                    .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
-                                    .onAppear {
-                                        if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
-                                    }
-                                Button {
-                                    let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
-                                        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                                    UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
-                                        ? endpoint
-                                        : "\(endpoint)/mcp"
-                                    mcpCloudStatus = L("MCP URLをコピーしました。")
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("MCP URLをコピー")
-                                .disabled(mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }
-                        }
-
-                        LabeledContent("接続トークン") {
-                            HStack {
-                                Group {
-                                    if isMCPCloudTokenVisible {
-                                        TextField("接続トークン", text: $mcpCloudToken)
-                                    } else {
-                                        SecureField("接続トークン", text: $mcpCloudToken)
-                                    }
-                                }
-                                .multilineTextAlignment(.trailing)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-
-                                Button {
-                                    isMCPCloudTokenVisible.toggle()
-                                } label: {
-                                    Image(systemName: isMCPCloudTokenVisible ? "eye.slash" : "eye")
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
-
-                                Button {
-                                    // This device only, and gone after a minute.
-                                    SecretPasteboard.copy(mcpCloudToken)
-                                    mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("接続トークンをコピー")
-                                .disabled(mcpCloudToken.count < 32)
-                            }
-                        }
-                        // A revealed token must not show in the app switcher.
-                        .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
-                        Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
-                            mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
-                        }
-                    }
-                    Section {
-                        Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
-                            Task { await syncMCPCloud() }
-                        }
-                        Button("受信した資料を確認", systemImage: "tray.and.arrow.down") {
-                            Task { await pullMCPInbox() }
-                        }
-                        .disabled(isMCPCloudSyncing || mcpCloudEndpoint.isEmpty || mcpCloudToken.count < 32)
-                        if isMCPCloudSyncing { ProgressView() }
-                        if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
-                    } footer: {
-                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
-                    }
-                    Section {
-                        Picker("接続するAIアプリ", selection: $mcpPairKind) {
-                            ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
-                        }
-                        Button("コードを発行") { Task { await issueMCPPairingCode() } }
-                        if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
-                            TimelineView(.periodic(from: .now, by: 1)) { context in
-                                if context.date < expiresAt {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(issued.groupedCode)
-                                            .font(.system(.title, design: .monospaced).weight(.semibold))
-                                            .textSelection(.enabled)
-                                        Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
-                                            .font(.footnote).foregroundStyle(.secondary)
-                                        Button("コードをコピー", systemImage: "doc.on.doc") {
-                                            UIPasteboard.general.string = issued.code
-                                        }
-                                    }
-                                } else {
-                                    Text("コードの期限が切れました。必要なら発行し直してください。").foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    } header: {
-                        Text("AIアプリを接続する")
-                    } footer: {
-                        Text("発行したコードは、接続したいAIアプリの画面にご自身で入力してください。他の人から頼まれても、コードを教えたり入力したりしないでください。コードは5分間、1回だけ使えます。")
-                    }
-                    Section("接続済みのアプリ") {
-                        if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
-                        ForEach(mcpConnections) { connection in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(connection.clientName)
-                                    if let kind = connection.kind {
-                                        Text(kind.displayName).font(.footnote).foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer()
-                                Button("解除", role: .destructive) {
-                                    Task { await disconnectMCP(connection) }
-                                }
-                            }
-                        }
-                    }
-                    Section("受信した資料") {
-                        if mcpInboxCount > 0 { Text("受信待ち：\(mcpInboxCount)件") }
-                        if !mcpInboxError.isEmpty { Text(mcpInboxError).foregroundStyle(.red) }
-                        if mcpImportReceipts.isEmpty { Text("まだありません").foregroundStyle(.secondary) }
-                        ForEach(mcpImportReceipts.prefix(30)) { item in
-                            Button { openMCPImport(item) } label: {
-                                VStack(alignment: .leading) {
-                                    Text(item.title)
-                                    Text(item.source).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                    .themeScreenBackground()
-                .navigationTitle("MCPクラウド連携")
-                .task {
-                    // The token may have been exchanged for a newer one (or the
-                    // screen built while the Keychain was unreadable) since this
-                    // state was created; show what is actually stored.
-                    if let stored = MCPCloudCredentials.currentToken(), stored.count >= 32 { mcpCloudToken = stored }
-                    await loadMCPConnections()
-                }
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完了") {
-                            if mcpCloudToken.count >= 32 { MCPCloudCredentials.save(mcpCloudToken) }
-                            showsMCPCloudSettings = false
-                        }
-                    }
-                }
-            }
+            mcpCloudSettingsSheet
         }
         .sheet(item: $studyNotebook) { notebook in
             StudySessionView(notebook: notebook)
@@ -3150,6 +3180,10 @@ struct ContentView: View {
                 }
             )
         }
+    }
+
+    private func bodyWithOnReceive(_ content: some View) -> some View {
+        content
         .onChange(of: libraryMode) { _, _ in
             if selectedFolder == nil { selectedNotebook = nil }
             searchText = ""
@@ -3181,6 +3215,10 @@ struct ContentView: View {
         }
         .task { await RAGDeletionQueue.flush() }
         .modifier(RAGLibrarySyncModifier())
+    }
+
+    private func bodyWithNotificationRouting(_ content: some View) -> some View {
+        content
         .modifier(AppNotificationRoutingModifier(route: routeNotification))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenAIChatTab)) { notification in
             guard let tab = notification.object as? AIChatTabInfo else { return }
@@ -3237,6 +3275,10 @@ struct ContentView: View {
             Task { await StudyStreakNotifications.reschedule(activities: studyActivities) }
         }
         .modifier(AIReviewIntegration(count: aiReviewItems.count, presentedItem: $presentedAIReviewItem, onCountChange: refreshStudyNotifications))
+    }
+
+    private func bodyWithLifecycle(_ content: some View) -> some View {
+        content
         .modifier(AIDataDisclosureGate())
         .task {
             await rebuildLibraryMetadataIfNeeded()
@@ -3318,6 +3360,7 @@ struct ContentView: View {
             homeSection = .friends
         }
     }
+
 
     /// The AI chat as a full-screen home destination. It shows the same
     /// store as the note editor's AIトーク tool, so a conversation started in

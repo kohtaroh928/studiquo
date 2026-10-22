@@ -3,9 +3,10 @@
 // Response.json(). The source itself is checked, strictly, by tsconfig.json.
 {
   "extends": "./tsconfig.json",
-  // The tests are written loosely (no parameter types, fake Envs), so the strict
-  // mode that tsconfig.json turns on for src is off here.
+  // main types the tests strictly (`Untyped`, src/test-env.ts). The RAG tests of claude/rag-ts are still
+  // written loosely (no parameter types), so strict is off here until they are typed (tracked in Notion).
+  // src itself stays strict through tsconfig.json.
   "compilerOptions": { "strict": false },
-  "include": ["src/**/*", "scripts/**/*", "tools/**/*", "test-types/*.d.ts"],
+  "include": ["src/**/*", "test-types/*.d.ts"],
   "exclude": []
 }

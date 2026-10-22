@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
@@ -12,7 +15,7 @@ import { touchSeenContext } from "./login-monitor.ts";
 import { argon2QueueState, engine } from "./local-auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
 // once a token is revoked, it must be rejected everywhere it used to work,
@@ -23,7 +26,7 @@ import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-en
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -32,15 +35,15 @@ function fakeCloudflareLimiter(limit = 5) {
 }
 
 // Mirrors RateCounter.bump's contract: true while under `limit`, false once spent.
-function fakeRateCounterBinding(getData) {
+function fakeRateCounterBinding(getData: Untyped) {
   const counts = new Map();
   const generations = new Map();
   const logins = new Map();
   const seen = new Map();
   return {
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async bump(limit) {
+        async bump(limit: number) {
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
           counts.set(name, used);
@@ -49,14 +52,14 @@ function fakeRateCounterBinding(getData) {
         // Same pure transitions the real RateCounter applies; these methods
         // contain no await between read and write, so like the real object
         // each call is atomic with respect to the others.
-        async loginReserve(policy, options) {
+        async loginReserve(policy: Untyped, options: { enforce?: boolean | undefined; } | undefined) {
           const result = reserveAttempt(logins.get(name), Date.now(), policy, options);
           if (result.waitSeconds === 0) logins.set(name, result.state);
           return { waitSeconds: result.waitSeconds, trusted: result.trusted };
         },
-        async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        async loginRefund(policy: Untyped) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
         ...accountGenerationMethods(name, generations, getData),
-        async seenContext(key, { maxEntries, ttlSeconds }) {
+        async seenContext(key: string, { maxEntries, ttlSeconds }: { maxEntries?: Untyped; ttlSeconds?: Untyped }) {
           const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
           seen.set(name, result.state);
           return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -73,7 +76,7 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
   const env = partialEnv({
     _ttls: ttls,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         let value = values.get(key) ?? null;
         // These tests aren't exercising session-authenticity enforcement
         // itself (see "requireRealSession" tests below, which pass
@@ -85,9 +88,9 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix }) {
+      async put(key: string, value: string, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: unknown }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -110,12 +113,12 @@ const noopCtx = partialCtx({ waitUntil() {} });
 
 // Tokens are "<issued-at epoch seconds>.<random secret>"; freshToken() mints
 // one that was "just issued" so tests aren't tripped up by the expiry check.
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body, ip }: { method?: string; token?: any; body?: any; ip?: any } = {}) {
-  const headers: Record<string, any> = {};
+function request(path: string, { method = "GET", token, body, ip }: { method?: string; token?: string; body?: unknown; ip?: string } = {}) {
+  const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   if (ip) headers["cf-connecting-ip"] = ip;
@@ -126,7 +129,7 @@ function request(path, { method = "GET", token, body, ip }: { method?: string; t
   });
 }
 
-function sha256Hex(value) {
+function sha256Hex(value: string | NodeJS.ArrayBufferView<ArrayBufferLike>) {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -141,11 +144,11 @@ async function makeAppleSigningKey() {
   return { privateKey, jwk };
 }
 
-async function seedAppleJWKS(env, jwk) {
+async function seedAppleJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: any; email?: any; isPrivateEmail?: any; emailVerified?: any; nonce?: any } = {}) {
+function signAppleIdentityToken(privateKey: Untyped, kid: string | undefined, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: string; email?: string; isPrivateEmail?: boolean; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -171,11 +174,11 @@ async function makeGoogleSigningKey() {
   return { privateKey, jwk };
 }
 
-async function seedGoogleJWKS(env, jwk) {
+async function seedGoogleJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, nonce }: { sub?: any; email?: any; emailVerified?: any; nonce?: any } = {}) {
+function signGoogleIdentityToken(privateKey: Untyped, kid: string | undefined, { sub, email, emailVerified, nonce }: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -190,7 +193,7 @@ function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, n
     .sign(privateKey);
 }
 
-async function revokeToken(env, token) {
+async function revokeToken(env: LooseEnv, token: string) {
   const response = await worker.fetch(request("/api/session/revoke", { method: "POST", token }), env, noopCtx);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
@@ -270,7 +273,7 @@ test("DELETE /api/account removes every linked login identity and invalidates al
   }), env, noopCtx);
   assert.equal(recreated.status, 200);
   const recreatedToken = (await recreated.json()).token;
-  assert.equal((await realSession(env, recreatedToken)).sub, "google:delete-sub");
+  assert.equal((await realSession(env, recreatedToken))!.sub, "google:delete-sub");
   assert.deepEqual(await env.STUDIQUO_DATA.get("email-accounts:delete@example.com", "json"), [
     { provider: "google", sub: "delete-sub" },
   ]);
@@ -285,6 +288,37 @@ test("7. confirmationが未指定またはDELETE以外なら何も削除され�
   }), env, noopCtx);
   assert.equal(response.status, 400);
   assert.notEqual(await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`), null);
+});
+
+test("退会に直近のサインインを求める: 設定が有効なとき、古いログインの端末は403、新しいサインインなら通る", async () => {
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  const attempt = async (flag: string | undefined, session: Record<string, unknown>, label: string) => {
+    const env = environment({ strictSessions: true });
+    if (flag) env.REQUIRE_RECENT_LOGIN_FOR_DELETION = flag;
+    const token = freshToken(label);
+    await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify(session));
+    // A wrong confirmation: if the request gets past the sign-in check it stops at 400, and nothing is deleted.
+    return worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "wrong" } }), env, noopCtx);
+  };
+
+  // Setting off: nothing changes for anyone (older apps keep working).
+  assert.equal((await attempt(undefined, { sub: "a", issuedAtMs: hourAgo, originIssuedAtMs: hourAgo }, "of")).status, 400);
+
+  // Setting on: a login from an hour ago is refused, with a code the app can act on.
+  const old = await attempt("true", { sub: "a", issuedAtMs: hourAgo, originIssuedAtMs: hourAgo }, "ol");
+  assert.equal(old.status, 403);
+  assert.equal((await old.json()).code, "recent_login_required");
+
+  // A token refreshed a minute ago still belongs to the old login.
+  const refreshed = await attempt("true", { sub: "a", issuedAtMs: Date.now() - 60_000, originIssuedAtMs: hourAgo }, "rf");
+  assert.equal(refreshed.status, 403);
+
+  // A session with no timestamps at all cannot show it is recent.
+  assert.equal((await attempt("true", { sub: "a" }, "nt")).status, 403);
+
+  // A sign-in from a minute ago passes the check.
+  const recent = Date.now() - 60_000;
+  assert.equal((await attempt("true", { sub: "a", issuedAtMs: recent, originIssuedAtMs: recent }, "rc")).status, 400);
 });
 
 test("8. 未認証・期限切れ・失効済みセッションではアカウントを削除できない", async () => {
@@ -532,7 +566,7 @@ test("POST /api/auth/apple: a different client IP is not affected by another IP'
   const env = environment();
   const { jwk } = await makeAppleSigningKey();
   await seedAppleJWKS(env, jwk);
-  const attempt = ip => worker.fetch(
+  const attempt = (ip: Untyped) => worker.fetch(
     request("/api/auth/apple", { method: "POST", ip, body: { identityToken: "garbage", randomValue: "e".repeat(40) } }),
     env,
     noopCtx
@@ -653,9 +687,9 @@ test("Apple and Google sign-ins with the same verified email authenticate as one
     { provider: "apple", sub: "000123.apple-sub.4567" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
-  assert.equal((await realSession(env, appleSessionToken)).sub, "000123.apple-sub.4567");
+  assert.equal((await realSession(env, appleSessionToken))!.sub, "000123.apple-sub.4567");
   assert.equal(
-    (await realSession(env, googleSessionToken)).sub,
+    (await realSession(env, googleSessionToken))!.sub,
     "000123.apple-sub.4567",
     "same verified email must authenticate both providers as one account"
   );
@@ -690,14 +724,14 @@ test("an Apple sign-in whose token omits email_verified does not create a link",
 // MARK: - Local email/password verification
 
 function stubResendCapturingCode() {
-  let capturedCode = null;
+  let capturedCode: string | null = null;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
-    const match = /確認コード: (\d{6})/.exec(JSON.parse(init.body).text);
-    capturedCode = match[1];
+    const match = /確認コード: (\d{6})/.exec(JSON.parse(init!.body! as string).text);
+    capturedCode = match![1];
     return new Response("{}", { status: 200 });
   };
-  return { restore: () => { globalThis.fetch = originalFetch; }, code: () => capturedCode };
+  return { restore: () => { globalThis.fetch = originalFetch; }, code: () => capturedCode as string };
 }
 
 test("POST /api/auth/email/send-code then /confirm-code links the email under provider \"email\"", async () => {
@@ -796,7 +830,7 @@ test("POST /api/auth/email/send-code: per-email limit holds across different IPs
   const env = environment();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response("{}", { status: 200 });
-  const attempt = (ip, email = "person@example.com") => worker.fetch(
+  const attempt = (ip: string, email = "person@example.com") => worker.fetch(
     request("/api/auth/email/send-code", { method: "POST", ip, body: { email } }),
     env,
     noopCtx
@@ -825,7 +859,7 @@ test("POST /api/auth/email/confirm-code: per-email attempts persist across resen
     env,
     noopCtx
   );
-  const confirm = (ip, code) => worker.fetch(
+  const confirm = (ip: string, code: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       ip,
@@ -860,12 +894,12 @@ test("email-code budgets: send and confirm are counted separately, per address, 
   // Each call comes from its own IP so only the per-email budget is in play.
   let ipCounter = 0;
   const nextIp = () => `203.0.113.${++ipCounter}`;
-  const send = (email) => worker.fetch(
+  const send = (email: string) => worker.fetch(
     request("/api/auth/email/send-code", { method: "POST", ip: nextIp(), body: { email } }),
     env,
     noopCtx
   );
-  const confirm = (email, code) => worker.fetch(
+  const confirm = (email: string, code: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       ip: nextIp(),
@@ -891,11 +925,37 @@ test("email-code budgets: send and confirm are counted separately, per address, 
   }
 });
 
+test("POST /api/auth/email/confirm-code: a password under 12 characters is refused and the emailed code stays usable", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  const confirm = (password: string) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  const refused = await confirm("elevenchars");
+  assert.equal(refused.status, 400);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.code, "password_too_short");
+  assert.equal(refusedBody.minLength, 12);
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), null);
+
+  // The code wasn't spent: exactly 12 characters with the same code works.
+  const accepted = await confirm("twelve-chars");
+  assert.equal(accepted.status, 200);
+});
+
 test("POST /api/auth/email/confirm-code: a breached password is refused and the emailed code stays usable", async () => {
   const env = environment();
   // SHA-1("breached-password-1") is looked up by prefix; answer as if its suffix were in the corpus.
-  const hibpCalls = [];
-  env.PWNED_PASSWORDS_FETCH = async (url) => {
+  const hibpCalls: string[] = [];
+  env.PWNED_PASSWORDS_FETCH = async (url: string) => {
     hibpCalls.push(url);
     const digest = createHash("sha1").update("breached-password-1").digest("hex").toUpperCase();
     return new Response(url.endsWith(digest.slice(0, 5)) ? `${digest.slice(5)}:42\r\n` : "", { status: 200 });
@@ -903,7 +963,7 @@ test("POST /api/auth/email/confirm-code: a breached password is refused and the 
   const stub = stubResendCapturingCode();
   await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
   stub.restore();
-  const confirm = (password) => worker.fetch(
+  const confirm = (password: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
@@ -985,13 +1045,13 @@ test("local and Google sign-ins with the same verified email authenticate as one
     { provider: "email", sub: "person@example.com" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
-  assert.equal((await realSession(env, localSessionToken)).sub, "email:person@example.com");
-  assert.equal((await realSession(env, googleSessionToken)).sub, "email:person@example.com");
+  assert.equal((await realSession(env, localSessionToken))!.sub, "email:person@example.com");
+  assert.equal((await realSession(env, googleSessionToken))!.sub, "email:person@example.com");
 });
 
 // MARK: - Local email/password login
 
-async function createLocalAccount(env, email, password) {
+async function createLocalAccount(env: LooseEnv, email: string, password: string) {
   const stub = stubResendCapturingCode();
   await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email } }), env, noopCtx);
   stub.restore();
@@ -1007,7 +1067,7 @@ async function createLocalAccount(env, email, password) {
   return response.json();
 }
 
-async function signInAppleForTest(env, privateKey, kid, claims, randomValue = "a".repeat(40)) {
+async function signInAppleForTest(env: LooseEnv, privateKey: { type: string; }, kid: string | undefined, claims: { sub: string; email?: string; isPrivateEmail?: boolean; emailVerified?: boolean; nonce?: string; }, randomValue = "a".repeat(40)) {
   const identityToken = await signAppleIdentityToken(privateKey, kid, claims);
   const response = await worker.fetch(
     request("/api/auth/apple", { method: "POST", body: { identityToken, randomValue } }), env, noopCtx
@@ -1016,7 +1076,7 @@ async function signInAppleForTest(env, privateKey, kid, claims, randomValue = "a
   return response.json();
 }
 
-async function signInGoogleForTest(env, privateKey, kid, claims, randomValue = "g".repeat(40)) {
+async function signInGoogleForTest(env: LooseEnv, privateKey: { type: string; }, kid: string | undefined, claims: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string; } | undefined, randomValue = "g".repeat(40)) {
   const idToken = await signGoogleIdentityToken(privateKey, kid, claims);
   const response = await worker.fetch(
     request("/api/auth/google", { method: "POST", body: { idToken, randomValue } }), env, noopCtx
@@ -1025,7 +1085,7 @@ async function signInGoogleForTest(env, privateKey, kid, claims, randomValue = "
   return response.json();
 }
 
-async function localLoginForTest(env, email, password, randomValue = "l".repeat(40)) {
+async function localLoginForTest(env: LooseEnv, email: string, password: string, randomValue = "l".repeat(40)) {
   const response = await worker.fetch(
     request("/api/auth/local/login", { method: "POST", body: { email, password, randomValue } }), env, noopCtx
   );
@@ -1050,7 +1110,7 @@ test("Google remains the canonical account when Apple and local sign-ins are add
   const localLogin = await localLoginForTest(env, "person@example.com", "correct-horse-battery");
 
   for (const login of [googleLogin, appleLogin, localLogin]) {
-    assert.equal((await realSession(env, login.token)).sub, "google:google-first");
+    assert.equal((await realSession(env, login.token))!.sub, "google:google-first");
   }
 });
 
@@ -1070,7 +1130,7 @@ test("Apple, Google, and local sign-ins with one verified email share one accoun
   const localLogin = await createLocalAccount(env, "all@example.com", "correct-horse-battery");
 
   const subjects = await Promise.all([appleLogin, googleLogin, localLogin].map(async login =>
-    (await realSession(env, login.token)).sub
+    (await realSession(env, login.token))!.sub
   ));
   assert.deepEqual(subjects, ["apple-owner", "apple-owner", "apple-owner"]);
 });
@@ -1089,8 +1149,8 @@ test("different verified emails are not merged", async () => {
     sub: "google-distinct", email: "google@example.com", emailVerified: true,
   });
 
-  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-distinct");
-  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-distinct");
+  assert.equal((await realSession(env, appleLogin.token))!.sub, "apple-distinct");
+  assert.equal((await realSession(env, googleLogin.token))!.sub, "google:google-distinct");
 });
 
 test("Apple private relay email is not merged with Google or local accounts", async () => {
@@ -1108,9 +1168,9 @@ test("Apple private relay email is not merged with Google or local accounts", as
   });
   const localLogin = await createLocalAccount(env, "person@example.com", "correct-horse-battery");
 
-  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-relay");
-  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-real");
-  assert.equal((await realSession(env, localLogin.token)).sub, "google:google-real");
+  assert.equal((await realSession(env, appleLogin.token))!.sub, "apple-relay");
+  assert.equal((await realSession(env, googleLogin.token))!.sub, "google:google-real");
+  assert.equal((await realSession(env, localLogin.token))!.sub, "google:google-real");
   assert.equal(await env.STUDIQUO_DATA.get("email-accounts:relay@privaterelay.appleid.com"), null);
 });
 
@@ -1131,7 +1191,7 @@ test("a later Apple login without email restores the shared account from the sav
     sub: "apple-repeat",
   }, "z".repeat(40));
 
-  assert.equal((await realSession(env, repeated.token)).sub, "google:google-owner");
+  assert.equal((await realSession(env, repeated.token))!.sub, "google:google-owner");
 });
 
 test("POST /api/auth/local/login: the correct password mints a working token", async () => {
@@ -1243,11 +1303,11 @@ test("POST /api/auth/local/login: allows up to the limit, then 429s", async () =
 // the throttle under test ever runs; lift it so only the throttle is in play.
 function throttleEnvironment() {
   const env = environment();
-  (env.RATE_LIMIT_LOCAL_LOGIN as any) = fakeCloudflareLimiter(10_000);
+  env.RATE_LIMIT_LOCAL_LOGIN = fakeCloudflareLimiter(10_000);
   return env;
 }
 
-function loginAttempt(env, { email = "person@example.com", password = "wrong-password", ip, asn }: { email?: string; password?: string; ip?: any; asn?: any } = {}) {
+function loginAttempt(env: LooseEnv, { email = "person@example.com", password = "wrong-password", ip, asn }: { email?: string; password?: string; ip?: string; asn?: number } = {}) {
   const req = request("/api/auth/local/login", {
     method: "POST",
     ip,
@@ -1400,11 +1460,11 @@ test("local login: an over-long email is refused without creating throttle state
 // A ctx that remembers what was handed to waitUntil, so a test can wait for
 // the background monitoring to finish before asserting on it.
 function collectingCtx() {
-  const pending = [];
-  return { waitUntil(promise) { pending.push(promise); }, flush: () => Promise.all(pending) };
+  const pending: any[] = [];
+  return { waitUntil(promise: string) { pending.push(promise); }, flush: () => Promise.all(pending) };
 }
 
-function geoRequest(path, { cf, ip, body }) {
+function geoRequest(path: string, { cf, ip, body }: { cf?: unknown; ip?: Untyped; body?: unknown }) {
   const req = request(path, { method: "POST", ip, body });
   return Object.defineProperty(req, "cf", { value: cf });
 }
@@ -1416,14 +1476,14 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
 
   const originalFetch = globalThis.fetch;
   const originalLog = console.log;
-  const mails = [];
-  const logs = [];
+  const mails: any[] = [];
+  const logs: string[] = [];
   globalThis.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
+    const body = JSON.parse(init!.body! as string);
     if (body.text?.includes("確認コード")) mails.push({ kind: "code", body });
     else if (body.subject?.includes("新しい環境")) mails.push({ kind: "notice", body });
     const match = /確認コード: (\d{6})/.exec(body.text ?? "");
-    globalThis.__code = match ? match[1] : globalThis.__code;
+    (globalThis as { __code?: string }).__code = match ? match[1] : (globalThis as { __code?: string }).__code;
     return new Response("{}", { status: 200 });
   };
   console.log = line => logs.push(String(line));
@@ -1433,11 +1493,11 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
     await worker.fetch(geoRequest("/api/auth/email/send-code", { cf: home, ip: "203.0.113.70", body: { email: "person@example.com" } }), env, partialCtx(ctx));
     await worker.fetch(geoRequest("/api/auth/email/confirm-code", {
       cf: home, ip: "203.0.113.70",
-      body: { email: "person@example.com", code: globalThis.__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+      body: { email: "person@example.com", code: (globalThis as { __code?: string }).__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
     }), env, partialCtx(ctx));
     await ctx.flush();
 
-    const login = async (cf, ip) => {
+    const login = async (cf: { country: string; asn: number; region: string; asOrganization: string; }, ip: string) => {
       const c = collectingCtx();
       const response = await worker.fetch(geoRequest("/api/auth/local/login", {
         cf, ip, body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) },
@@ -1464,7 +1524,7 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
-    delete globalThis.__code;
+    delete (globalThis as { __code?: string }).__code;
   }
 });
 
@@ -1476,12 +1536,12 @@ test("local login: failures and throttled tries are logged as outcomes, and a br
   const originalFetch = globalThis.fetch;
   const originalLog = console.log;
   const originalError = console.error;
-  const logs = [];
+  const logs: string[] = [];
   globalThis.fetch = async () => new Response("no", { status: 500 });
   console.log = line => logs.push(String(line));
   console.error = () => {};
   try {
-    const attempt = async (password, ip) => {
+    const attempt = async (password: string, ip: string) => {
       const c = collectingCtx();
       const response = await worker.fetch(geoRequest("/api/auth/local/login", {
         cf, ip, body: { email: "person@example.com", password, randomValue: "l".repeat(40) },
@@ -1534,10 +1594,10 @@ test("local login: with the hashing queue full the attempt gets a 503 and Retry-
       assert.match((await refused.json()).error, /busy/i);
     }
 
-    open();
+    open!();
     for (const response of await Promise.all(fillers)) assert.equal(response.status, 401, "everyone already queued is still served");
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1569,16 +1629,16 @@ test("local login: if handing the refused attempt back fails, the answer is stil
     // The attempt is reserved first and then refused for the full queue; make
     // the call that hands the reservation back fail.
     const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    (env.RATE_COUNTER as any).getByName = name => {
+    env.RATE_COUNTER.getByName = (name: unknown) => {
       const stub = realGetByName(name);
       return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
     };
     const refused = await loginAttempt(env, { ip: "203.0.113.80", password: "correct-horse-battery" });
     assert.equal(refused.status, 503);
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
     console.error = originalError;
@@ -1617,11 +1677,11 @@ test("local login: with the hashing queue full, a known client still gets in whi
     assert.equal(argon2QueueState().waiting, 33, "queued in the reserved part, behind the others");
     assert.equal(settled, false);
 
-    open();
+    open!();
     assert.equal((await known).status, 200);
     for (const response of await Promise.all(fillers)) assert.equal(response.status, 401);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1629,7 +1689,7 @@ test("local login: with the hashing queue full, a known client still gets in whi
 
 // Fills the hashing queue (2 running, 32 waiting) with sign-ins for made-up
 // addresses, runs `during` with it full, then lets everything finish.
-async function withFullHashingQueue(env, ipPrefix, during) {
+async function withFullHashingQueue(env: LooseEnv, ipPrefix: string, during: Untyped) {
   const original = engine.argon2idAsync;
   let open;
   const gate = new Promise(resolve => { open = resolve; });
@@ -1645,10 +1705,10 @@ async function withFullHashingQueue(env, ipPrefix, during) {
     }
     assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
     await during(open);
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1659,7 +1719,7 @@ test("local login: a known client's wrong password in a full queue is still a co
   await createLocalAccount(env, "person@example.com", "correct-horse-battery");
   assert.equal((await loginAttempt(env, { ip: "203.0.113.92", password: "correct-horse-battery" })).status, 200);
 
-  await withFullHashingQueue(env, "10.6.0", async (open) => {
+  await withFullHashingQueue(env, "10.6.0", async (open: () => void) => {
     const wrong = loginAttempt(env, { ip: "203.0.113.92", password: "wrong-password" });
     for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
     open();
@@ -1681,7 +1741,7 @@ test("local login: when even the reserved places are taken, a known client is tu
     assert.equal((await loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" })).status, 200);
   }
 
-  await withFullHashingQueue(env, "10.7.0", async (open) => {
+  await withFullHashingQueue(env, "10.7.0", async (open: () => void) => {
     // They come back together and take the whole reserve.
     const reserve = Array.from({ length: 16 }, (_, i) => loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" }));
     for (let i = 0; i < 600 && argon2QueueState().waiting < 48; i++) await new Promise(resolve => setTimeout(resolve, 10));
@@ -1734,10 +1794,10 @@ test("local login: a 503 for a busy queue is not offered as a way to learn wheth
     assert.equal(known.status, 503);
     assert.equal(unknown.status, 503);
     assert.deepEqual(await known.json(), await unknown.json());
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1779,7 +1839,7 @@ test("a token that /api/auth/local/login actually minted works even with strictS
   assert.equal(actions.status, 200);
 });
 
-function stubFetch(handler) {
+function stubFetch(handler: Untyped) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => handler(url, init);
   return () => { globalThis.fetch = originalFetch; };
@@ -1791,7 +1851,7 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
   const token = freshToken("p");
 
   let slackCall = null;
-  const restore = stubFetch(async (url, init) => {
+  const restore = stubFetch(async (url: string, init: { body: string; }) => {
     slackCall = { url, body: JSON.parse(init.body) };
     return new Response("ok", { status: 200 });
   });
@@ -1810,8 +1870,8 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
     assert.equal(parsed.reported, true);
     assert.match(parsed.id, /^[0-9a-f-]{36}$/);
 
-    assert.equal(slackCall.url, "https://hooks.slack.test/services/xyz");
-    const text = JSON.stringify(slackCall.body);
+    assert.equal(slackCall!.url, "https://hooks.slack.test/services/xyz");
+    const text = JSON.stringify(slackCall!.body);
     assert.doesNotMatch(text, /カレンダーが真っ白になる/);
     assert.match(text, new RegExp(parsed.id));
     assert.match(text, /1\.4\.0/);
@@ -1822,21 +1882,34 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
 
 // A real D1-shaped database built from the migrations, for routes that now log
 // to admin_audit_log before they act.
-function withAuditDB(env) {
+function withAuditDB(env: LooseEnv) {
   const db = new DatabaseSync(":memory:");
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  const statement = (sql, params = []) => ({
-    bind: (...next) => statement(sql, next),
+  const statement = (sql: string, params: Untyped[] = []) => ({
+    bind: (...next: unknown[]) => statement(sql, next),
     async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
   });
-  (env.ADMIN_DB as any) = { prepare: sql => statement(sql) };
+  env.ADMIN_DB = { prepare: (sql: Untyped) => statement(sql) };
   env._auditDB = db;
   return env;
 }
+
+test("a report screenshot that is not well-formed base64 is refused when filed", async () => {
+  const env = environment();
+  withAuditDB(env);
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST", token: freshToken("q2"),
+      body: { description: "壊れた画像", screenshot: { contentType: "image/png", data: "%%% not base64 %%%" } },
+    }),
+    env, noopCtx,
+  );
+  assert.equal(response.status, 400);
+});
 
 test("report screenshots require verified Access and are not sent to Slack", async () => {
   const env = environment();
@@ -1847,9 +1920,9 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 
   let sentImageURL = null;
-  const restore = stubFetch(async (_url, init) => {
+  const restore = stubFetch(async (_url: string, init: { body: string; }) => {
     const body = JSON.parse(init.body);
-    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    sentImageURL = body.blocks.find((block: Untyped) => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
   });
   let response;
@@ -1880,7 +1953,7 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
   const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
   assert.deepEqual(returnedBytes, pngBytes);
-  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map(row => ({ ...row })),
+  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map((row: Untyped) => ({ ...row })),
     [{ action: "issue_report.screenshot_view", target: id }]);
 });
 
@@ -1933,9 +2006,9 @@ test("a downloaded issue-report screenshot is cached only privately and only bri
   const token = freshToken("w9");
 
   let sentImageURL = null;
-  const restore = stubFetch(async (_url, init) => {
+  const restore = stubFetch(async (_url: string, init: { body: string; }) => {
     const body = JSON.parse(init.body);
-    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    sentImageURL = body.blocks.find((block: Untyped) => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
   });
   try {
@@ -2025,7 +2098,7 @@ test("POST /api/issue-reports allows up to the limit, then 429s", async () => {
       noopCtx
     );
   }
-  assert.equal(last.status, 429);
+  assert.equal(last!.status, 429);
 });
 
 test("POST /api/issue-reports with an expired token is rejected with 401", async () => {
@@ -2227,7 +2300,7 @@ test("POST /api/auth/email/confirm-code: resetting the password signs out the se
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const env = environment({ strictSessions: true });
-  const confirm = async (randomValue, password) => {
+  const confirm = async (randomValue: string, password: string) => {
     const stub = stubResendCapturingCode();
     const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "reset@example.com" } }), env, noopCtx);
     stub.restore();
@@ -2273,7 +2346,7 @@ test("POST /api/auth/email/confirm-code: adding a first password does not sign o
   const env = environment({ strictSessions: true });
   // An account that signs in another way already has a live session...
   const existing = await mintSession(env, "email:google-user@example.com", "g".repeat(40));
-  assert.ok(await realSession(env, existing));
+  assert.ok(await realSession(env, existing!));
   mock.timers.tick(5_000);
   // ...and then sets its first password through the e-mail code.
   const stub = stubResendCapturingCode();
@@ -2285,14 +2358,14 @@ test("POST /api/auth/email/confirm-code: adding a first password does not sign o
     noopCtx
   );
   assert.equal(response.status, 200);
-  assert.ok(await realSession(env, existing), "only a reset, not the first password, signs the other sessions out");
+  assert.ok(await realSession(env, existing!), "only a reset, not the first password, signs the other sessions out");
 });
 
 test("POST /api/auth/email/confirm-code: a reset also disconnects the account's connected apps", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const env = environment({ strictSessions: true });
-  const confirm = async (randomValue, password) => {
+  const confirm = async (randomValue: string, password: string) => {
     const stub = stubResendCapturingCode();
     await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "mcp-reset@example.com" } }), env, noopCtx);
     stub.restore();
@@ -2314,7 +2387,7 @@ test("POST /api/auth/email/confirm-code: a reset also disconnects the account's 
   assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "t".repeat(40) })), null);
 });
 
-async function resetPasswordWith(env, email, password, randomValue) {
+async function resetPasswordWith(env: LooseEnv, email: string, password: string, randomValue: string) {
   const stub = stubResendCapturingCode();
   const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email } }), env, noopCtx);
   stub.restore();
@@ -2337,12 +2410,12 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
 
   // The sign-out (the cut-off write) fails part-way through the reset.
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key.startsWith("session-valid-from:")) throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "failclosed@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503, "the person is told to try again");
   assert.equal(await env.STUDIQUO_DATA.get("account:local:failclosed@example.com"), stored,
@@ -2357,7 +2430,7 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
 // reset below stop at the passkey gate. These tests are about what a reset that
 // does go through removes (the gate itself is tested in passkey-policy.test.js),
 // so by default the record is dated a day ahead: not yet counted by the gate.
-async function seedPasskey(env, email, id, userKey, createdAt = Date.now() + 24 * 60 * 60 * 1000) {
+async function seedPasskey(env: LooseEnv, email: string, id: string, userKey: string, createdAt = Date.now() + 24 * 60 * 60 * 1000) {
   const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey, createdAt };
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
   const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
@@ -2383,7 +2456,7 @@ test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys,
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-passkey"), null);
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:device-b"), null, "a list left empty is deleted");
-  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map(item => item.id), ["shared-list-other"],
+  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map((item: Untyped) => item.id), ["shared-list-other"],
     "a list is cleaned, not wiped, when it also holds another person's passkey");
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:other-passkey"), null, "another address's passkey is untouched");
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:device-c"), null);
@@ -2417,7 +2490,7 @@ test("POST /api/auth/email/confirm-code: passkeys are found across every page of
   for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
 
   const realList = env.STUDIQUO_DATA.list;
-  (env.STUDIQUO_DATA as any).list = async ({ prefix, cursor }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) => {
     const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };
@@ -2440,7 +2513,7 @@ test("POST /api/auth/email/confirm-code: a passkey registered while the new pass
   // sessions' part of the second pass then fails.
   const realPut = env.STUDIQUO_DATA.put;
   let stored = false;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key === "account:local:pk-window@example.com" && !stored) {
       stored = true;
       await seedPasskey(env, "pk-window@example.com", "window-passkey", "attacker-device");
@@ -2449,7 +2522,7 @@ test("POST /api/auth/email/confirm-code: a passkey registered while the new pass
     return realPut(key, value, options);
   };
   const response = await resetPasswordWith(env, "pk-window@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(response.status, 200, "the password was stored, so the reset succeeds");
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:window-passkey"), null,
@@ -2466,7 +2539,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
   const realPut = env.STUDIQUO_DATA.put;
   let stored = false;
   let failures = 0;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (stored && key.startsWith("passkey-valid-from:") && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
     if (key === "account:local:pk-retry@example.com" && !stored) {
       await seedPasskey(env, "pk-retry@example.com", "retry-passkey", "attacker-device");
@@ -2475,7 +2548,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
     return realPut(key, value, options);
   };
   const response = await resetPasswordWith(env, "pk-retry@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(response.status, 200);
   assert.equal(failures, 2, "two attempts failed");
@@ -2500,12 +2573,12 @@ test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be remove
   mock.timers.tick(5_000);
 
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key.startsWith("passkey-valid-from:")) throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503, "the person is told to try again");
   assert.equal(await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com"), stored,
@@ -2549,9 +2622,9 @@ test("POST /api/auth/email/confirm-code: a sign-in made with the old password wh
 
   // Storing the new password is slow. In that gap the old password still
   // works, so a holder of it signs in: a session issued after the first cut-off.
-  let attacker = null;
+  let attacker: Untyped = null;
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key === "account:local:window@example.com" && !attacker) {
       mock.timers.tick(200);
       attacker = await mintSession(env, "email:window@example.com", "a".repeat(40));
@@ -2560,7 +2633,7 @@ test("POST /api/auth/email/confirm-code: a sign-in made with the old password wh
     return realPut(key, value, options);
   };
   const reset = await resetPasswordWith(env, "window@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(reset.status, 200);
   assert.ok(attacker, "the scenario must have produced the in-window session");
@@ -2577,12 +2650,12 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
   mock.timers.tick(5_000);
 
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key === "account:local:busy@example.com") throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "busy@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503);
   assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
@@ -2590,13 +2663,13 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
 
 // --- GET /api/plan ----------------------------------------------------------
 
-function planEnvironment({ paywall = false, legacy = [] }: { paywall?: boolean; legacy?: any } = {}) {
+function planEnvironment({ paywall = false, legacy = [] }: { paywall?: boolean; legacy?: unknown[] } = {}) {
   const env = environment();
   if (paywall) env.PAYWALL_ENABLED = "true";
-  (env.ADMIN_DB as any) = {
-    prepare(sql) {
+  env.ADMIN_DB = {
+    prepare(sql: string | string[]) {
       return {
-        bind(appUserId) {
+        bind(appUserId: unknown) {
           return {
             async all() {
               if (sql.includes("legacy_standard_accounts")) {
@@ -2633,7 +2706,7 @@ test("/api/plan: a request without a token is rejected", async () => {
   assert.equal(response.status, 401);
 });
 
-function tokenIssuedDaysAgo(days, suffix) {
+function tokenIssuedDaysAgo(days: number, suffix: string) {
   return `${Math.floor(Date.now() / 1000) - days * 86_400}.${suffix.repeat(40)}`;
 }
 
@@ -2654,7 +2727,7 @@ test("POST /api/session/refresh gives a token that is old enough a fresh one for
   assert.notEqual(body.token, token);
 
   const next = await realSession(env, body.token);
-  assert.equal(next.sub, "email:refresh@example.com");
+  assert.equal(next!.sub, "email:refresh@example.com");
   assert.equal((await worker.fetch(request("/api/actions", { token: body.token }), env, noopCtx)).status, 200);
   // The old token is left to expire by itself, so a lost response can't sign the person out.
   assert.equal((await worker.fetch(request("/api/actions", { token }), env, noopCtx)).status, 200);
@@ -2671,6 +2744,19 @@ test("POST /api/session/refresh exchanges a token only once and shortens the old
   const second = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "y".repeat(32) } }), env, noopCtx);
   assert.deepEqual(await second.json(), { refreshed: false });
   assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
+});
+
+test("POST /api/session/refresh exchanges a token only once even when the store still reads the old marker as absent", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "q");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:race@example.com" }));
+  // Reads of the "already refreshed" marker lag behind its write.
+  const realGet = env.STUDIQUO_DATA.get;
+  env.STUDIQUO_DATA.get = async (key: string, ...rest: any[]) => key.startsWith("session-refreshed:") ? null : realGet(key, ...rest);
+  const send = (random: string) => worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: random.repeat(32) } }), env, noopCtx);
+  const results = await Promise.all([send("a"), send("b"), send("c")]);
+  const refreshed = (await Promise.all(results.map(response => response.json()))).filter(result => result.refreshed === true);
+  assert.equal(refreshed.length, 1, "exactly one child token comes out of one parent");
 });
 
 test("POST /api/session/refresh ignores a randomValue, whatever it holds, and makes its own", async () => {
@@ -2815,7 +2901,7 @@ test("deleting the account and approving an app need a recent passkey check when
 });
 
 test("an account without a passkey is not asked for one", async () => {
-  const env = environment({ strictSessions: true });
+  const env = probeEnvironment();
   const token = freshToken("n");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:nopass@example.com" }));
   const response = await worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
@@ -2829,7 +2915,7 @@ function fakeLibraryRegistry() {
   const stored = new Map();
   return {
     _stored: stored,
-    getByName(name) {
+    getByName(name: string) {
       return {
         async libraryID() {
           if (!stored.has(name)) stored.set(name, Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"));
@@ -2841,7 +2927,7 @@ function fakeLibraryRegistry() {
   };
 }
 
-async function libraryID(env, token) {
+async function libraryID(env: LooseEnv, token: string) {
   const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
   return { status: response.status, body: await response.json() };
 }
@@ -2912,17 +2998,17 @@ test("without the registry nothing is handed out, and the library id needs a sig
 
 // ---- ID token nonce: the token must have been made for THIS sign-in ---------------
 
-const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");
+const nonceHash = (nonce: Untyped) => createHash("sha256").update(nonce).digest("hex");
 const RAW_NONCE = "n".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
 
-async function providerFixture(provider) {
+async function providerFixture(provider: string) {
   const env = environment();
   const keys = provider === "apple" ? await makeAppleSigningKey() : await makeGoogleSigningKey();
   await (provider === "apple" ? seedAppleJWKS : seedGoogleJWKS)(env, keys.jwk);
   const sign = (claims = {}) => provider === "apple"
     ? signAppleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", ...claims })
     : signGoogleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", email: "nonce@example.com", emailVerified: true, ...claims });
-  const exchange = async (idToken, extra = {}, environmentOverride = env) => worker.fetch(request(
+  const exchange = async (idToken: string, extra = {}, environmentOverride = env) => worker.fetch(request(
     provider === "apple" ? "/api/auth/apple" : "/api/auth/google",
     { method: "POST", body: { ...(provider === "apple" ? { identityToken: idToken } : { idToken }), ...extra } },
   ), environmentOverride, noopCtx);
@@ -2985,7 +3071,7 @@ for (const provider of ["apple", "google"]) {
 
 // ---- The nonce outcome is logged (to watch the rollout), without any secret -------
 
-async function nonceLogs(run) {
+async function nonceLogs(run: Untyped) {
   const lines: string[] = [];
   const original = console.log;
   console.log = (...args) => { lines.push(args.join(" ")); };
@@ -2997,10 +3083,10 @@ for (const provider of ["apple", "google"]) {
   test(`${provider}: each outcome of the nonce check is logged as one line, with no secret in it`, async () => {
     const { env, sign, exchange } = await providerFixture(provider);
     // This test signs in more often than the per-minute limit of the real endpoint.
-    (env.RATE_LIMIT_APPLE_AUTH as any) = fakeCloudflareLimiter(10_000);
-    (env.RATE_LIMIT_GOOGLE_AUTH as any) = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_APPLE_AUTH = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_GOOGLE_AUTH = fakeCloudflareLimiter(10_000);
     const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
-    const nonce = (letter) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    const nonce = (letter: string) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
     const cases = [
       ["verified", async () => exchange(await sign({ nonce: nonceHash(nonce("v")) }), { nonce: nonce("v") })],
       ["absent", async () => exchange(await sign({}), {})],
@@ -3032,4 +3118,233 @@ test("a nonce, an ID token or an account never appears in the logged line", asyn
   assert.ok(!text.includes(nonce));
   assert.ok(!text.includes(nonceHash(nonce)));
   assert.ok(!text.includes("nonce-sub"));
+});
+
+// ---------------------------------------------------------------------------
+// Route authorization table. Every route the source defines must be listed
+// here with who may call it. Adding a route without listing it fails the
+// "no unlisted route" test below, so the question "who can call this?" is
+// answered in review, not after release. For each route that needs a session,
+// a request with no token and one with a token that was never issued are both
+// refused, whatever the route's own checks do afterwards.
+//
+//   bearer: needs a signed-in session (Authorization: Bearer ...)
+//   admin:  needs the Cloudflare Access login (src/access.ts)
+//   public: callable without a session, by design (sign-in, pages, webhooks,
+//           and routes that authenticate by another credential)
+// ---------------------------------------------------------------------------
+type RouteAuth = "bearer" | "admin" | "public";
+const ROOM = "a".repeat(64);
+const UUID = "123e4567-e89b-12d3-a456-426614174000";
+const ROUTES: Array<[RouteAuth, string, string]> = [
+  // account, session, sync
+  ["bearer", "DELETE", "/api/account"],
+  ["bearer", "GET", "/api/account/library-id"],
+  ["bearer", "POST", "/api/session/revoke"],
+  ["bearer", "POST", "/api/session/refresh"],
+  ["bearer", "PUT", "/api/snapshot"],
+  ["bearer", "GET", "/api/actions"],
+  ["bearer", "DELETE", "/api/actions"],
+  ["bearer", "GET", "/api/plan"],
+  // apps connected through MCP
+  ["bearer", "POST", "/api/mcp/pairing-code"],
+  ["bearer", "GET", "/api/mcp/connections"],
+  ["bearer", "DELETE", "/api/mcp/connections/abc"],
+  ["bearer", "GET", "/api/mcp/inbox"],
+  ["bearer", "POST", "/api/mcp/inbox/abc"],
+  // AI
+  ["bearer", "GET", "/api/rag/consent"],
+  ["bearer", "POST", "/api/rag/consent"],
+  ["bearer", "POST", "/api/rag/documents/prepare"],
+  ["bearer", "GET", "/api/rag/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/state"],
+  ["bearer", "POST", "/api/rag/index"],
+  ["bearer", "POST", "/api/ai/chat"],
+  ["bearer", "POST", "/api/ai/grade"],
+  ["bearer", "POST", "/api/ai/review"],
+  ["bearer", "POST", "/api/ai/rubric"],
+  ["bearer", "GET", "/api/ai/usage"],
+  // chat
+  ["bearer", "POST", "/api/chat/me"],
+  ["bearer", "POST", "/api/chat/me/avatar"],
+  ["bearer", "GET", "/api/chat/friends"],
+  ["bearer", "POST", "/api/chat/friends"],
+  ["bearer", "GET", "/api/chat/friends/blocked"],
+  ["bearer", "GET", "/api/chat/friends/outgoing"],
+  ["bearer", "GET", "/api/chat/friends/requests"],
+  ["bearer", "POST", "/api/chat/friends/link-add"],
+  ["bearer", "POST", "/api/chat/friends/requests/accept"],
+  ["bearer", "POST", "/api/chat/friends/requests/reject"],
+  ["bearer", "DELETE", "/api/chat/friends/ABCDEF"],
+  ["bearer", "GET", "/api/chat/avatar/ABCDEF"],
+  ["bearer", "GET", "/api/chat/inbox"],
+  ["bearer", "GET", "/api/chat/devices"],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/messages`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/read`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/cancel`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/edit`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/report`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/lookup`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/attachments`],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/attachments/${UUID}`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/block`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/unblock`],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/block-status`],
+  ["bearer", "GET", "/api/chat/group-invites"],
+  ["bearer", "GET", "/api/chat/groups"],
+  ["bearer", "POST", "/api/chat/groups"],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites/accept`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites/reject`],
+  ["bearer", "PATCH", `/api/chat/groups/${ROOM}`],
+  ["bearer", "DELETE", `/api/chat/groups/${ROOM}/members/ABCDEF`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/avatar`],
+  // shared documents
+  ["bearer", "GET", "/api/document/invites"],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/init`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/invite`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/invite/accept`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/participants`],
+  ["bearer", "DELETE", `/api/document/rooms/${ROOM}/participants/${ROOM}`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/leave`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/state`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/propose`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/changes/1/review`],
+  // passkeys: sign-in and the email code are for people who have no session yet
+  ["public", "POST", "/api/passkeys/email-code/send"],
+  ["public", "POST", "/api/passkeys/email-code/confirm"],
+  ["public", "POST", "/api/passkeys/login/options"],
+  ["public", "POST", "/api/passkeys/login/verify"],
+  ["bearer", "POST", "/api/passkeys/register/options"],
+  ["bearer", "POST", "/api/passkeys/register/verify"],
+  ["bearer", "GET", "/api/passkeys/status"],
+  ["bearer", "POST", "/api/passkeys/remove-all"],
+  ["bearer", "POST", "/api/passkeys/reauth/options"],
+  ["bearer", "POST", "/api/passkeys/reauth/verify"],
+  // sign-in and app registration
+  ["public", "POST", "/api/auth/apple"],
+  ["public", "POST", "/api/auth/google"],
+  ["public", "POST", "/api/auth/email/send-code"],
+  ["public", "POST", "/api/auth/email/confirm-code"],
+  ["public", "POST", "/api/auth/local/login"],
+  ["public", "POST", "/api/attest/challenge"],
+  ["public", "POST", "/api/attest/register"],
+  // reports and telemetry (their own checks: a per-device limit, or a report's secret id)
+  ["public", "POST", "/api/issue-reports"],
+  ["public", "GET", `/api/issue-reports/${UUID}/screenshot`],
+  ["public", "POST", "/api/app-errors"],
+  ["public", "POST", "/api/usage-events"],
+  ["public", "GET", "/api/announcements"],
+  // OAuth for connected apps (the flow itself authenticates; see mcp-oauth.test.ts)
+  ["public", "GET", "/oauth/authorize"],
+  ["public", "POST", "/oauth/pair"],
+  ["public", "POST", "/oauth/register"],
+  ["public", "POST", "/oauth/token"],
+  // admin
+  ["admin", "GET", "/api/admin/stats"],
+  ["admin", "GET", "/api/admin/accounts/suspended"],
+  ["admin", "POST", "/api/admin/accounts/suspend"],
+  ["admin", "POST", "/api/admin/accounts/unsuspend"],
+  ["admin", "GET", "/api/admin/audit-log"],
+  ["admin", "GET", "/api/admin/announcements"],
+  ["admin", "GET", "/api/admin/app-errors"],
+  ["admin", "GET", `/api/admin/app-errors/${ROOM}`],
+  ["admin", "GET", "/api/admin/chat-reports"],
+  ["admin", "GET", `/api/admin/chat-reports/${UUID}`],
+  ["admin", "POST", `/api/admin/chat-reports/${UUID}/remove-message`],
+  ["admin", "POST", `/api/admin/chat-reports/${UUID}/warn`],
+  ["admin", "GET", "/api/admin/issue-reports"],
+  ["admin", "GET", `/api/admin/issue-reports/${UUID}`],
+  ["admin", "POST", "/api/admin/issue-reports/import-legacy"],
+  // RevenueCat calls this with its own secret; Access does not guard it (access.ts)
+  ["public", "POST", "/api/admin/revenuecat-webhook"],
+];
+
+// A body that passes the first shape checks, so a route that reads its body
+// before its token (the passkey ones) still reaches the token check.
+const PROBE_BODY = { email: "probe@example.com", code: "123456", name: "probe" };
+const probe = (method: string, path: string, token?: string) =>
+  request(path, { method, token, body: ["GET", "DELETE"].includes(method) ? undefined : PROBE_BODY });
+
+function probeEnvironment() {
+  const env = environment({ strictSessions: true });
+  for (const name of ["ADMIN_WEBHOOK", "ANNOUNCEMENTS", "APP_ERROR", "ATTEST_ASSERT", "ATTEST_CHALLENGE", "ATTEST_REGISTER", "CHAT_ATTACHMENT_UPLOAD", "CHAT_DEVICE_REGISTER", "CHAT_FRIEND_ADD", "CHAT_GROUP_ACTION", "CHAT_MESSAGE", "CHAT_REPORT", "MCP_AUTHORIZE", "MCP_PAIR", "MCP_REGISTER", "MCP_TOKEN", "PASSKEY_LOGIN_OPTIONS", "PASSKEY_LOGIN_VERIFY", "PASSKEY_REGISTER_OPTIONS", "PASSKEY_REGISTER_VERIFY", "USAGE_EVENT"]) {
+    env[`RATE_LIMIT_${name}`] ??= fakeCloudflareLimiter(1_000_000);
+  }
+  return env;
+}
+
+// Matched by prefix in the source (startsWith), so they have no literal of their own.
+const MATCHED_BY_PREFIX = new Set(["/api/mcp/connections/:id", "/api/mcp/inbox/:id"]);
+
+function shapeOf(path: string) {
+  return path
+    .replace(/\/[a-f0-9]{64}(?=\/|$)/g, "/:x")
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27}(?=\/|$)/g, "/:x")
+    .replace(/\/\d+(?=\/)/g, "/:x")
+    .replace(/\/[A-Z0-9]{6,32}$/, "/:x")
+    .replace(/(\/invite)\/(accept|decline)$/, "$1/:x")
+    .replace(/(\/api\/mcp\/(?:connections|inbox))\/abc$/, "$1/:id");
+}
+
+function routeShapesInSource() {
+  const shapes = new Set<string>();
+  const directory = dirname(fileURLToPath(import.meta.url));
+  for (const file of readdirSync(directory).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts"))) {
+    const text = readFileSync(join(directory, file), "utf8");
+    for (const match of text.matchAll(/["'`](\/api\/[A-Za-z0-9/_-]*[A-Za-z0-9_-])["'`]/g)) shapes.add(match[1]);
+    for (const line of text.split("\n")) {
+      for (const match of line.matchAll(/\/\^(\\\/api[^\n]*?)\$\/[a-z]*\.(?:exec|test)/g)) {
+        shapes.add(match[1].replace(/\\\//g, "/").replace(/\((?:[^()]|\([^()]*\))*\)/g, ":x"));
+      }
+    }
+  }
+  return shapes;
+}
+
+test("no unlisted route: every /api route in the source is in the authorization table", () => {
+  const listed = new Set(ROUTES.map(([, , path]) => shapeOf(path)));
+  // Prefixes and path fragments the source matches with startsWith, not routes.
+  const notRoutes = new Set(["/api/admin", "/api/ai", "/api/auth", "/api/chat", "/api/document", "/api/mcp", "/api/passkeys"]);
+  const unlisted = [...routeShapesInSource()].filter(shape => !notRoutes.has(shape) && !listed.has(shape)).sort();
+  assert.deepEqual(unlisted, [], "add these routes to ROUTES with who may call them");
+});
+
+test("no stale route: every table entry still exists in the source", () => {
+  const inSource = routeShapesInSource();
+  const stale = ROUTES.map(([, , path]) => shapeOf(path)).filter(shape => !inSource.has(shape) && !MATCHED_BY_PREFIX.has(shape) && !shape.startsWith("/oauth/"));
+  assert.deepEqual(stale, []);
+});
+
+test("routes that need a session refuse a request with no token", async () => {
+  const env = probeEnvironment();
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "bearer") continue;
+    const response = await worker.fetch(probe(method, path), env, noopCtx);
+    // Most answer 401; the passkey routes answer 400 ("Invalid request") when no token came with the request. Never a success, never a crash.
+    assert.ok([400, 401, 403].includes(response.status), `${method} ${path} without a token answered ${response.status}`);
+  }
+});
+
+test("routes that need a session refuse a well-formed token that was never issued", async () => {
+  const env = probeEnvironment();
+  const token = freshToken("n");
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "bearer") continue;
+    const response = await worker.fetch(probe(method, path, token), env, noopCtx);
+    // register/verify checks the shape of the browser's answer before the session; still a refusal.
+    const accepted = path === "/api/passkeys/register/verify" ? [400, 401, 403] : [401, 403];
+    assert.ok(accepted.includes(response.status), `${method} ${path} with a token no sign-in issued answered ${response.status}`);
+  }
+});
+
+test("admin routes refuse a caller that has no Access login", async () => {
+  const env = probeEnvironment();
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "admin") continue;
+    const response = await worker.fetch(probe(method, path), env, noopCtx);
+    assert.equal(response.status, 403, `${method} ${path} without Access`);
+    // A session token is not an Access login.
+    const withSession = await worker.fetch(probe(method, path, freshToken("s")), env, noopCtx);
+    assert.equal(withSession.status, 403, `${method} ${path} with only a session token`);
+  }
 });

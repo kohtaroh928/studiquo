@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { retrieve } from './rag/retrieval.ts';
 import { indexSource, accountKey } from './rag/storage.ts';
 import { JUDGE, LIMITS } from './rag/limits.ts';
@@ -43,7 +44,7 @@ test('the judge is off unless RAG_JUDGE says shadow or on, in every environment 
   assert.equal(judgeMode({ RAG_JUDGE: 'ON ' }), 'on');
   assert.equal(judgeMode({ RAG_JUDGE: 'shadow' }), 'shadow');
   for (const odd of ['true', '1', 'enforce', '', undefined, null]) assert.equal(judgeMode({ RAG_JUDGE: odd }), 'off', String(odd));
-  const config = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+  const config = readFileSync(join(import.meta.dirname, '..', 'wrangler.jsonc'), 'utf8');
   assert.equal((config.match(/"RAG_JUDGE"\s*:\s*"off"/g) ?? []).length, 2);
   assert.equal((config.match(/"RAG_JUDGE"/g) ?? []).length, 2);
 });
@@ -174,7 +175,7 @@ test('the retrieval log line carries the judge outcome and bucket, and none of t
     const pending: Promise<unknown>[] = [];
     const request = new Request('https://example.test/api/ai/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Studiquo-RAG-Consent': 'rag-openai-v1' },
       body: JSON.stringify({ messages: [{ role: 'user', text: QUERY }], rag: { scope: { kind: 'library' } } }) });
-    const response = await handleAI(new URL(request.url), request, environment, 'test-device', { waitUntil: (p: Promise<unknown>) => pending.push(p) }, { sub: 'canonical-owner' }, 'standard');
+    const response = await handleAI(new URL(request.url), request, environment, 'test-device', { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext, { sub: 'canonical-owner' }, 'standard');
     await response!.text(); await Promise.all(pending);
     console.log = log;
     const entry = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).find(e => e?.event === 'rag_retrieval');

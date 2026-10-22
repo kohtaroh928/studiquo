@@ -43,7 +43,7 @@ function logOutcome(provider: string, outcome: string) {
 }
 
 /** `false` when the sign-in may go on, `true` when it is to be refused. */
-export async function idTokenNonceRefused(env: Env, payload: any, suppliedNonce: any, provider = "unknown") {
+export async function idTokenNonceRefused(env: Env, payload: object | null | undefined, suppliedNonce: unknown, provider = "unknown") {
   const refuse = (outcome: string) => { logOutcome(provider, outcome); return true; };
   if (suppliedNonce === undefined || suppliedNonce === null || suppliedNonce === "") {
     if (env.REQUIRE_ID_TOKEN_NONCE === "true") return refuse("absent_refused");
@@ -51,9 +51,10 @@ export async function idTokenNonceRefused(env: Env, payload: any, suppliedNonce:
     return false;
   }
   if (typeof suppliedNonce !== "string" || !RAW_NONCE.test(suppliedNonce)) return refuse("malformed");
-  if (typeof payload?.nonce !== "string") return refuse("missing_claim");
+  const claimed = (payload as { nonce?: unknown } | null | undefined)?.nonce;
+  if (typeof claimed !== "string") return refuse("missing_claim");
   const expected = await sha256Hex(suppliedNonce);
-  if (!(await secretsEqual(payload.nonce.toLowerCase(), expected))) return refuse("mismatch");
+  if (!(await secretsEqual(claimed.toLowerCase(), expected))) return refuse("mismatch");
   // Atomic: the counter object admits exactly one caller per nonce.
   const firstUse = await env.RATE_COUNTER.getByName(`idtoken-nonce:${expected}`).bump(1, SINGLE_USE_SECONDS);
   if (!firstUse) return refuse("replayed");

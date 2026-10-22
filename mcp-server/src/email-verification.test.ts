@@ -2,24 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
 import { linkedIdentities } from "./oauth-links.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     RESEND_API_KEY: "test-key",
   });
 }
 
-function stubResend(handler) {
+function stubResend(handler: Untyped) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => handler(url, init);
   return () => { globalThis.fetch = originalFetch; };
@@ -28,15 +28,15 @@ function stubResend(handler) {
 // Reads back the code this module itself just generated and sent, so tests
 // don't have to hardcode or guess a code — they intercept the outgoing
 // Resend request the same way a real inbox would receive it.
-async function captureSentCode(env, email) {
+async function captureSentCode(env: LooseEnv, email: string) {
   let sentBody = null;
-  const restore = stubResend(async (_url, init) => {
+  const restore = stubResend(async (_url: string, init: { body: string; }) => {
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });
   });
   await sendVerificationCode(env, email);
   restore();
-  const match = /確認コード: (\d{6})/.exec(sentBody.text);
+  const match = /確認コード: (\d{6})/.exec(sentBody!.text);
   assert.ok(match, "expected the email body to contain a 6-digit code");
   return match[1];
 }
@@ -45,7 +45,7 @@ test("sendVerificationCode emails a 6-digit code to the given address", async ()
   const env = environment();
   let requestedURL = null;
   let sentBody = null;
-  const restore = stubResend(async (url, init) => {
+  const restore = stubResend(async (url: string, init: { body: string; }) => {
     requestedURL = String(url);
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });
@@ -56,8 +56,8 @@ test("sendVerificationCode emails a 6-digit code to the given address", async ()
   restore();
   assert.deepEqual(result, { sent: true });
   assert.equal(requestedURL, "https://api.resend.com/emails");
-  assert.equal(sentBody.to, "person@example.com");
-  assert.match(sentBody.text, /確認コード: \d{6}/);
+  assert.equal(sentBody!.to, "person@example.com");
+  assert.match(sentBody!.text, /確認コード: \d{6}/);
 });
 
 test("sendVerificationCode rejects an invalid email without calling Resend", async () => {
