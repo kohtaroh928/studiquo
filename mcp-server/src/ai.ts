@@ -263,11 +263,18 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   });
   if (gate.response) return gate.response;
 
-  // Every user-written turn and the attached note text are screened, not just
-  // the latest message (images are not screened).
+  // Every user turn and the attached note text are screened, not just the
+  // latest message (images are not screened), each cut to the length that is
+  // actually sent on. Assistant turns come from the client too, so the latest
+  // two are screened as well; older ones are not, or one flagged reply would
+  // block the whole conversation for as long as it stayed in the history.
+  const recent = turns.slice(-20);
+  const latestAssistant = new Set(recent.map((turn: { role: string }, index: number) => (turn?.role === "assistant" ? index : -1)).filter((index: number) => index >= 0).slice(-2));
   const rejected = await moderateOrRefund(env, gate, [
-    ...turns.slice(-20).filter((turn: { role: string; }) => turn?.role !== "assistant").map((turn: { text: unknown; }) => turn?.text),
-    payload?.noteContext,
+    ...recent
+      .filter((turn: { role: string }, index: number) => turn?.role !== "assistant" || latestAssistant.has(index))
+      .map((turn: { text: unknown; }) => String(turn?.text ?? "").slice(0, 20_000)),
+    String(payload?.noteContext ?? "").trim().slice(0, 8000),
   ]);
   if (rejected) return rejected;
 
@@ -755,7 +762,7 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
   const image = String(payload?.imageBase64 ?? "");
   const questionImage = String(payload?.questionImageBase64 ?? "");
-  const criteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
+  const rawCriteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
   // The answer may be a photograph of handwriting or typed out in the chat.
   if ((image && !isPNGBase64(image)) || (questionImage && !isPNGBase64(questionImage))) {
     return json({ error: "Invalid image data." }, 400);
@@ -763,12 +770,23 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
   if (!image && !answerText) {
     return json({ error: "imageBase64 or answerText is required." }, 400);
   }
-  if (criteria.length === 0) return json({ error: "criteria is required." }, 400);
+  if (rawCriteria.length === 0) return json({ error: "criteria is required." }, 400);
+  // Each criterion is checked and bounded here, so a malformed one is the
+  // caller's 400 (not a 500 that also raises a false "provider down" alert)
+  // and an overlong one cannot make the request arbitrarily large.
+  const criteria: { name: string; maxPoints: number; requirement: string }[] = [];
+  for (const item of rawCriteria) {
+    if (!item || typeof item !== "object" || typeof item.name !== "string" || typeof item.requirement !== "string"
+      || typeof item.maxPoints !== "number" || !Number.isFinite(item.maxPoints)) {
+      return json({ error: "criteria must be a list of { name, maxPoints, requirement }." }, 400);
+    }
+    criteria.push({ name: item.name.slice(0, 200), maxPoints: item.maxPoints, requirement: item.requirement.slice(0, 1000) });
+  }
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
   const rubricText = criteria
-    .map((item: { name: unknown; maxPoints: unknown; requirement: unknown; }) => `・${escapeForPromptTag(String(item.name))}（${item.maxPoints}点）: ${escapeForPromptTag(String(item.requirement))}`)
+    .map(item => `・${escapeForPromptTag(item.name)}（${item.maxPoints}点）: ${escapeForPromptTag(item.requirement)}`)
     .join("\n");
 
   // The question goes in first so the model reads what was asked before it
@@ -778,7 +796,7 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
     globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
   });
   if (gate.response) return gate.response;
-  const rejected = await moderateOrRefund(env, gate, [question, answerText]);
+  const rejected = await moderateOrRefund(env, gate, [question, answerText, ...criteria.flatMap(item => [item.name, item.requirement])]);
   if (rejected) return rejected;
 
   const parts = [];
