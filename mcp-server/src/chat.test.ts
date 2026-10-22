@@ -4063,6 +4063,15 @@ test("someone blocked by the room's other side cannot upload an attachment into 
   assert.equal(blocker.status, 201, "the blocker themself can still upload");
 });
 
+test("an attachment that is not well-formed base64 is refused at upload, not stored to fail every download", async () => {
+  const env = environment();
+  const { aliceToken, roomID } = await befriended(env, "ab3", "ab4");
+  for (const data of ["not base64!", "abc", "aGVsbG8"]) {
+    assert.equal((await uploadAttachment(env, aliceToken, roomID, "image/png", data)).status, 400, data);
+  }
+  assert.equal((await uploadAttachment(env, aliceToken, roomID, "image/png", "aGVsbG8=")).status, 201);
+});
+
 // ---- Operator actions on a report: remove the message, suspend the account ----
 
 const adminKeys = await generateKeyPair("ES256", { extractable: true });

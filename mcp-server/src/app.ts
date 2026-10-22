@@ -24,7 +24,7 @@ import { handleAppAttest, appAttestGate } from "./app-attest.ts";
 import { plainHttpResponse, withTransportHeaders } from "./transport.ts";
 import { disabledFeatures } from "./features.ts";
 import { idTokenNonceRefused } from "./id-token-nonce.ts";
-import { isRevoked, revoke } from "./revocation.ts";
+import { isRevoked, recordPredecessor, revokeWithPredecessors } from "./revocation.ts";
 import { isExpired, remainingValiditySeconds } from "./token.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
 import { realSession } from "./session.ts";
@@ -301,9 +301,23 @@ function tooManyRequests(seconds = 60) {
   return Response.json({ error: "Too many requests. Please slow down." }, { status: 429, headers: securityHeaders({ "retry-after": String(seconds) }) });
 }
 
+function misconfiguredSettings(env: Env) {
+  const found: string[] = [];
+  if (env.REQUIRE_SIGNED_TOKENS === "true" && !env.TOKEN_SIGNING_KEY) found.push("REQUIRE_SIGNED_TOKENS without TOKEN_SIGNING_KEY");
+  if ((env.APP_ATTEST_MODE === "log" || env.APP_ATTEST_MODE === "enforce") && !env.TOKEN_SIGNING_KEY) found.push("APP_ATTEST_MODE without TOKEN_SIGNING_KEY");
+  if (env.SNAPSHOT_ENCRYPTION_REQUIRED === "true" && !env.SNAPSHOT_ENCRYPTION_KEY) found.push("SNAPSHOT_ENCRYPTION_REQUIRED without SNAPSHOT_ENCRYPTION_KEY");
+  return found;
+}
+
 async function handleMCP(request: Request, env: Env) {
   const token = bearerToken(request);
   const external = token ? await externalSession(env, request) : null;
+  // The app's own session token also opens everything else (sync, chat, account
+  // deletion), so handing it to an AI app by hand puts all of that at risk when it
+  // leaks. With this on, only the scoped, revocable tokens the OAuth pairing issues
+  // are accepted here. Off by default so apps that were set up with a pasted token
+  // keep working until they are paired again.
+  if (!external && env.MCP_REFUSE_SESSION_TOKENS === "true") return Response.json({ error: "Connect your Studiquo account." }, { status: 401, headers: securityHeaders({ "WWW-Authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"` }) });
   if (!external && (!token || token.startsWith("mcp_"))) return Response.json({ error: "Connect your Studiquo account." }, { status: 401, headers: securityHeaders({ "WWW-Authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"` }) });
   if (!external && isExpired(token!)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
   if (!external && !(await hasRealSession(env, token!))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
@@ -358,7 +372,12 @@ const handler = {
           const last = memo.last;
           if (Number.isFinite(last) && last > 0) cronAgeSeconds = Math.max(0, Math.round((Date.now() - last) / 1000));
         } catch { /* health must answer even when KV does not */ }
-        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}), ...(cronAgeSeconds !== undefined ? { cronAgeSeconds } : {}) });
+        // Settings that are on while the secret they depend on is missing: they would
+        // otherwise go on looking enabled while checking nothing. This route is
+        // unauthenticated, so it only says how many; the names go to the log.
+        const misconfigured = misconfiguredSettings(env);
+        if (misconfigured.length) console.warn("misconfigured settings:", misconfigured.join("; "));
+        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}), ...(misconfigured.length ? { misconfigured: misconfigured.length } : {}), ...(cronAgeSeconds !== undefined ? { cronAgeSeconds } : {}) });
       }
       const gate = appGateRejection(request, env, url);
       if (gate) return gate;
@@ -447,7 +466,7 @@ const handler = {
       if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
 
       if (url.pathname === "/api/session/revoke" && request.method === "POST") {
-        await revoke(env, key);
+        await revokeWithPredecessors(env, key);
         return json({ revoked: true });
       }
 
@@ -674,6 +693,7 @@ async function handleSessionRefresh(request: Request, env: Env, token: string, s
   const oldSession = await env.STUDIQUO_DATA.get(`session:${oldKey}`);
   if (oldSession) {
     await env.STUDIQUO_DATA.put(`session:${oldKey}`, oldSession, { expirationTtl: Math.min(oldRemaining, REFRESH_OLD_TOKEN_GRACE_SECONDS) });
+    await recordPredecessor(env, newKey, oldKey, Math.min(oldRemaining, REFRESH_OLD_TOKEN_GRACE_SECONDS));
   }
   const ttl = remainingValiditySeconds(refreshed);
   for (const prefix of ["snapshot", "actions"]) {
