@@ -259,6 +259,10 @@
         // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.
         "REQUIRE_SIGNED_TOKENS": "false",
         "REQUIRE_ID_TOKEN_NONCE": "false",
+        // /mcp accepts only OAuth-paired tokens, not the app's session token (TOKEN-1).
+        // Staging only for now: production stays unset until the app build without the
+        // pasted-token screen is out (older apps connected that way would be cut off).
+        "MCP_REFUSE_SESSION_TOKENS": "true",
         // App Attest stays off here until staging has a TOKEN_SIGNING_KEY (the challenge
         // is signed with it). Development-environment keys are accepted on staging only.
         "APP_ATTEST_MODE": "off",

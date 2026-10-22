@@ -95,6 +95,8 @@ export interface Env {
   ANNOUNCEMENT_PUSH_BATCH?: string;
   AI_RETRY_BASE_MS?: string;
   REQUIRE_SIGNED_TOKENS?: string;
+  // "true": /mcp accepts only OAuth-paired tokens, not the app's session token.
+  MCP_REFUSE_SESSION_TOKENS?: string;
   REQUIRE_ID_TOKEN_NONCE?: string;
   MIN_APP_BUILD?: string;
   MAINTENANCE_MODE?: string;

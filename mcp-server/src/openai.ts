@@ -163,30 +163,51 @@ export async function callOpenAIChat(env: Env, { model, systemInstruction, turns
  */
 export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
 
+// The moderation endpoint takes a bounded input, so long text is cut into
+// pieces and every piece is screened (cutting it off after the first 8000
+// characters left the rest unchecked). A request can carry at most this many
+// pieces. Callers cut each text to the length they actually send upstream first.
+const MODERATION_PIECE = 8000;
+const MODERATION_MAX_PIECES = 64;
+const MODERATION_BATCH = 20;
+
 export async function moderationRejection(env: Env, texts: string[], apiKey = env.OPENAI_API_KEY) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
-  const input = texts.map((text: string) => String(text ?? "").slice(0, 8000)).filter(Boolean);
+  const input: string[] = [];
+  for (const text of texts) {
+    const whole = String(text ?? "");
+    for (let start = 0; start < whole.length; start += MODERATION_PIECE) {
+      input.push(whole.slice(start, start + MODERATION_PIECE));
+    }
+  }
+  // Never leave text unscreened: more than the limit is refused outright.
+  if (input.length > MODERATION_MAX_PIECES) {
+    console.error(JSON.stringify({ message: "moderation input too large", pieces: input.length }));
+    return MODERATION_UNAVAILABLE;
+  }
   if (input.length === 0) return null;
   try {
-    const response = await fetch(MODERATION_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "omni-moderation-latest", input }),
-    });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      console.error(JSON.stringify({ message: "moderation unavailable", status: response.status }));
-      return MODERATION_UNAVAILABLE;
-    }
-    const payload = (await response.json()) as { results?: { categories?: Record<string, unknown> }[] } | null;
-    // An answer that does not say what was checked is no answer.
-    if (!Array.isArray(payload?.results) || payload.results.length === 0) {
-      console.error(JSON.stringify({ message: "moderation unreadable" }));
-      return MODERATION_UNAVAILABLE;
-    }
-    for (const result of payload.results) {
-      const hit = Object.entries(result?.categories ?? {}).some(([name, on]) => on && !name.startsWith("self-harm"));
-      if (hit) return "この内容は学習アプリでは扱えません。表現を変えて、もう一度送信してください。";
+    for (let from = 0; from < input.length; from += MODERATION_BATCH) {
+      const response = await fetch(MODERATION_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: "omni-moderation-latest", input: input.slice(from, from + MODERATION_BATCH) }),
+      });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        console.error(JSON.stringify({ message: "moderation unavailable", status: response.status }));
+        return MODERATION_UNAVAILABLE;
+      }
+      const payload = (await response.json()) as { results?: { categories?: Record<string, unknown> }[] } | null;
+      // An answer that does not say what was checked is no answer.
+      if (!Array.isArray(payload?.results) || payload.results.length === 0) {
+        console.error(JSON.stringify({ message: "moderation unreadable" }));
+        return MODERATION_UNAVAILABLE;
+      }
+      for (const result of payload.results) {
+        const hit = Object.entries(result?.categories ?? {}).some(([name, on]) => on && !name.startsWith("self-harm"));
+        if (hit) return "この内容は学習アプリでは扱えません。表現を変えて、もう一度送信してください。";
+      }
     }
   } catch (error) {
     console.error(JSON.stringify({ message: "moderation failed", error: error instanceof Error ? error.message : String(error) }));
