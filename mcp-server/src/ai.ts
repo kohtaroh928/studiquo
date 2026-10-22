@@ -302,6 +302,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
       redacted: rag.redacted ?? null,
       aiCalls: rag.aiCalls ?? null,
       termAbsentKept: rag.termAbsentKept ?? null,
+      judge: rag.judge ? { mode: rag.judge.mode, outcome: rag.judge.outcome, bucket: rag.judge.bucket, action: rag.judge.action } : null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }

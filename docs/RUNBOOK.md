@@ -350,6 +350,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   - `reason`: 空になった理由。`no_match`は、関連する資料がないか、確認で外れて通常チャットに戻ったもの(`status`は`fallback`)。`insufficient`は、`status`と同じ。ほかに`disabled`・`rate_limited`・`timeout`・`error`など(`docs/RAG_PROMPT_CONTRACT.md`の3)。
   - `detail`: **どの確認で空になったか**を表す固定の符号。`requirements`(価格・数式などの求める詳細が抜粋にない)、`quantity`(「何%」「何円」など聞かれた単位の数値がない)、`term_katakana`・`term_latin`・`term_both`(質問のカタカナ語・英字の語が、資料の全文にない)、`no_candidates`(関連する候補がない)、`no_references`(候補はあったが使える抜粋が残らなかった)。空でない結果は`null`。
   - `termAbsentKept`: `true`は、質問の語が取得した本文のどこにもないのに、意味検索と語句検索の1位が一致したので抜粋を残した件数(別名が守られたか、答えなしを誤って残した可能性がある)。空の結果は`null`。
+  - `judge`: 答えの有無の判定(意味の判定、`RAG_JUDGE`)の結果。`mode`(`off`・`shadow`・`on`)、`outcome`(`ok`・`error`・`timeout`・`skipped`)、`bucket`(質問の求める情報が抜粋にある確率を0.1刻みに丸めた値。小さいほど「書かれていない」)、`action`(`keep`・`partial`・`stop`)。判定を使わないときは`mode`が`off`。`on`で止めた結果は`detail`が`judged_unanswerable`。
 - **変更せず調べる**:
   - Cloudflareのダッシュボードで、Worker`studiquo-mcp`のWorkers Logs(Observability)を開き、`event`が`rag_retrieval`の行に絞る。`status`・`reason`・`detail`で件数を集計する(画面の名前や操作は変わりうる。検索は、ログのJSONの欄名で行う。**この資料の作成時には、ダッシュボードの画面操作は確認していない**)。
   - 流れを見るだけなら、`npx wrangler tail studiquo-mcp --format pretty`で、`rag_retrieval`を含む行を見る(本番のログは、本文を含まないので扱える)。
@@ -359,6 +360,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   - `detail`が`term_latin`・`term_both`: 質問の英字の語が資料にない。**別名の質問(質問は英字、資料はカタカナ・漢字)も含む**。評価では、英字の確認で、別名の答えありが11問中4問落ち、資料にない語の答えなしは24問中23問を抑えた(`docs/RAG_DETAIL_PRESENCE_ALIAS_REPORT.md`)。ログに質問を残さないので、1件ごとに別名かどうかは分からない。割合の急な変化を見る。
   - `detail`が`term_katakana`: 質問のカタカナ語が資料にない。
   - `termAbsentKept`が`true`の件数: 固有語の確認を意味検索と語句検索の一致で免除した件数。
+  - `judge`の`outcome`が`error`・`timeout`: 判定が失敗している(出典は残る)。急増したら`RAG_JUDGE`を`off`に戻す(`wrangler.jsonc`の変数の変更と再配備)。`bucket`が`0.0`〜`0.2`の割合は、判定が「書かれていない」と見た質問の割合。`shadow`で割合を見てから`on`にする。
   - `no_candidates`が急に増えた: 索引が空、削除・再登録の直後、またはVectorize・D1の障害を疑う(`docs/HYBRID_RAG.md`)。
   - `no_match`の`detail`が`null`: 関連する資料が見つからないことで通常チャットに戻った(確認で外れたものではない)。
 - **避ける操作**: ログへ質問・資料の文字を足す(本文は記録しない方針)。確認条件を、評価なしでしきい値だけ変える。

@@ -11,9 +11,11 @@ export const EMPTY_REASONS = Object.freeze([
 // Which check emptied the result (log-only, like `reason`). Fixed codes: never a question or a document word.
 // `requirements` the asked detail (price, formula, ...) is missing; `quantity` the asked unit has no number;
 // `term_katakana` / `term_latin` / `term_both` a word of the question is absent from the whole library;
-// `no_candidates` / `no_references` nothing relevant was found or nothing usable survived.
+// `no_candidates` / `no_references` nothing relevant was found or nothing usable survived;
+// `judged_unanswerable` the answerability judge (RAG_JUDGE=on) found the asked information missing from the excerpts.
 export const EMPTY_DETAILS = Object.freeze([
   "requirements", "quantity", "term_katakana", "term_latin", "term_both", "no_candidates", "no_references",
+  "judged_unanswerable",
 ]);
 
 // Fresh object per call: callers mutate the result (status), so a shared

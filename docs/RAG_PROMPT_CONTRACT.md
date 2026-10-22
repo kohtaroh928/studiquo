@@ -62,6 +62,23 @@
 
 現状の実測（合成データ1件）では、9000×2文字の1ページでも`context`は約1800文字で、`truncated`は`false`だった。チャンクが小さいため、通常は予算に届かない。実資料での分布は未測定。
 
+### 4.1 答えの有無の判定（意味の判定、`RAG_JUDGE`）
+
+検索の最後に、最終の抜粋が質問の求める情報を含むかを、Cloudflareの判定専用モデルに1回だけ尋ねる（`mcp-server/src/rag/judge.ts`、設計は`docs/RAG_SEMANTIC_JUDGE_DESIGN.md`）。**既定は`off`**で、呼び出しも挙動の変更もない。設定は`rag/limits.ts`の`JUDGE`（`LIMITS`・`MODELS`とは別で、`rag-judge.test.ts`が値を固定する）。
+
+| 設定 | 値 | 意味 |
+|---|---|---|
+| `model` | `@cf/cloudflare/clef-flash` | 確率だけを返すモデル（自由な文章は出力しない） |
+| `calls` | 1 | 質問ごとの判定の呼び出し数（`aiCalls`に数える） |
+| `timeoutMs` / `minRemainingMs` | 2000 / 3000 | 判定の時間の上限／検索全体の残りがこれより短いときは呼ばない |
+| `excerptChars` / `totalChars` | 3000 / 9000 | 判定に送る抜粋の長さの上限 |
+| `stopBelow` / `partialBelow` | 0.25 / 0.5 | 1つの主題の質問は、確率が前者未満で出典を外す（`insufficient`、`detail: judged_unanswerable`）。後者未満は`partial`。比較・2主題の質問は`partial`までで、止めない |
+
+- `RAG_JUDGE`は`off`（既定）／`shadow`（呼んで`rag_retrieval`のログに結果を出すだけで、結果は変えない）／`on`（上の段階式で使う）。
+- 失敗（時間切れ・HTTPエラー・不正な応答・束縛なし）は、**必ず出典を残す**。ログの`judge`欄は、`mode`・`outcome`（`ok`／`error`／`timeout`／`skipped`／`off`）・`bucket`（確率を0.1刻みに丸めた値）・`action`（`keep`／`partial`／`stop`）だけで、質問・抜粋の文字は含まない。
+- 送るのは、すでにリランクと回答のAIへ送っている質問と抜粋で、新しい送信先はない（Workers AIへの2回目）。**同意文・プライバシー文言とCloudflareの契約条項の確認は未了**。確認が済むまで`on`にしない。
+- しきい値は暫定（学習データでの値）。有効にする前に、固定した新しい質問で事前に決めた値を測る（設計の6）。
+
 ## 5. 安全処理の担当
 
 - 資料は`JSON.stringify`で入れる（RAG本体の担当）。プロンプト側は資料の文字を連結しない。

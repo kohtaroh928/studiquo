@@ -11,7 +11,10 @@ import { retrieve } from '../../src/rag/retrieval.ts';
 import { rrf, scopeFilter, validId, queryPlan } from '../../src/rag/query.ts';
 const USAGE = Symbol('boundedEvaluationUsage');
 import { relevanceEvidence } from '../../src/rag/relevance.ts';
+import { JUDGE } from '../../src/rag/limits.ts';
 export const MODELS = ['@cf/baai/bge-m3', '@cf/baai/bge-reranker-base'];
+// The answerability judge is called only when RAG_JUDGE is shadow or on (set by judgeMode below).
+const ALLOWED_MODELS = [...MODELS, JUDGE.model];
 export const hash = (value: any) => createHash('sha256').update(value).digest('hex');
 const invalid = () => { throw Error('invalid_evaluation_manifest'); };
 function boundedJSON(path: any, limit: any) {
@@ -70,9 +73,10 @@ const cosine = (a: any, b: any) => {
   return norm ? a.reduce((s: any, x: any, i: any) => s + x * b[i], 0) / norm : 0;
 };
 const provenance = (row: any) => ({ sourceHash: hash(row.source_id), pageNumber: row.page_number, chunkHash: hash(row.chunk_id) });
-export function createEvaluationEnvironment({ runAI, maxCalls = 500 }: any = {}) {
+export function createEvaluationEnvironment({ runAI, maxCalls = 500, judgeMode }: any = {}) {
   if (typeof runAI !== 'function' || !Number.isInteger(maxCalls) || maxCalls < 1 || maxCalls > 500) throw Error('invalid_evaluation_options');
   const env = qualityEnvironment(); const db = env.ADMIN_DB.db;
+  if (judgeMode === 'shadow' || judgeMode === 'on') env.RAG_JUDGE = judgeMode;
   const calls: any[] = []; const pending = new Set(); const vectorTraces = new WeakMap(); let trace: any = null; let budgetExhausted = false;
   const prepare = env.ADMIN_DB.prepare;
   env.ADMIN_DB.prepare = sql => ({ bind(...args) {
@@ -83,7 +87,7 @@ export function createEvaluationEnvironment({ runAI, maxCalls = 500 }: any = {})
     } };
   } });
   env.AI.run = async (model, input) => {
-    if (!MODELS.includes(model)) throw Error('evaluation_invalid_model');
+    if (!ALLOWED_MODELS.includes(model) || (model === JUDGE.model && !env.RAG_JUDGE)) throw Error('evaluation_invalid_model');
     if (calls.length >= maxCalls) { budgetExhausted = true; throw Error('evaluation_budget_exhausted'); }
     const owner = trace; const entry = { model, phase: owner ? 'search' : 'index', status: 'pending' }; calls.push(entry);
     if (owner && model === MODELS[1]) {
@@ -105,6 +109,7 @@ export function createEvaluationEnvironment({ runAI, maxCalls = 500 }: any = {})
       entry.status = 'success';
       if (result?.[USAGE]) entry.usage = { ...result[USAGE] };
       if (owner && model === MODELS[0]) for (const v of result?.data ?? []) vectorTraces.set(v, owner);
+      if (owner && model === JUDGE.model) owner.judgeProbability = result?.answers?.answerable?.noul ?? null;
       if (owner && model === MODELS[1]) {
         owner.rerankCompleted = true;
         owner.rerankCompletedWithin2s = performance.now() - start < 2000;
@@ -197,6 +202,7 @@ export async function evaluateMaterials(manifest: any, options: any) {
         ...relevanceEvidence(c,canonical)
       }));
       report.results.push({ caseHash: hash(q.id), status: hit.status ?? 'fallback', expected: q.expected,
+        judge: hit.judge && hit.judge.mode !== 'off' ? { ...hit.judge, probability: trace.judgeProbability ?? null } : null,
         citationValid: valid, qualityEligible, executionFailure: embeddingFailure ? 'embedding_failed' : deadlineSuspected ? 'deadline_suspected' : null,
         rerankerFallback: searchCalls.some(c => c.model === MODELS[1] && (c.status !== 'success' || c.elapsedMs >= 2000)),
         pageRecall, evidenceRecall, noEvidenceAccepted: qualityEligible && q.expected === 'no_evidence' ? citations.length === 0 : null,
@@ -214,7 +220,7 @@ export function remoteRunAI({ account, token, fetchImpl = fetch }: any) {
   if (!/^[a-f0-9]{32}$/i.test(account ?? '') || typeof token !== 'string' || !token) throw Error('cloudflare_auth_unavailable');
   return async (model: any, input: any) => {
     try {
-      if (!MODELS.includes(model)) throw Error('invalid_model');
+      if (!ALLOWED_MODELS.includes(model)) throw Error('invalid_model');
       const res = await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run/${model}`, {
         method: 'POST', redirect: 'error', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(input), signal: AbortSignal.timeout(45000),
@@ -243,7 +249,7 @@ export async function main(argv = process.argv.slice(2)) {
     catch { throw Error('cloudflare_auth_unavailable'); }
   }
   const onProgress = process.env.STUDIQUO_RAG_REAL_MATERIAL_PROGRESS === 'true' ? (value: any) => process.stdout.write(JSON.stringify(value) + '\n') : undefined;
-  const report = await evaluateMaterials(manifest, { runAI: remoteRunAI({ account, token }), onProgress });
+  const report = await evaluateMaterials(manifest, { runAI: remoteRunAI({ account, token }), onProgress, judgeMode: process.env.STUDIQUO_RAG_JUDGE_MODE });
   writeFileSync(argv[1], JSON.stringify(report, null, 2), { mode: 0o600 });
   if (report.status !== 'complete') process.exitCode = 1;
 }
