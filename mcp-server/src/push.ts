@@ -99,7 +99,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   const buildPayload = (quiet: boolean) => JSON.stringify({
     ...customData,
     aps: {
-      alert: { title: tagged(env, String(notification.title ?? "")), body: String(notification.body ?? "") },
+      alert: { title: notification.title ? tagged(env, String(notification.title)) : "", body: String(notification.body ?? "") },
       ...(quiet ? { "interruption-level": "passive" } : { sound: "default" }),
       ...(notification.category ? { category: `studiquo.${notification.category}` } : {}),
       ...(notification.threadID ? { "thread-id": String(notification.threadID) } : {}),

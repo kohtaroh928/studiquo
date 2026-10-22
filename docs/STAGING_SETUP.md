@@ -287,7 +287,7 @@ npx wrangler d1 delete studiquo-admin-staging
 
 | 出るもの | 目印 |
 | --- | --- |
-| Slackの通知(問題報告、アプリのエラー、通報、ログイン失敗の急増などのアラート。すべて`slack.ts`を通る) | 見出しの先頭に`[STAGING]`、2行目に「STAGING環境(テスト用)からの通知です。本番ではありません」、通知の一覧に出る文字も`[STAGING]`で始まる |
+| Slackの通知(問題報告、アプリのエラー、通報、ログイン失敗の急増などのアラート。すべて`slack.ts`を通る) | 見出しの先頭に`[STAGING]`(見出しがない通知は、先頭の行に注意書き)、続けて「STAGING環境(テスト用)からの通知です。本番ではありません」、通知の一覧に出る文字も`[STAGING]`で始まる |
 | プッシュ通知 | 題名の先頭に`[STAGING]` |
 | メール(確認コード、新しい環境の通知、パスキーの通知) | 件名の先頭に`[STAGING]`(送信元の名前は、元から`Studiquo Staging`) |
 | 管理画面(`/admin`、`/admin/announcements`) | タブの題名に`[STAGING]`、画面の上に橙色の帯「STAGING環境(本番ではありません)」 |
@@ -342,7 +342,7 @@ npx wrangler secret put ACCESS_AUD --env staging
 | --- | --- | --- |
 | ログインなしで閉じている | ログインしていないブラウザ(または`curl`)で`https://<STG>/api/admin/stats`を開く | 401 |
 | 管理画面が開く | ブラウザで`https://<STG>/admin`を開く→Accessのログイン→ダッシュボード | 橙色の「STAGING環境」の帯と、数字(新しい環境なので、ほぼ0)が出る |
-| 本番の証明書が通らない | (任意)本番の管理画面にログインした状態で、ステージングを開く | ステージングのAccessのログインを、別に求められる |
+| **本番の証明書が通らない(必須)** | 本番の管理画面にログインした同じブラウザで、`https://<STG>/admin`を開き、その後`https://<STG>/api/admin/stats`を開く | ステージングのAccessのログインを別に求められ、ログイン前は401。すぐ通ってしまうなら、`ACCESS_AUD`に本番の値を入れてしまっている。入れ直す |
 | 数字が本番でない | ユーザー数などが、本番の数字と違う | ステージングのD1のデータ |
 
 ### 10.4 プッシュ通知(APNs)
@@ -365,7 +365,7 @@ npx wrangler secret put ACCESS_AUD --env staging
 運営者の手順(Apple Developer。鍵の発行はあなたの操作):
 
 1. Apple Developerの「Certificates, Identifiers & Profiles」→「Keys」を開く。**Appleは、APNsの鍵を2本までしか持てない。** 本番がすでに2本(`APNS_AUTH_KEY`系と`APNS_SANDBOX_*`)を使っているときは、新しく作れないので、次のどちらかにする。
-   - 本番で使っているサンドボックスの鍵の`.p8`を、手元に保存してあれば、それを再利用する(鍵はWorkerごとに、別の秘密として入れる。同じ鍵でも、ステージングから本番の端末へは送れない。端末のトークンは別)。**`.p8`は、再ダウンロードできない。**手元にないなら、ステージング用には作り直せない。
+   - 本番で使っているサンドボックスの鍵の`.p8`を、手元に保存してあれば、それを再利用する(鍵はWorkerごとに、別の秘密として入れる。端末のトークンは別なので、ステージングから本番の端末へは送れない)。**ただし、鍵そのものを共有するので、ステージングから鍵が漏れると、本番の送信権限も漏れる。鍵が「Sandbox限定」で作られているかをAppleの画面で確認し、限定でなければ、共有してよいか自分で判断する。**`.p8`は、再ダウンロードできない。**手元にないなら、ステージング用には作り直せない。
    - 使っていない鍵があれば取り消して、新しく作る(本番が使っている鍵を取り消すと、本番の通知が止まるので、**取り消す前に必ずWorkerで使っていないことを確認する**)。
 2. 新しく作るときは、「Apple Push Notifications service (APNs)」にチェックし、環境は「Sandbox」(選べるとき)にする。`.p8`を一度だけダウンロードして、安全な場所に保存する。Key IDを控える。
 3. 秘密として設定する(`.p8`は、標準入力から渡す。チャットに貼らない):
@@ -402,8 +402,8 @@ npx wrangler secret put APNS_SANDBOX_AUTH_KEY --env staging < /安全な場所/A
 
 ```bash
 cd mcp-server
-echo "Bearer $(openssl rand -base64 32)"   # 出た値を控える(この1回だけ画面に出る。どこにも貼らない)
-npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # 上の値を貼る
+echo "Bearer $(openssl rand -base64 32)" | pbcopy   # 画面に出さず、クリップボードに入れる(Macの場合)
+npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップボードの値を貼る。RevenueCatの欄にも同じ値を貼ったら、クリップボードを別のものに上書きする
 ```
 
 2. RevenueCatのダッシュボード→Project settings→Integrations→Webhooks→「Add new webhook」(追加。**既存の本番のWebhookは編集しない**)。

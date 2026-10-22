@@ -16,7 +16,9 @@ export function markedPayload(env: Env, blocks: unknown[]): { blocks: unknown[];
   const [first, ...rest] = blocks as any[];
   const notice = { type: "context", elements: [{ type: "mrkdwn", text: `*[${tag}]* ${tag}環境(テスト用)からの通知です。本番ではありません` }] };
   if (first?.type === "header" && typeof first.text?.text === "string") {
-    return { blocks: [{ ...first, text: { ...first.text, text: `[${tag}] ${first.text.text}` } }, notice, ...rest], text: `[${tag}] ${first.text.text}` };
+    // Slack refuses a header over 150 characters, so the marked one is cut to fit.
+    const heading = `[${tag}] ${first.text.text}`.slice(0, 150);
+    return { blocks: [{ ...first, text: { ...first.text, text: heading } }, notice, ...rest], text: heading };
   }
   return { blocks: [notice, ...blocks], text: `[${tag}] studiquo通知` };
 }

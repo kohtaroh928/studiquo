@@ -83,6 +83,8 @@ test("push: the title is marked on staging only", async () => {
   await sendPush(partialEnv({ ...base, ENVIRONMENT_LABEL: "staging" }), "user-a", { title: "新着", body: "本文" }, options);
   await sendPush(partialEnv(base), "user-a", { title: "新着", body: "本文" }, options);
   assert.deepEqual(titles, ["[STAGING] 新着", "新着"]);
+  await sendPush(partialEnv({ ...base, ENVIRONMENT_LABEL: "staging" }), "user-a", { body: "本文" }, options);
+  assert.equal(titles[2], "", "no title means nothing to mark");
 });
 
 test("wrangler.jsonc marks the staging Worker only, and keeps credentials out of vars", () => {
@@ -91,4 +93,10 @@ test("wrangler.jsonc marks the staging Worker only, and keeps credentials out of
   assert.doesNotMatch(production, /ENVIRONMENT_LABEL/);
   assert.match(staging, /"ENVIRONMENT_LABEL"\s*:\s*"staging"/);
   assert.doesNotMatch(config, /"(ACCESS_AUD|ACCESS_TEAM_DOMAIN|APNS_[A-Z_]*KEY[A-Z_]*|REVENUECAT_[A-Z_]*|SLACK_ISSUE_REPORT_WEBHOOK_URL)"\s*:/);
+});
+
+test("Slack: a long header still fits Slack's 150-character limit once marked", () => {
+  const payload = markedPayload(staging, [{ type: "header", text: { type: "plain_text", text: "あ".repeat(150) } }]) as { blocks: any[] };
+  assert.equal(payload.blocks[0].text.text.length, 150);
+  assert.ok(payload.blocks[0].text.text.startsWith("[STAGING] "));
 });

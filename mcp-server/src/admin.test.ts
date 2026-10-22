@@ -182,6 +182,8 @@ test("a staging deployment drops PRODUCTION events and keeps SANDBOX ones", asyn
   const env = { ...environment(), ENVIRONMENT_LABEL: "staging", ALLOW_SANDBOX_PURCHASES: "true" };
   const real = await sendWebhook(env, purchaseEvent({ app_user_id: "real-customer", environment: "PRODUCTION" }));
   assert.deepEqual(await real.json(), { received: true, ignored: true });
+  const lowerCase = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "real-customer-3", environment: "production" }));
+  assert.deepEqual(await lowerCase.json(), { received: true, ignored: true });
   const noEnvironment = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "real-customer-2", environment: undefined }));
   assert.deepEqual(await noEnvironment.json(), { received: true, ignored: true });
   assert.equal(await env.ADMIN_DB.prepare("SELECT 1 AS found FROM revenuecat_events WHERE app_user_id LIKE 'real-customer%'").first(), null, "nothing about the real customer is stored");
