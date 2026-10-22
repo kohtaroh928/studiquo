@@ -5,23 +5,6 @@
 // triggered it: whatever it announces is already stored by the time this
 // runs, so a failure is only logged.
 import type { Env } from "./env.ts";
-import { environmentTag } from "./environment.ts";
-
-// On a non-production deployment every message says so: the header (or a
-// leading line when there is none) and the plain-text fallback that shows in
-// notifications. Production's payload is left exactly as it was.
-export function markedPayload(env: Env, blocks: unknown[]): { blocks: unknown[]; text?: string } {
-  const tag = environmentTag(env);
-  if (!tag) return { blocks };
-  const [first, ...rest] = blocks as any[];
-  const notice = { type: "context", elements: [{ type: "mrkdwn", text: `*[${tag}]* ${tag}環境(テスト用)からの通知です。本番ではありません` }] };
-  if (first?.type === "header" && typeof first.text?.text === "string") {
-    // Slack refuses a header over 150 characters, so the marked one is cut to fit.
-    const heading = `[${tag}] ${first.text.text}`.slice(0, 150);
-    return { blocks: [{ ...first, text: { ...first.text, text: heading } }, notice, ...rest], text: heading };
-  }
-  return { blocks: [notice, ...blocks], text: `[${tag}] studiquo通知` };
-}
 
 export async function postSlackBlocks(env: Env, blocks: unknown[]): Promise<void> {
   const webhookURL = env.SLACK_ISSUE_REPORT_WEBHOOK_URL;
@@ -30,7 +13,7 @@ export async function postSlackBlocks(env: Env, blocks: unknown[]): Promise<void
     await fetch(webhookURL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(markedPayload(env, blocks)),
+      body: JSON.stringify({ blocks }),
     });
   } catch (error) {
     console.error(JSON.stringify({ message: "slack notify failed", error: error instanceof Error ? error.message : String(error) }));
