@@ -435,7 +435,6 @@ npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップ
 4. RevenueCatのテストイベントが200。サンドボックス購入がステージングにだけ反映される。
 5. 本番のSlack・管理画面・RevenueCatの数字に、ステージングの痕跡が出ていない。
 
-### 10.8 気づいた別件(今回は直さない)
+### 10.8 直した別件: レート制限の`namespace_id`の重複
 
-`wrangler.jsonc`で、レート制限の`namespace_id`が、本番(`1025`〜`1027`)もステージング(`2025`〜`2027`)も、2つの制限で重なっている(`RATE_LIMIT_RAG_INDEX/SEARCH/PDF`と`RATE_LIMIT_ATTEST_CHALLENGE/REGISTER/ASSERT`)。同じ識別番号の制限は、カウンターを共有する可能性がある。Notionに記録した。
-
+RAG統合ブランチで、`RATE_LIMIT_RAG_INDEX/SEARCH/PDF`が、mainの`RATE_LIMIT_ATTEST_*`と同じ番号(本番`1025`〜`1027`、ステージング`2025`〜`2027`)だった。同じ番号の制限はカウンターを共有する可能性がある。RAG側を本番`1028`〜`1030`、ステージング`2028`〜`2030`に変えた(RAGは本番に未配備なので、本番のカウンターには影響しない。mainの`ATTEST`は番号を変えていない)。環境ごとに番号が重ならないことを`environment.test.ts`で検査する。**ステージングへは、次の配備で反映される。**
