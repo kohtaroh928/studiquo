@@ -5,17 +5,10 @@ import { join } from "node:path";
 import { environmentTag, isNonProduction, markAdminPage, tagged } from "./environment.ts";
 import { handleAdminPage } from "./admin.ts";
 import { handleAnnouncementsPage } from "./announcements.ts";
-import { markedPayload, postSlackBlocks } from "./slack.ts";
 import { sendPush } from "./push.ts";
 import { partialEnv } from "./test-env.ts";
 import { generateKeyPair, exportPKCS8 } from "jose";
 
-const staging = partialEnv({ ENVIRONMENT_LABEL: "staging", SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.example.test/slack" });
-const production = partialEnv({ SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.example.test/slack" });
-const blocks = [
-  { type: "header", text: { type: "plain_text", text: "題名" } },
-  { type: "section", text: { type: "mrkdwn", text: "本文" } },
-];
 
 test("only a short plain label counts, and production names mean no mark", () => {
   assert.equal(environmentTag({ ENVIRONMENT_LABEL: "staging" }), "STAGING");
@@ -27,37 +20,8 @@ test("only a short plain label counts, and production names mean no mark", () =>
   assert.equal(tagged({}, "件名"), "件名");
 });
 
-test("Slack: production's payload is exactly the blocks, untouched", () => {
-  assert.deepEqual(markedPayload(production, blocks), { blocks });
-});
 
-test("Slack: staging prefixes the header, adds a notice line and a plain-text fallback", () => {
-  const payload = markedPayload(staging, blocks) as { blocks: any[]; text: string };
-  assert.equal(payload.text, "[STAGING] 題名");
-  assert.equal(payload.blocks[0].text.text, "[STAGING] 題名");
-  assert.match(payload.blocks[1].elements[0].text, /STAGING環境.*本番ではありません/);
-  assert.equal(payload.blocks[2].text.text, "本文");
-  assert.equal(blocks[0].text.text, "題名", "the caller's blocks are not modified");
-});
 
-test("Slack: staging adds the notice first when a message has no header", () => {
-  const payload = markedPayload(staging, [blocks[1]]) as { blocks: any[]; text: string };
-  assert.equal(payload.blocks[0].type, "context");
-  assert.equal(payload.blocks[1].text.text, "本文");
-  assert.equal(payload.text, "[STAGING] studiquo通知");
-});
-
-test("Slack: the posted body carries the mark on staging only", async () => {
-  const original = globalThis.fetch;
-  const bodies: any[] = [];
-  globalThis.fetch = (async (_url: any, init: any) => { bodies.push(JSON.parse(init.body)); return new Response("{}"); }) as typeof fetch;
-  try {
-    await postSlackBlocks(staging, blocks);
-    await postSlackBlocks(production, blocks);
-  } finally { globalThis.fetch = original; }
-  assert.equal(bodies[0].text, "[STAGING] 題名");
-  assert.deepEqual(bodies[1], { blocks });
-});
 
 test("admin pages: staging gets a banner and a title prefix, production is unchanged", async () => {
   const html = "<title>管理</title><h1>管理</h1>";
@@ -95,11 +59,6 @@ test("wrangler.jsonc marks the staging Worker only, and keeps credentials out of
   assert.doesNotMatch(config, /"(ACCESS_AUD|ACCESS_TEAM_DOMAIN|APNS_[A-Z_]*KEY[A-Z_]*|REVENUECAT_[A-Z_]*|SLACK_ISSUE_REPORT_WEBHOOK_URL)"\s*:/);
 });
 
-test("Slack: a long header still fits Slack's 150-character limit once marked", () => {
-  const payload = markedPayload(staging, [{ type: "header", text: { type: "plain_text", text: "あ".repeat(150) } }]) as { blocks: any[] };
-  assert.equal(payload.blocks[0].text.text.length, 150);
-  assert.ok(payload.blocks[0].text.text.startsWith("[STAGING] "));
-});
 
 test("every rate limit in wrangler.jsonc has its own namespace_id within an environment", () => {
   const config = readFileSync(join(import.meta.dirname, "..", "wrangler.jsonc"), "utf8");

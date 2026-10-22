@@ -287,7 +287,7 @@ npx wrangler d1 delete studiquo-admin-staging
 
 | 出るもの | 目印 |
 | --- | --- |
-| Slackの通知(問題報告、アプリのエラー、通報、ログイン失敗の急増などのアラート。すべて`slack.ts`を通る) | 見出しの先頭に`[STAGING]`(見出しがない通知は、先頭の行に注意書き)、続けて「STAGING環境(テスト用)からの通知です。本番ではありません」、通知の一覧に出る文字も`[STAGING]`で始まる |
+| Slackの通知 | **目印は付けない。** ステージング専用のSlackワークスペースに、ステージング専用のWebhookを設定して、宛先で分ける(10.2) |
 | プッシュ通知 | 題名の先頭に`[STAGING]` |
 | メール(確認コード、新しい環境の通知、パスキーの通知) | 件名の先頭に`[STAGING]`(送信元の名前は、元から`Studiquo Staging`) |
 | 管理画面(`/admin`、`/admin/announcements`) | タブの題名に`[STAGING]`、画面の上に橙色の帯「STAGING環境(本番ではありません)」 |
@@ -297,11 +297,9 @@ npx wrangler d1 delete studiquo-admin-staging
 ### 10.2 Slackの宛先が本番と同じかの確認(結果: このセッションからは確認できない)
 
 - **確認できなかった理由:** Cloudflareの秘密(`wrangler secret`)は、書き込み専用で、設定した後に値を読み出せない。`wrangler secret list`で分かるのは、**名前があるか**(ステージングにも本番にも`SLACK_ISSUE_REPORT_WEBHOOK_URL`はある)だけで、宛先は分からない。Webhookの値の比較(ハッシュの比較など)も、値を読めないので、できない。値を表示・記録する方法は、禁止されているので使っていない。
-- **ユーザーの確認方法(どれか1つ):**
-  1. **Slackの画面で確認する(読むだけ)。** <https://api.slack.com/apps> →Studiquoの通知用のアプリ→「Incoming Webhooks」。Webhook URLごとに「どのチャンネルに投稿するか」が一覧で出る。本番用に設定したURLと、ステージング用に設定したURLが、**別の行・別のチャンネル**になっているかを見る。(URLそのものは、どこにも貼らない。)
-  2. **一番確実なのは、確認せずに作り直すこと。** Slackにステージング専用のチャンネル(例: `#studiquo-staging-alerts`)を作り、そこ宛ての新しいWebhookを発行し、`npx wrangler secret put SLACK_ISSUE_REPORT_WEBHOOK_URL --env staging`で入れ替える。これで、必ず別の宛先になる。本番用の方は触らない。
-  3. 配備後に、ステージングで問題報告を1件送り、`[STAGING]`の付いた投稿がどのチャンネルに出るかを見る。本番のチャンネルに出たら、2.を行う(目印が付いているので、本番の利用者の報告とは区別できる)。
-- 推奨: 2.を先に行ってから、配備する。
+- **決めたこと(2026-10-22):** ステージング専用のSlackワークスペースを作り、そのワークスペースのチャンネルを宛先にしたWebhookを、ステージングに設定する。ワークスペースが別なので、本番のチャンネルに出ることが、構造的に起きない。Slackの通知には目印を付けない(コードも消した)。
+- **やること(運営者):** 新しいワークスペースで、アプリ(Incoming Webhooks)を作り、Webhookを発行して、`npx wrangler secret put SLACK_ISSUE_REPORT_WEBHOOK_URL --env staging`で入れ替える。値はチャットに貼らない。古いWebhook(前のワークスペースのもの)は、Slack側で無効にする。
+- 配備後に、ステージングで問題報告を1件送り、新しいワークスペースにだけ投稿されることを確認する。
 
 ### 10.3 ステージングで管理画面を使う(Cloudflare Access)
 
@@ -429,7 +427,7 @@ npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップ
 
 ### 10.7 配備の後に、人が確認すること
 
-1. ステージングで問題報告を送る→Slackに`[STAGING]`の付いた投稿が、**テスト用のチャンネルだけ**に出る。
+1. ステージングで問題報告を送る→Slackの投稿が、**ステージング専用のワークスペースだけ**に出る。
 2. 管理画面にログインできる。未ログインの`/api/admin/stats`が401。
 3. Debugビルドの実機で、プッシュ通知が`[STAGING]`の題名で届く。
 4. RevenueCatのテストイベントが200。サンドボックス購入がステージングにだけ反映される。
