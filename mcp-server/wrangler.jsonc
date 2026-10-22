@@ -123,6 +123,10 @@
   ],
   "vars": {
     "RAG_ENABLED": "false",
+    // Answerability judge (src/rag/judge.ts, docs/RAG_SEMANTIC_JUDGE_DESIGN.md): "off" (default), "shadow" (call the
+    // judge and log its outcome only) or "on" (also stop or demote answers the judge says are not in the excerpts).
+    // Start with "shadow" and watch the "judge" fields of the rag_retrieval log lines (RUNBOOK RB-21) before "on".
+    "RAG_JUDGE": "off",
     "RAG_AUTO_INDEX_ENABLED": "false",
     "RAG_PDF_PROCESSING_ENABLED": "false",
     "RAG_PDF_CLEANUP_ENABLED": "false",
@@ -260,6 +264,7 @@
       ],
       "vars": {
         "RAG_ENABLED": "false",
+        "RAG_JUDGE": "off",
         "RAG_AUTO_INDEX_ENABLED": "false",
         "RAG_PDF_PROCESSING_ENABLED": "false",
         "RAG_PDF_CLEANUP_ENABLED": "false",

@@ -28,6 +28,19 @@ export const RELEVANCE = Object.freeze({
   topRankScore: 0.72, topRank: 5,
 });
 
+// The answerability judge (rag/judge.ts, docs/RAG_SEMANTIC_JUDGE_DESIGN.md). One extra Workers AI call after the
+// excerpts are final. `RAG_JUDGE` is off by default; thresholds are provisional, from a probe that was not held out.
+export const JUDGE = Object.freeze({
+  model: "@cf/cloudflare/clef-flash",  // Cloudflare's decision model: returns a probability, never free text
+  calls: 1,                            // judge calls per question
+  timeoutMs: 2000,                     // same as the reranker
+  minRemainingMs: 3000,                // skip when less time than this is left in the retrieval budget
+  excerptChars: 3000,                  // one excerpt sent to the judge
+  totalChars: 9000,                    // all excerpts sent to the judge (the model reads ~24k tokens)
+  stopBelow: 0.25,                     // single-subject question: no excerpt is shown below this probability
+  partialBelow: 0.5,                   // below this the answer is marked partial (comparisons never go further)
+});
+
 // Workers AI models. Cloudflare serves these ids without a version, so a silent change
 // on its side cannot be pinned here; the ids are named once, frozen by a test, and the
 // embedding id is part of every stored vector's meaning (a change needs a re-index).

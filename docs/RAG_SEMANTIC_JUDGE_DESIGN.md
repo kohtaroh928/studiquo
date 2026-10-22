@@ -1,5 +1,7 @@
 # 意味の判定の設計：単位のない詳細と、普通の語を含む無関係な質問
 
+> **状態（2026-10-22）：実装済み、既定は無効（`RAG_JUDGE=off`）。** 実装と実APIでの確認は[RAG_SEMANTIC_JUDGE_IMPLEMENTATION_REPORT.md](RAG_SEMANTIC_JUDGE_IMPLEMENTATION_REPORT.md)。以下は実装前の設計の記録で、実装は推奨の設計（O5→O2）に沿っている。
+
 2026-10-22。**設計の整理のみ。実装していない。** 語の一致では防げなかった「答えがない質問に出典が付く」ケースに、意味の判定（モデルによる確認）を足す設計を、選択肢ごとに比べる。判断材料として、使い捨ての試験（リポジトリ外）で、Workers AIの7つのモデルを実際のデータで測った。集計は[RAG_SEMANTIC_JUDGE_PROBE_RESULTS.json](RAG_SEMANTIC_JUDGE_PROBE_RESULTS.json)。
 
 ## 1. 結論と推奨
