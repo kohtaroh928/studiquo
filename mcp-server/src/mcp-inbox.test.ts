@@ -212,3 +212,17 @@ test("consumeOnce's own cleanup lets an id be consumed again once its record is 
 
   assert.equal(await inbox.consumeOnce("old-code"), true);
 });
+
+test("purge removes every item and every consumed token, so a deleted account leaves nothing in its inbox", async () => {
+  const inbox = freshInbox();
+  await inbox.enqueue("p-1", "create_document", { title: "a" }, "claude");
+  await inbox.enqueue("p-2", "create_document", { title: "b" }, "claude");
+  await inbox.acknowledge("p-2");
+  assert.deepEqual(await inbox.purge(), { deleted: true });
+  assert.deepEqual(await inbox.list(), []);
+  assert.equal(await inbox.status("p-1"), null);
+  assert.equal(await inbox.status("p-2"), null);
+  // The inbox works again afterwards, and an old id can be used anew.
+  assert.deepEqual(await inbox.enqueue("p-1", "create_document", { title: "again" }, "claude"), { id: "p-1", status: "pending" });
+  assert.equal((await inbox.list())[0].payload.title, "again");
+});

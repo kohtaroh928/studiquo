@@ -576,3 +576,111 @@ test("a mailbox proof is used up by the registration it was given for", async ()
   await handlePasskeys(new URL(attempt.url), attempt, env);
   assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 403);
 });
+
+// --- registering a passkey: a software authenticator that answers truthfully ---
+
+import { accountHasPasskey } from "./passkey-policy.ts";
+
+// A CBOR byte string header for a payload of this length (all ours are under 64 KiB).
+const cborBytes = (length: number) => length < 256 ? Buffer.from([0x58, length]) : Buffer.from([0x59, length >> 8, length & 0xff]);
+
+// An attestation with format "none": what a platform passkey sends when the
+// server asks for no attestation. The authenticator data carries the new key.
+function registrationFor(passkey: Untyped, challenge: string, id: string, { origin = `https://${RP_ID}`, rpID = RP_ID, type = "webauthn.create" } = {}) {
+  const clientDataJSON = Buffer.from(JSON.stringify({ type, challenge, origin, crossOrigin: false }));
+  const credentialID = Buffer.from(id);
+  const authData = Buffer.concat([
+    createHash("sha256").update(rpID).digest(),
+    Buffer.from([0x45]), Buffer.alloc(4), // user present + verified + attested data, counter 0
+    Buffer.alloc(16), Buffer.from([credentialID.length >> 8, credentialID.length & 0xff]), credentialID,
+    passkey.cose,
+  ]);
+  const attestationObject = Buffer.concat([
+    Buffer.from([0xa3]),
+    Buffer.from([0x63]), Buffer.from("fmt"), Buffer.from([0x64]), Buffer.from("none"),
+    Buffer.from([0x67]), Buffer.from("attStmt"), Buffer.from([0xa0]),
+    Buffer.from([0x68]), Buffer.from("authData"), cborBytes(authData.length), authData,
+  ]);
+  return {
+    id: b64url(credentialID), rawId: b64url(credentialID), type: "public-key", clientExtensionResults: {}, authenticatorAttachment: "platform",
+    response: { clientDataJSON: b64url(clientDataJSON), attestationObject: b64url(attestationObject), transports: ["internal"] },
+  };
+}
+
+async function registrationSetup(suffix: string) {
+  const env = environment();
+  const token = freshToken(suffix);
+  await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
+  await proveMailbox(env, token);
+  const optionsRequest = registerOptionsRequest(token);
+  const { transaction, options } = await (await handlePasskeys(new URL(optionsRequest.url), optionsRequest, env))!.json();
+  const verify = async (credential: unknown, tx = transaction) => {
+    const request = new Request("https://example.test/api/passkeys/register/verify", {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ transaction: tx, credential }),
+    });
+    return (await handlePasskeys(new URL(request.url), request, env))!;
+  };
+  return { env, token, transaction, challenge: options.challenge as string, verify, userKey: sha256Hex(token) };
+}
+
+test("registering a passkey stores it under the account, lists it for deletion, uses up the proofs and tells the owner by e-mail", async () => {
+  const { env, token, challenge, transaction, verify, userKey } = await registrationSetup("r");
+  env.RESEND_API_KEY = "re_test";
+  const passkey = newPasskey();
+  const credential = registrationFor(passkey, challenge, "credential-id-0001");
+  await withMail(async mail => {
+    const response = await verify(credential);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { registered: true });
+
+    const record = JSON.parse(await env.STUDIQUO_DATA.get(`passkeys:credential:${credential.id}`));
+    assert.deepEqual([record.id, record.email, record.userKey, record.counter], [credential.id, "student@example.com", userKey, 0]);
+    assert.deepEqual(record.publicKey, Array.from(passkey.cose));
+    assert.ok(Math.abs(record.createdAt - Date.now()) < 5_000);
+    assert.deepEqual(JSON.parse(await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`)).map((item: Untyped) => item.id), [credential.id]);
+    assert.equal(await accountHasPasskey(env, "test", "student@example.com"), true, "deleting the account will find it");
+
+    assert.equal(await env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`), null, "the challenge is single-use");
+    assert.equal(await env.STUDIQUO_DATA.get(`passkey-email-proof:${sha256Hex(token)}`), null, "the mailbox proof is single-use");
+    assert.equal(mail.length, 1);
+    assert.equal(mail[0].to, "student@example.com");
+    assert.match(mail[0].subject, /パスキー/);
+    assert.ok(!JSON.stringify(mail[0]).includes(credential.id), "the e-mail doesn't carry the credential");
+    assert.equal((await verify(credential)).status, 400, "the same attempt can't be replayed");
+  });
+});
+
+test("a registration that doesn't answer the challenge, or comes from another site, is refused and stores nothing", async () => {
+  const cases: [string, (challenge: string) => Untyped][] = [
+    ["another challenge", () => registrationFor(newPasskey(), b64url("not-the-challenge-0123456789abcdef"), "credential-id-0002")],
+    ["another origin", (challenge) => registrationFor(newPasskey(), challenge, "credential-id-0003", { origin: "https://evil.example" })],
+    ["another relying party", (challenge) => registrationFor(newPasskey(), challenge, "credential-id-0004", { rpID: "evil.example" })],
+    ["a sign-in, not a registration", (challenge) => registrationFor(newPasskey(), challenge, "credential-id-0005", { type: "webauthn.get" })],
+    ["an unreadable attestation", () => ({ id: "credential-id-0006", rawId: "credential-id-0006", type: "public-key", response: { clientDataJSON: "e30", attestationObject: "AAAA" } })],
+  ];
+  for (const [name, make] of cases) {
+    const { env, challenge, verify } = await registrationSetup(`s${cases.findIndex(item => item[0] === name)}`);
+    await withMail(async mail => {
+      const response = await verify(make(challenge));
+      assert.equal(response.status, 401, name);
+      assert.deepEqual(await response.json(), { error: "Passkey verification failed." }, name);
+      assert.deepEqual(mail, [], `${name}: nothing is announced`);
+    });
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:credential-id-0002"), null);
+    assert.equal(await accountHasPasskey(env, "test", "student@example.com"), false, name);
+  }
+});
+
+test("a registration that was started by another session can't be completed", async () => {
+  const mine = await registrationSetup("t");
+  const other = await registrationSetup("u");
+  const credential = registrationFor(newPasskey(), mine.challenge, "credential-id-0007");
+  const request = new Request("https://example.test/api/passkeys/register/verify", {
+    method: "POST", headers: { authorization: `Bearer ${other.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ transaction: mine.transaction, credential }),
+  });
+  const response = await handlePasskeys(new URL(request.url), request, other.env);
+  assert.equal(response!.status, 400);
+  assert.equal(await accountHasPasskey(other.env, "test", "student@example.com"), false);
+});
