@@ -128,7 +128,7 @@ export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
   // purchase (RevenueCat's PRODUCTION environment) sent to it by a mistaken
   // webhook setting is acknowledged and dropped, so no real customer's data
   // lands in the test database. An event without an `environment` counts as PRODUCTION.
-  if (environmentTag(env) && (event.environment ?? "PRODUCTION") === "PRODUCTION") {
+  if (environmentTag(env) && String(event.environment ?? "PRODUCTION").toUpperCase() === "PRODUCTION") {
     return json({ received: true, ignored: true });
   }
 
