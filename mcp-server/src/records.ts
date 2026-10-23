@@ -1,6 +1,6 @@
 // Shapes of the JSON records the Worker keeps in KV and shares between files.
 // Records only one file touches are typed in that file.
-import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
+import type { AuthenticatorTransport } from "@simplewebauthn/server";
 
 /** account-deletion:<hash>: where an account is in its deletion. */
 export interface DeletionState {
@@ -37,7 +37,7 @@ export interface PasskeyRecord {
   /** The credential's public key, as bytes. */
   publicKey: number[];
   counter: number;
-  transports?: AuthenticatorTransportFuture[];
+  transports?: AuthenticatorTransport[];
   email: string;
   userKey: string;
   createdAt?: number;

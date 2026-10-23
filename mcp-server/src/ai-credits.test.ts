@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { consumeCredits, creditCost, PLAN_BUDGETS, MODEL_CREDITS } from "./ai-credits.ts";
+import { affordableInputChars, consumeCredits, creditCost, planBudget, MODEL_CREDITS } from "./ai-credits.ts";
+import { mergeLimits } from "./ai-limits.ts";
 import type { LooseEnv } from "./test-env.ts";
 import type { Untyped } from "./test-env.ts";
 
@@ -24,7 +25,7 @@ function counters() {
 
 const call = (env: Untyped, overrides = {}) => consumeCredits(env, {
   accountKey: "acct", plan: "pro", kind: "chat", model: "openai-luna",
-  globalBucket: "chat", globalLimit: 1_000_000, now: Date.UTC(2026, 9, 12, 3, 0, 0), ...overrides,
+  globalLimit: 1_000_000, ...overrides,
 });
 
 test("credit weights match the published plan: Luna 1, Sonnet/Sol 20, Terra 22, Opus 40, Astra 100", () => {
@@ -43,17 +44,30 @@ test("non-chat features cost more than a chat turn on the same model", () => {
 });
 
 test("the published budgets are what the Worker enforces", () => {
-  assert.deepEqual(PLAN_BUDGETS.standard, { perMinute: 5, fiveHours: 40, day: 60, month: 120 });
-  assert.deepEqual(PLAN_BUDGETS.plus, { perMinute: 10, fiveHours: 400, day: 600, month: 1500 });
-  assert.deepEqual(PLAN_BUDGETS.pro, { perMinute: 20, fiveHours: 1000, day: 1500, month: 4000 });
+  assert.deepEqual(planBudget("standard"), { perMinute: 5, fiveHours: 10, week: 30 });
+  assert.deepEqual(planBudget("plus"), { perMinute: 10, fiveHours: 100, week: 350 });
+  assert.deepEqual(planBudget("pro"), { perMinute: 20, fiveHours: 250, week: 920 });
+  assert.deepEqual(planBudget("free"), { perMinute: 0, fiveHours: 0, week: 0 });
+  assert.deepEqual(planBudget("something-else"), { perMinute: 0, fiveHours: 0, week: 0 });
 });
 
-// Clears the minute / 5-hour / day counters between calls so only the month
+test("a long input costs more: free up to 12,000 characters, then once more per 6,000", () => {
+  assert.equal(creditCost("chat", "openai-luna", 0), 1);
+  assert.equal(creditCost("chat", "openai-luna", 12_000), 1);
+  assert.equal(creditCost("chat", "openai-luna", 12_001), 2);
+  assert.equal(creditCost("chat", "openai-luna", 18_000), 2);
+  assert.equal(creditCost("chat", "openai-luna", 18_001), 3);
+  assert.equal(creditCost("chat", "openai-luna", 60_000), 9);
+  assert.equal(creditCost("chat", "openai-astra", 60_000), 900);
+  assert.equal(creditCost("grade", "openai-luna", 74_000), 3 * 12);
+});
+
+// Clears the minute and 5-hour counters between calls so only the week
 // window is being tested.
 async function spendUntilStopped(env: { RATE_COUNTER: any; }, options: {} | undefined, limit = 5000) {
   let ok = 0;
   for (let i = 0; i < limit; i += 1) {
-    for (const name of [...env.RATE_COUNTER.used.keys()]) if (!name.includes(":mon:") && !name.startsWith("ai:global:")) env.RATE_COUNTER.used.delete(name);
+    for (const name of [...env.RATE_COUNTER.used.keys()]) if (!name.startsWith("ai:cr:wk:") && !name.startsWith("ai:global:")) env.RATE_COUNTER.used.delete(name);
     const result = await call(env, options);
     if (!result.ok) return { ok, window: result.window };
     ok += 1;
@@ -61,103 +75,109 @@ async function spendUntilStopped(env: { RATE_COUNTER: any; }, options: {} | unde
   return { ok, window: undefined };
 }
 
-test("pro fits exactly 40 Astra calls a month", async () => {
+test("pro fits 9 Astra calls a week", async () => {
   const env = { RATE_COUNTER: counters() };
-  assert.deepEqual(await spendUntilStopped(env, { plan: "pro", model: "openai-astra" }), { ok: 40, window: "month" });
+  assert.deepEqual(await spendUntilStopped(env, { plan: "pro", model: "openai-astra" }), { ok: 9, window: "week" });
 });
 
-test("pro fits exactly 100 Opus calls a month", async () => {
-  const env = { RATE_COUNTER: counters() };
-  assert.deepEqual(await spendUntilStopped(env, { plan: "pro", model: "claude-opus-5-5" }), { ok: 100, window: "month" });
+test("plus fits 17 Sol calls (and 350 Luna calls) a week", async () => {
+  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "plus", model: "openai-sol" }), { ok: 17, window: "week" });
+  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "plus", model: "openai-luna" }), { ok: 350, window: "week" });
 });
 
-test("plus fits 75 Sonnet calls (and 1,500 Luna calls) a month", async () => {
-  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "plus", model: "claude-sonnet-5-5" }), { ok: 75, window: "month" });
-  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "plus", model: "openai-luna" }), { ok: 1500, window: "month" });
+test("standard fits 30 Luna chat turns a week", async () => {
+  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "standard" }), { ok: 30, window: "week" });
 });
 
-test("a day's Astra calls on pro stop at 15, and 10 within 5 hours", async () => {
+test("a request costing more than the 5-hour allowance is refused as too long, taking nothing", async () => {
+  // 60,000 characters on Astra cost 900, more than pro's 250 per 5 hours: it
+  // could never be sent, so it is not refused as "wait for the window".
   const env = { RATE_COUNTER: counters() };
-  const burst = async () => {
-    let ok = 0;
-    for (let i = 0; i < 30; i += 1) {
-      for (const name of [...env.RATE_COUNTER.used.keys()]) if (name.startsWith("ai:cr:min:")) env.RATE_COUNTER.used.delete(name);
-      const result = await call(env, { plan: "pro", model: "openai-astra" });
-      if (!result.ok) return { ok, window: result.window };
-      ok += 1;
-    }
-    return { ok };
-  };
-  assert.deepEqual(await burst(), { ok: 10, window: "fiveHours" });
+  assert.deepEqual(await call(env, { plan: "pro", model: "openai-astra", inputChars: 60_000 }), { ok: false, window: "input" });
+  assert.equal(env.RATE_COUNTER.used.size, 0);
+  // Luna stays usable for the same long input: 9 credits.
+  assert.equal((await call({ RATE_COUNTER: counters() }, { plan: "pro", inputChars: 60_000 })).ok, true);
+  // Exactly the 5-hour allowance is still sendable.
+  assert.equal((await call({ RATE_COUNTER: counters() }, { plan: "standard", inputChars: affordableInputChars("standard", "chat", "openai-luna") })).ok, true);
 });
 
-test("the month window stops spending at the monthly total", async () => {
-  const env = { RATE_COUNTER: counters() };
-  // Plus, Luna (1 credit): 1,500 a month. Use a new 5-hour/day/minute bucket each time
-  // by varying the clock, but keep the same month.
-  let ok = 0;
-  let stoppedBy;
-  for (let i = 0; i < 1600; i += 1) {
-    const now = Date.UTC(2026, 9, 1 + (i % 28), (i * 7) % 24, i % 60, 0);
-    // keep the minute/5h/day counters out of the way
-    for (const name of [...env.RATE_COUNTER.used.keys()]) if (!name.includes(":mon:")) env.RATE_COUNTER.used.delete(name);
-    const result = await call(env, { plan: "plus", model: "openai-luna", now });
-    if (result.ok) ok += 1; else { stoppedBy = result.window; break; }
+test("the most input a plan can pay for, per model and feature", () => {
+  // pro, Astra: 250 / 100 = 2 steps -> 12,000 + 6,000.
+  assert.equal(affordableInputChars("pro", "chat", "openai-astra"), 18_000);
+  // standard, Luna chat: 10 steps -> 12,000 + 9 x 6,000.
+  assert.equal(affordableInputChars("standard", "chat", "openai-luna"), 66_000);
+  // standard, grading (x3): 3 steps.
+  assert.equal(affordableInputChars("standard", "grade", "openai-luna"), 24_000);
+  assert.equal(affordableInputChars("free", "chat", "openai-luna"), 0);
+  for (const [plan, kind, model] of [["pro", "chat", "openai-astra"], ["plus", "chat", "openai-sol"], ["standard", "grade", "openai-luna"]]) {
+    const most = affordableInputChars(plan, kind, model);
+    assert.ok(creditCost(kind, model, most) <= planBudget(plan).fiveHours, `${plan} ${kind} ${model} fits`);
+    assert.ok(creditCost(kind, model, most + 1) > planBudget(plan).fiveHours, `${plan} ${kind} ${model} is the most`);
   }
-  assert.equal(ok, 1500);
-  assert.equal(stoppedBy, "month");
 });
 
-test("the day window follows Japan time: 14:59 UTC and 15:00 UTC are different days", async () => {
+test("Astra calls on pro stop at 2 within 5 hours", async () => {
   const env = { RATE_COUNTER: counters() };
-  await call(env, { plan: "plus", now: Date.UTC(2026, 9, 12, 14, 59, 0) });
-  await call(env, { plan: "plus", now: Date.UTC(2026, 9, 12, 15, 0, 0) });
-  const dayKeys = [...env.RATE_COUNTER.used.keys()].filter(name => name.startsWith("ai:cr:day:"));
-  assert.equal(dayKeys.length, 2);
-  assert.ok(dayKeys[0].includes("20261012") && dayKeys[1].includes("20261013"));
+  let ok = 0;
+  let window;
+  for (let i = 0; i < 30; i += 1) {
+    for (const name of [...env.RATE_COUNTER.used.keys()]) if (name.startsWith("ai:cr:min:")) env.RATE_COUNTER.used.delete(name);
+    const result = await call(env, { plan: "pro", model: "openai-astra" });
+    if (!result.ok) { window = result.window; break; }
+    ok += 1;
+  }
+  assert.deepEqual({ ok, window }, { ok: 2, window: "fiveHours" });
 });
 
-test("the month rolls over at midnight Japan time", async () => {
+test("a refusal by the week window gives back the minute and 5-hour credits and the global ones", async () => {
   const env = { RATE_COUNTER: counters() };
-  await call(env, { plan: "plus", now: Date.UTC(2026, 9, 31, 14, 59, 0) });
-  await call(env, { plan: "plus", now: Date.UTC(2026, 9, 31, 15, 0, 0) });
-  const monthKeys = [...env.RATE_COUNTER.used.keys()].filter(name => name.startsWith("ai:cr:mon:"));
-  assert.equal(monthKeys.length, 2);
-});
-
-test("a refusal by the month window gives back the minute, 5-hour and day credits and the global count", async () => {
-  const env = { RATE_COUNTER: counters() };
-  const now = Date.UTC(2026, 9, 12, 3, 0, 0);
-  env.RATE_COUNTER.used.set("ai:cr:mon:202610:acct", 119); // standard month = 120
-  const refused = await call(env, { plan: "standard", kind: "grade", now }); // costs 12
-  assert.deepEqual(refused, { ok: false, window: "month" });
-  const leftovers = [...env.RATE_COUNTER.used.entries()].filter(([name, value]) => name !== "ai:cr:mon:202610:acct" && value !== 0);
+  env.RATE_COUNTER.used.set("ai:cr:wk:acct", 29); // standard week = 30
+  const refused = await call(env, { plan: "standard", kind: "review" }); // costs 3
+  assert.deepEqual(refused, { ok: false, window: "week" });
+  const leftovers = [...env.RATE_COUNTER.used.entries()].filter(([name, value]) => name !== "ai:cr:wk:acct" && value !== 0);
   assert.deepEqual(leftovers, []);
 });
 
-test("the service-wide cap still stops everyone, and costs the account nothing", async () => {
+test("the plan's service-wide ceiling stops its users, and costs the account nothing", async () => {
   const env = { RATE_COUNTER: counters() };
-  env.RATE_COUNTER.used.set("ai:global:chat", 5);
+  env.RATE_COUNTER.used.set("ai:global:pro", 5);
   const result = await call(env, { plan: "pro", globalLimit: 5 });
   assert.deepEqual(result, { ok: false, window: "global" });
-  assert.equal([...env.RATE_COUNTER.used.keys()].filter(name => name.startsWith("ai:cr:")).length, 0);
+  assert.ok([...env.RATE_COUNTER.used.entries()].filter(([name]) => name.startsWith("ai:cr:")).every(([, value]) => value === 0));
 });
 
-test("a refusal by the day window also gives back the minute and 5-hour credits", async () => {
+test("an account over its own limits takes nothing from the service-wide ceiling", async () => {
   const env = { RATE_COUNTER: counters() };
-  const now = Date.UTC(2026, 9, 12, 3, 0, 0);
-  env.RATE_COUNTER.used.set("ai:cr:day:20261012:acct", 60); // standard day = 60
-  assert.deepEqual(await call(env, { plan: "standard", now }), { ok: false, window: "day" }); // costs 1
+  env.RATE_COUNTER.used.set("ai:cr:wk:acct", 30); // standard week = 30
+  assert.deepEqual(await call(env, { plan: "standard" }), { ok: false, window: "week" });
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:standard") ?? 0, 0);
+});
+
+test("the service-wide ceiling counts credits, not calls, and is kept per plan", async () => {
+  const env = { RATE_COUNTER: counters() };
+  assert.equal((await call(env, { plan: "pro", model: "openai-astra" })).ok, true);
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:pro"), 100);
+  assert.equal((await call(env, { plan: "plus", model: "openai-sol", accountKey: "other" })).ok, true);
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:plus"), 20);
+  // Pro's ceiling being full does not stop plus.
+  env.RATE_COUNTER.used.set("ai:global:pro", 1_000_000);
+  assert.deepEqual(await call(env, { plan: "pro", accountKey: "third" }), { ok: false, window: "global" });
+  assert.equal((await call(env, { plan: "plus", accountKey: "fourth" })).ok, true);
+});
+
+test("a refusal by the 5-hour window also gives back the minute credits and the global ones", async () => {
+  const env = { RATE_COUNTER: counters() };
+  env.RATE_COUNTER.used.set("ai:cr:5h2:acct", 10); // standard 5 hours = 10
+  assert.deepEqual(await call(env, { plan: "standard" }), { ok: false, window: "fiveHours" }); // costs 1
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct") ?? 0, 0);
-  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct") ?? 0, 0);
-  assert.equal(env.RATE_COUNTER.used.get("ai:global:chat") ?? 0, 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:standard") ?? 0, 0);
 });
 
 test("refund() hands everything back once, and a second call does nothing", async () => {
   const env = { RATE_COUNTER: counters() };
-  const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
+  const result = await call(env, { plan: "pro", model: "claude-opus-5-5", inputChars: 20_000 });
   assert.equal(result.ok, true);
-  assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 40);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:wk:acct"), 40 * 3);
   await result.refund!();
   await result.refund!();
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
@@ -167,15 +187,21 @@ test("a refund still returns the other windows when one give throws", async () =
   const env = { RATE_COUNTER: counters() };
   const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-  (env.RATE_COUNTER as { getByName: (name: string) => unknown }).getByName = (name: string) => name.startsWith("ai:cr:5h:")
+  (env.RATE_COUNTER as { getByName: (name: string) => unknown }).getByName = (name: string) => name.startsWith("ai:cr:5h2:")
     ? { async give() { throw new Error("boom"); } }
     : real(name);
   await result.refund!(); // must not throw
-  assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 0);
-  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct"), 40, "the failed give leaves only its own window held");
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:wk:acct"), 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h2:acct"), 40, "the failed give leaves only its own window held");
 });
 
-test("free has no budget at all", async () => {
+test("free has no budget at all, and takes nothing from the service-wide ceiling", async () => {
   const env = { RATE_COUNTER: counters() };
   assert.deepEqual(await call(env, { plan: "free" }), { ok: false, window: "minute" });
+  assert.equal(env.RATE_COUNTER.used.size, 0);
+});
+
+test("budgets set through AI_LIMITS are the ones enforced", async () => {
+  const limits = mergeLimits(JSON.stringify({ plans: { standard: { week: 3 } } }));
+  assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "standard", limits }), { ok: 3, window: "week" });
 });

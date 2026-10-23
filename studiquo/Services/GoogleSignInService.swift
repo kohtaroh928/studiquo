@@ -30,9 +30,12 @@ final class GoogleSignInService {
         // The hash of a fresh nonce goes into the ID token; the raw nonce goes to our
         // server (see SignInNonce).
         let nonce = SignInNonce.make()
-        let result = try await GIDSignIn.sharedInstance.signIn(
-            withPresenting: presentingViewController, hint: nil, additionalScopes: nil, nonce: nonce.hashed
-        )
+        // Google's own screens wait on the person, not the server.
+        let result = try await SystemAuthUITracker.shared.track {
+            try await GIDSignIn.sharedInstance.signIn(
+                withPresenting: presentingViewController, hint: nil, additionalScopes: nil, nonce: nonce.hashed
+            )
+        }
         guard let idToken = result.user.idToken?.tokenString, let subject = result.user.userID else {
             throw GoogleSignInServiceError.invalidResponse
         }

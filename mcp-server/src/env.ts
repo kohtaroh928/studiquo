@@ -89,12 +89,13 @@ export interface Env {
   REQUIRE_RECENT_LOGIN_FOR_DELETION?: string;
   SESSION_MAX_DAYS?: string;
   PRIVACY_RETENTION_ENABLED?: string;
-  GLOBAL_GRADING_DAILY_LIMIT?: string;
-  GLOBAL_REVIEW_DAILY_LIMIT?: string;
-  GLOBAL_CHAT_DAILY_LIMIT?: string;
+  /** JSON overrides for the AI limits (ai-limits.ts). Unset: the defaults there. */
+  AI_LIMITS?: string;
   ANNOUNCEMENT_PUSH_BATCH?: string;
   AI_RETRY_BASE_MS?: string;
   REQUIRE_SIGNED_TOKENS?: string;
+  // "true": /mcp accepts only OAuth-paired tokens, not the app's session token.
+  MCP_REFUSE_SESSION_TOKENS?: string;
   REQUIRE_ID_TOKEN_NONCE?: string;
   MIN_APP_BUILD?: string;
   MAINTENANCE_MODE?: string;

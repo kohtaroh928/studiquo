@@ -65,6 +65,10 @@ struct AccountGateView: View {
         .environmentObject(authentication)
         // Why the server is paused, or that this build must be updated (ServerNotice.swift).
         .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // Sign-in (password, passkey, Apple, Google) and e-mail verification
+        // wait on the server: dim the screen and refuse touches until the
+        // reply arrives. Account deletion runs inside a sheet and has its own.
+        .blockingLoading(authentication.isSignInBusy || authentication.isEmailVerifyBusy)
         // The sign-in, verification and onboarding screens show an email address
         // and take a password or a code: not for the app switcher.
         .hidesInAppSwitcher(when: authentication.state != .authenticated)
