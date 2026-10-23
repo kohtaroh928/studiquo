@@ -171,7 +171,7 @@ struct ReportIssueSheet: View {
         }
         .interactiveDismissDisabled(state.isSubmitting)
         // This is a sheet: the gate's overlay does not reach it.
-        .blockingLoading(state.isSubmitting)
+        .blockingLoading(state.isSubmitting, presentationRoot: true)
     }
 
     private func submit() {

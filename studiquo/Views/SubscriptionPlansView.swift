@@ -96,7 +96,7 @@ struct SubscriptionPlansView: View {
         // A purchase, a restore or a reload waits on the App Store / Worker:
         // refuse touches until it answers. The background refresh that runs on
         // return to the app is not listed, so it never dims the screen.
-        .blockingLoading(store.isPurchasing || isWaitingForServer)
+        .blockingLoading(store.isPurchasing || isWaitingForServer, presentationRoot: true)
     }
 
     private var messageIsPresented: Binding<Bool> {

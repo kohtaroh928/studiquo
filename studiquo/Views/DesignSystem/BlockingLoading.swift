@@ -31,20 +31,44 @@ enum BlockingLoadingTiming {
     }
 }
 
+/// Which sources already have an overlay on an ancestor view, so that a view
+/// nested inside the same presentation does not dim the screen a second time.
+private struct BlockingLoadingSourcesKey: EnvironmentKey {
+    static let defaultValue: Set<String> = []
+}
+
+private extension EnvironmentValues {
+    var blockingLoadingSources: Set<String> {
+        get { self[BlockingLoadingSourcesKey.self] }
+        set { self[BlockingLoadingSourcesKey.self] = newValue }
+    }
+}
+
 /// Dims the screen and shows a spinner at its center. The content below
 /// cannot be touched while `isActive` is true, even during the short delay
 /// before the dimming appears.
 private struct BlockingLoadingModifier: ViewModifier {
     let isActive: Bool
+    let source: String
+    let presentationRoot: Bool
+    @Environment(\.blockingLoadingSources) private var coveredSources
     @State private var isShown = false
     @State private var shownAt = Date.distantPast
     @State private var isSlow = false
 
+    /// A view already covered by an ancestor's overlay for the same source
+    /// stays quiet. A sheet or full-screen cover is a new presentation the
+    /// ancestor's overlay cannot reach, so its root passes `presentationRoot`.
+    private var isCoveredByAncestor: Bool {
+        !presentationRoot && coveredSources.contains(source)
+    }
+
     func body(content: Content) -> some View {
         content
+            .environment(\.blockingLoadingSources, presentationRoot ? [source] : coveredSources.union([source]))
             .accessibilityHidden(isShown)
             .overlay {
-                if isActive || isShown {
+                if !isCoveredByAncestor && (isActive || isShown) {
                     ZStack {
                         // Swallows touches from the first moment.
                         Color.clear.contentShape(Rectangle())
@@ -102,8 +126,12 @@ private struct BlockingLoadingModifier: ViewModifier {
 
 extension View {
     /// Blocks interaction and shows a dimmed spinner while `isActive`.
-    /// Sheets are separate presentations: put this on a sheet's own content too.
-    func blockingLoading(_ isActive: Bool) -> some View {
-        modifier(BlockingLoadingModifier(isActive: isActive))
+    ///
+    /// Sheets and full-screen covers are separate presentations: put this on
+    /// the presentation's root content with `presentationRoot: true`. Views
+    /// nested in the same presentation that share a `source` with an ancestor
+    /// do not draw a second overlay.
+    func blockingLoading(_ isActive: Bool, source: String = "default", presentationRoot: Bool = false) -> some View {
+        modifier(BlockingLoadingModifier(isActive: isActive, source: source, presentationRoot: presentationRoot))
     }
 }
