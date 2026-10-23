@@ -3,7 +3,9 @@
 // plain Node — `cloudflare:workers` (needed only for the Durable Object
 // export below) doesn't exist outside the Workers runtime.
 import app from "./app.ts";
+import { cleanupScheduledRAG } from "./rag/storage.ts";
 import { runScheduledPrivacyWork } from "./privacy-retention.ts";
+import { recoverRawPDFJobs } from "./rag/pdf-job-recovery.ts";
 import { CRON_HEARTBEAT_KEY } from "./ops-alerts.ts";
 import type { Env } from "./env.ts";
 export default {
@@ -12,6 +14,13 @@ export default {
     // Written first, so that /health shows the schedule is running even if the work below is slow or fails.
     ctx.waitUntil(env.STUDIQUO_DATA.put(CRON_HEARTBEAT_KEY, String(Date.now()), { expirationTtl: 30 * 86_400 }).catch(() => {}));
     ctx.waitUntil(runScheduledPrivacyWork(env, controller.scheduledTime));
+    ctx.waitUntil(cleanupScheduledRAG(env));
+    // Keep cleanup independent of admission flags so revocation can still stop
+    // existing jobs. A separate operational switch defaults to disabled.
+    if (env.RAG_PDF_CLEANUP_ENABLED === "true")
+      ctx.waitUntil(recoverRawPDFJobs(env).catch(() => {
+        console.warn(JSON.stringify({event:"rag_pdf_cleanup",outcome:"unavailable"}));
+      }));
   },
 };
 export { ChatRoom } from "./chat-room.ts";

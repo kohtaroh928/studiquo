@@ -1,0 +1,974 @@
+{
+  "schemaVersion": 1,
+  "model": "gemini-3.5-flash",
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "method": "Direct Gemini selection-only shadow. Fixed synthetic authorized candidates; not Cloudflare retrieval or final answer evaluation. Single sequential pass, max20 calls, no retry, 5sec per request. Labels never sent. No product integration.",
+  "summary": {
+    "attempts": 16,
+    "validProposals": 0,
+    "fallbacks": 16,
+    "validButMissingRequired": 0,
+    "validRequiredFacts": 0,
+    "validTotalRequiredFacts": 0,
+    "allRequiredFacts": 28,
+    "allTotalRequiredFacts": 28,
+    "baselineReferences": 52,
+    "shadowReferences": 52,
+    "medianMs": 2887.5,
+    "minMs": 264,
+    "maxMs": 5002,
+    "usageObservedCalls": 0,
+    "usageTotals": {
+      "prompt": 0,
+      "output": 0,
+      "thoughts": 0,
+      "total": 0,
+      "cached": 0
+    },
+    "estimatedCostUSD": null,
+    "costNote": "No verified current rate for requested model. Usage-less failures/timeouts may still be billed. Not a billing statement.",
+    "plannedCases": 16,
+    "notAttempted": 0,
+    "stoppedEarly": false,
+    "failureCounts": {
+      "timeout": 7,
+      "provider_failure": 9
+    },
+    "httpStatusCounts": {
+      "None": 7,
+      "503": 2,
+      "429": 7
+    }
+  },
+  "cases": [
+    {
+      "id": "biology-comparison",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5001,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-input-output",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5002,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-example",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5001,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-experiment",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5001,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-night",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5000,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "split-materials",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5001,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "hidden-condition",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 1863,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 503,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "same-page-overlap",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 3912,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 503,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "qualifier-comparison",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 279,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "pages": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "referenceCount": 4,
+        "distinctSources": 1,
+        "textCharacters": 66,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "pages": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "referenceCount": 4,
+        "distinctSources": 1,
+        "textCharacters": 66,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "formula-scope",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 279,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "network-input-output",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 291,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 37,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 37,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "negated-distinction",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 298,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 51,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 51,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "cross-source-confirmation",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "timeout",
+      "elapsedMs": 5001,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": null,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 2,
+        "textCharacters": 24,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 2,
+        "textCharacters": 24,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "cross-page-qualification",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 423,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "sequence-layout",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 264,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "unknown-topic",
+      "split": "holdout",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 278,
+      "provider": {
+        "requestedModel": "gemini-3.5-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 67,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 67,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    }
+  ],
+  "executionNote": "Initial measurement before HTTP429/auth fail-fast was added. All16 were attempted once; no subsequent remote run."
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "../../../mcp-server/node_modules/wrangler/config-schema.json",
+  "name": "studiquo-private-docling",
+  "main": "../index.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [],
+  "observability": {
+    "enabled": false
+  },
+  "vars": {
+    "DOCLING_EXECUTION_ENABLED": "true"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DOCLING_JOBS",
+        "class_name": "DoclingJob"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "DoclingJob"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "DoclingJob",
+      "image": "../../docling-container/Dockerfile",
+      "image_build_context": "../../..",
+      "max_instances": 1,
+      "instance_type": "standard-1",
+      "scheduling_policy": "default",
+      "image_vars": {
+        "PYTHON_BASE": "python@sha256:5560e9ab8709f459489e5b8aa696eda8a07ef821e14bb122be62d91234bfa98b"
+      }
+    }
+  ]
+}

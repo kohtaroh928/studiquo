@@ -1,0 +1,1046 @@
+{
+  "schemaVersion": 1,
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "method": "Offline deterministic controls, zero model calls. Oracle reads draft labels. Unlabelled witnesses are not classified as irrelevant. Whole-reference paragraphs limit discrimination.",
+  "summary": {
+    "cases": 16,
+    "singleParagraphReferences": 50,
+    "totalReferences": 52,
+    "fullReferenceCoveredCases": 16,
+    "firstParagraphMissingCases": 2,
+    "labelOracleMissingCases": 0
+  },
+  "cases": [
+    {
+      "id": "biology-comparison",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "witnessCount": 5,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      }
+    },
+    {
+      "id": "biology-input-output",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "witnessCount": 5,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r3_p1"
+        ],
+        "witnessCount": 1,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      }
+    },
+    {
+      "id": "biology-example",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "witnessCount": 5,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r5_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r4_p1"
+        ],
+        "witnessCount": 1,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      }
+    },
+    {
+      "id": "biology-experiment",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "witnessCount": 5,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r4_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r5_p1"
+        ],
+        "witnessCount": 1,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      }
+    },
+    {
+      "id": "biology-night",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "witnessCount": 5,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r3_p1",
+          "r4_p1",
+          "r5_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r2_p1"
+        ],
+        "witnessCount": 1,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 5,
+        "totalReferences": 5
+      }
+    },
+    {
+      "id": "split-materials",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      }
+    },
+    {
+      "id": "hidden-condition",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "same-page-overlap",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "shipping"
+        ],
+        "protectedRequiredMissing": [
+          "shipping"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 1,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r2_p2"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 1,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "qualifier-comparison",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "pages": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "referenceCount": 4,
+        "distinctSources": 1,
+        "textCharacters": 66,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1",
+          "r4_p1"
+        ],
+        "witnessCount": 4,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 4,
+        "totalReferences": 4
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r2_p1",
+          "r3_p1",
+          "r4_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 4,
+        "totalReferences": 4
+      }
+    },
+    {
+      "id": "formula-scope",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "network-input-output",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 37,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r2_p1"
+        ],
+        "witnessCount": 1,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "negated-distinction",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 51,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      }
+    },
+    {
+      "id": "cross-source-confirmation",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 2,
+        "textCharacters": 24,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "cross-page-qualification",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "corporate"
+        ],
+        "protectedRequiredMissing": [
+          "corporate"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 1,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r2_p2"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 1,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "sequence-layout",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 2,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "unknown-topic",
+      "split": "holdout",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 67,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 3,
+        "totalReferences": 3
+      }
+    }
+  ]
+}

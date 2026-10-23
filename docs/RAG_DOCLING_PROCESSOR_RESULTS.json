@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-17",
+  "scope": "disconnected_local_finite_processor",
+  "tests": {
+    "processor": 19,
+    "existing_docling": 49,
+    "failures": 0
+  },
+  "independent_security_review": {
+    "tests": 19,
+    "unresolved_high_medium": 0
+  },
+  "parent_synthetic_smoke": {
+    "pages": 2,
+    "response_bytes": 8475,
+    "elapsed_seconds": 5.73,
+    "semantic_applied": false,
+    "job_directory_removed": true
+  },
+  "paid_api_calls": 0,
+  "new_model_downloads": 0,
+  "deployed": false,
+  "quality_improvement_proven": false,
+  "automatic_schedule": "PAUSED",
+  "sha256": {
+    "services/docling-processor/.gitignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+    "services/docling-processor/CONTRACT.md": "cb75c589768c87c823e52ee461492693521d1f9e9ad88c746eb64976273b8810",
+    "services/docling-processor/child_entry.py": "ca1a17a37266004ec2bd9f05ef9f21610d7865dc158980ed9e5ec3d3d84973c0",
+    "services/docling-processor/runner.py": "5a2473d41789bc9537d0a10353b8c95ba901216c1d0e9022047813f0de245054",
+    "services/docling-processor/test_child_entry.py": "c0beb622855d2ff08e22c5413c98f38306ceeb3f61b27d53eb1968b1558eb2b0",
+    "services/docling-processor/test_runner.py": "b9c31de7cff8e92519e041647de1551ad290fd97143873a2662269f1889da480",
+    "services/docling-processor/validation.py": "8b31c3ea988e06a6ad9b9606c6a2777ec95a5f90665d4570fcae05af41e7e886"
+  }
+}

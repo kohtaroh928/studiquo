@@ -1,0 +1,103 @@
+{
+ "date": "2026-10-21",
+ "before": "b87641e / 2977f79 (金額単位なし、数値の結びつけなし)",
+ "after": "本コミット(円・万円・ドルを追加、数値を1位または固有語を含む根拠に結びつけ)",
+ "environment": "real Workers AI REST (bge-m3, bge-reranker-base); D1=local SQLite FTS5, Vectorize=local exact cosine",
+ "workerTests": {
+  "tests": 2374,
+  "pass": 2373,
+  "fail": 0,
+  "skipped": 1,
+  "newTests": 4
+ },
+ "comparison": {
+  "main60": {
+   "before": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.968
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.95
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "validation20": {
+   "before": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "real30": {
+   "negBefore": 6,
+   "negAfter": 6,
+   "neg": 6,
+   "posBefore": 22,
+   "posAfter": 22,
+   "pos": 24,
+   "changed": [],
+   "byCategory": null,
+   "apiCalls": 408,
+   "executionFailures": 0
+  },
+  "unseen39": {
+   "negBefore": 17,
+   "negAfter": 18,
+   "neg": 27,
+   "posBefore": 12,
+   "posAfter": 12,
+   "pos": 12,
+   "changed": [
+    [
+     "v3-a4",
+     "grounded",
+     false,
+     "insufficient",
+     true
+    ]
+   ],
+   "byCategory": null,
+   "apiCalls": 417,
+   "executionFailures": 0
+  }
+ },
+ "unfixed": "v3-a6 (金額の単位は合うが別の対象の金額が1位のページにある)",
+ "note": "質問・正解・本文は含まない。case idは質問IDのみ。第2回30問・未見39問は調整済みとして扱う。"
+}

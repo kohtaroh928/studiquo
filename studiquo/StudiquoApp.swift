@@ -639,6 +639,13 @@ private enum NoteAIChatUITestStore {
         )
         let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
         let notebook = Notebook(title: "AIトーク回帰テスト")
+        if ProcessInfo.processInfo.arguments.contains("--rag-citation-test") {
+            for index in 1..<3 {
+                let extra = NotePage(order: index)
+                extra.notebook = notebook
+                notebook.addPage(extra)
+            }
+        }
         let page = NotePage(order: 0)
         page.notebook = notebook
         notebook.addPage(page)
@@ -650,6 +657,12 @@ private enum NoteAIChatUITestStore {
             question.thread = thread
             thread.addMessage(question)
             let reply = AIChatMessage(text: "既存の返答", role: .assistant)
+            if ProcessInfo.processInfo.arguments.contains("--rag-citation-test") {
+                reply.ragCitations = [.init(sourceId: notebook.ragID, title: notebook.title, pageNumber: 3, chunkId: "synthetic-ui-chunk")]
+                if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--rag-status-test=") }) {
+                    reply.ragStatusRawValue = String(argument.dropFirst("--rag-status-test=".count))
+                }
+            }
             reply.thread = thread
             thread.addMessage(reply)
         }

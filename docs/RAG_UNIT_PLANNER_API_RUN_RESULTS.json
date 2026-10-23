@@ -1,0 +1,424 @@
+{
+  "date": "2026-10-16",
+  "scope": "synthetic_development_v4_request_extraction_api_run",
+  "directory": "/private/tmp/studiquo-rag-unit-v4-20261016-01",
+  "runId": "c94c8934-2185-4b21-b13e-5741d876736c",
+  "manifestHash": "85976f488f5b6fe9c54cc57d53e7ffeea0cc96fb041d246031822a5a38e855fa",
+  "journalHash": "fd486aa7e2a4b3d5015b0a2245584c8553c667ed4557ae9a444a433122abfd2f",
+  "journalRecords": 23,
+  "manifest": {
+    "version": 2,
+    "suiteId": "unit-task-plan-v4-live-20261015-v1",
+    "contractVersion": 4,
+    "transportAttached": true,
+    "input": {
+      "version": 1,
+      "contractVersion": 4,
+      "syntheticOnly": true,
+      "questionCount": 8,
+      "externalCalls": 0,
+      "modelEvaluated": false,
+      "releaseAccepted": false,
+      "requestBytesLimit": 32768,
+      "rows": [
+        {
+          "index": 0,
+          "parentCandidateRequestHash": "e1d354e85d16a2adc20df4f89264d6ee2ca78597092ff45135069dbb3953f14d",
+          "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "23280546e3c3565722df182c4ddb2e4e782b1266e8874d9d6884fd3de67ac906",
+          "requestHash": "7d35a10a8a61128296c7ba32c6fafbdc4620f672320ba18a3e1cbc7f611a74c1",
+          "bytes": 7155
+        },
+        {
+          "index": 1,
+          "parentCandidateRequestHash": "4b1802e5d2e2e004cfb64816c792124abcabacf163b57c1b602d88c667a663f4",
+          "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "03e21c9ac75909376e6751f34c1e8272e8294a4844c300ecde7fcbd31c1167a3",
+          "requestHash": "01ab878cc663029ce47de3e217ad1f9a848b3361221fc50b6e754cb5d8ea3344",
+          "bytes": 7125
+        },
+        {
+          "index": 2,
+          "parentCandidateRequestHash": "4bdea8398a33c907ff7523fde4de47c47b38c122ac209715378a68a617e31d1d",
+          "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "9b400c07935acd463f2522aba206ab9e2ac33442efb80a00542daac155aee536",
+          "requestHash": "6673108f26822e1b5558bcef854ade4c2bb855187d5b1f9c872f47195139b756",
+          "bytes": 7123
+        },
+        {
+          "index": 3,
+          "parentCandidateRequestHash": "76faf34c7f3a01a11b3a6a1c8cc07d1ae3880f1e753f40647d161c2d5cbceb54",
+          "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "fb4997e2f74c140208a0d0e05a98446455fbfef156088d994c92c93c05de9a35",
+          "requestHash": "450d2ce51d6240cdd51ca91fcb596aeac4052a134e335f32e03253e7a644fa11",
+          "bytes": 7157
+        },
+        {
+          "index": 4,
+          "parentCandidateRequestHash": "546f8d3ed812d1963a1c21eb5f6188f6297bd105dddb374d595261dde2a26a73",
+          "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "d8e451736d23c588456efecddc1d13dfc50f8c91bc03f5338b7dded07f4fd28c",
+          "requestHash": "4f7de4a431c4058c1febe220cb31e772c69ee875bb2fad95c7b94552f12cf4b2",
+          "bytes": 7169
+        },
+        {
+          "index": 5,
+          "parentCandidateRequestHash": "9b3fa783523e9ba08687eb3693d2960fbcdafbcee6094404e722033bdd08bf36",
+          "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "08347d2fd87bdfcdb73a6685f36ce55445c027b9e92d6aef18449dba4212099c",
+          "requestHash": "d8af138aa1e8aa72051acc1179c0feaf38f28e61f873afbc6266e776a88f0bd7",
+          "bytes": 7181
+        },
+        {
+          "index": 6,
+          "parentCandidateRequestHash": "5f6a0733a6ad61946a7839f34a256b006425c6c9b3b7df4ef8815d556b75c616",
+          "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "ebda7e112c9b732075799f347814a8c7b469b341b5ee4cbcb179c2f620eb43db",
+          "requestHash": "e02aa382763a9ea320c33340a7674a8d55658eb2d1d918367be5b0b5cdd632ec",
+          "bytes": 7149
+        },
+        {
+          "index": 7,
+          "parentCandidateRequestHash": "31a5ff01c9d83031bf7bf7c6782d23fb4a1882600ce059e5fb4bfe99dda89e88",
+          "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "d1454a4dec0225ef9fabfffbd17cf7261564c3ca6557059fd7358dfac004dbef",
+          "requestHash": "9a0372857157d732f55d3e6b150d567be457d59f4fd65e637aa8d52727b34564",
+          "bytes": 7197
+        }
+      ]
+    },
+    "limits": {
+      "dispatches": 8,
+      "checkpoints": [
+        1,
+        4,
+        8
+      ],
+      "reservedMicroUSD": 8192,
+      "totalReservedMicroUSD": 65536,
+      "requestBytes": 32768,
+      "responseBytes": 262144,
+      "requestMs": 60000,
+      "stageMs": [
+        60000,
+        180000,
+        240000
+      ],
+      "journalBytes": 1048576
+    },
+    "sourceHashes": {
+      "unit-task-planner-live-journal.mjs": "5b805ae2d88c38273484bfd5da1d63551639dfe37fb305c5ccf6998435fb0d63",
+      "unit-task-planner-live.mjs": "c37ee6c53fa2a673aeb86cf95d1978de0bc5281dcf6779dda59a6d854e76f7d4",
+      "unit-task-planner-live-review.mjs": "f4b4681c75b4555d834271dcff2e8b05237427c5cf527a290f23a9106ab9203f",
+      "unit-task-planner-secret-guard.mjs": "adbea8c375e1a90441a6eace4259599cb72d813fe488956b49d30c78275972d6",
+      "unit-task-planner-artifact.mjs": "977dbab28bc41a84030bc56bfd251f605aeaf59cdb4c12b4cd52282d9bd7b73c",
+      "unit-task-planner-request.mjs": "18c77817330d37f9e708127f6e7ae514b2a39009d1eeeac8923b71cb507d316a",
+      "unit-task-planner-response.mjs": "9199ea1070df96f4494b180621728d11ace58edcdb87fb2f3824afec1eee0e6e",
+      "question-units.mjs": "00781da530a7f6c27c5e586caebc3ce5795b784cae27f2734386c2a3408f3a25",
+      "task-plan-units-v4.mjs": "9e0db8c891204044ff94d75e4cd82dd25ec0cd4fdd2cee67541b23075f22e2aa",
+      "unit-plan-semantic-review.mjs": "92be84e0468181d165e6e940c11f77f38a2e91af45c02eeede3b97a2f1c57865",
+      "task-plan-paired-oracle-v1.json": "4a96d663d4c2637fdae97495509fd55c60c4beadd9596d587f0484b73db9eebc",
+      "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+      "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "question-task-fixture.mjs": "5faba8476b6a84338b8d1d465b809eef0328fbfc8192f946ca3b5842b2363310",
+      "task-plan-paired-draft.json": "da62542b60cc32a348faad176a71bc11266829e9220d1d5659561cc026d2bf43"
+    },
+    "jobs": [
+      {
+        "index": 0,
+        "stage": 0,
+        "requestHash": "7d35a10a8a61128296c7ba32c6fafbdc4620f672320ba18a3e1cbc7f611a74c1",
+        "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714"
+      },
+      {
+        "index": 1,
+        "stage": 1,
+        "requestHash": "01ab878cc663029ce47de3e217ad1f9a848b3361221fc50b6e754cb5d8ea3344",
+        "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19"
+      },
+      {
+        "index": 2,
+        "stage": 1,
+        "requestHash": "6673108f26822e1b5558bcef854ade4c2bb855187d5b1f9c872f47195139b756",
+        "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3"
+      },
+      {
+        "index": 3,
+        "stage": 1,
+        "requestHash": "450d2ce51d6240cdd51ca91fcb596aeac4052a134e335f32e03253e7a644fa11",
+        "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5"
+      },
+      {
+        "index": 4,
+        "stage": 2,
+        "requestHash": "4f7de4a431c4058c1febe220cb31e772c69ee875bb2fad95c7b94552f12cf4b2",
+        "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f"
+      },
+      {
+        "index": 5,
+        "stage": 2,
+        "requestHash": "d8af138aa1e8aa72051acc1179c0feaf38f28e61f873afbc6266e776a88f0bd7",
+        "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787"
+      },
+      {
+        "index": 6,
+        "stage": 2,
+        "requestHash": "e02aa382763a9ea320c33340a7674a8d55658eb2d1d918367be5b0b5cdd632ec",
+        "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88"
+      },
+      {
+        "index": 7,
+        "stage": 2,
+        "requestHash": "9a0372857157d732f55d3e6b150d567be457d59f4fd65e637aa8d52727b34564",
+        "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "stage": 0,
+      "completed": 1,
+      "decision": "continue",
+      "checkpointHash": "460b0f435a776a9b9c39bfa3cb00b57490b8c19850427c04314018b53f2d1406",
+      "artifactHash": "4a89843ab2715ff280913faf640811c92ae8377cb9677b72cd054e3bfe9acdf2"
+    },
+    {
+      "stage": 1,
+      "completed": 4,
+      "decision": "continue",
+      "checkpointHash": "cb7415e215167c6c73c3312d768fd6eb8a69b3d9502bef9d626be59cfd49224c",
+      "artifactHash": "84a6fd6016e5122a22a2f8c389bd82734d73880460d8af512a171c45bcf07e1e"
+    },
+    {
+      "stage": 2,
+      "completed": 8,
+      "decision": "stop",
+      "checkpointHash": "cbacd219b50ce455272405a4010a2c3c55065e9dc5e0e5781d5b9eec51ca0304",
+      "artifactHash": "0c286bf5a1a00368bcec806346ecca03689cc30e4d844a0cd299d8bab7919a6d"
+    }
+  ],
+  "apiDispatches": 8,
+  "completed": 8,
+  "transportFailed": 0,
+  "semanticMatchedCases": 7,
+  "semanticMismatchCases": 1,
+  "cases": [
+    {
+      "index": 0,
+      "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714",
+      "taskCount": 2,
+      "oracleRequirements": 2,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 2,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 2,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 1,
+      "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19",
+      "taskCount": 1,
+      "oracleRequirements": 1,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 1,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 1,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 2,
+      "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3",
+      "taskCount": 2,
+      "oracleRequirements": 2,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 2,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 2,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 3,
+      "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5",
+      "taskCount": 1,
+      "oracleRequirements": 1,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 1,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 1,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 4,
+      "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f",
+      "taskCount": 2,
+      "oracleRequirements": 2,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 2,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 2,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 5,
+      "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787",
+      "taskCount": 2,
+      "oracleRequirements": 2,
+      "semanticStatus": "mismatch_detected",
+      "approvedMatches": 0,
+      "oracleRelativeMissing": {
+        "lower": 2,
+        "upper": 2
+      },
+      "oracleRelativeExtra": {
+        "lower": 2,
+        "upper": 2
+      },
+      "representationCounts": {
+        "representable": 2,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 6,
+      "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88",
+      "taskCount": 1,
+      "oracleRequirements": 1,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 1,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 1,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    },
+    {
+      "index": 7,
+      "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d",
+      "taskCount": 2,
+      "oracleRequirements": 2,
+      "semanticStatus": "reviewed_match",
+      "approvedMatches": 2,
+      "oracleRelativeMissing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "oracleRelativeExtra": {
+        "lower": 0,
+        "upper": 0
+      },
+      "representationCounts": {
+        "representable": 2,
+        "unsupported": 0,
+        "uncertain": 0
+      }
+    }
+  ],
+  "generationComplete": true,
+  "finalReviewComplete": false,
+  "finalDecision": "stop",
+  "lockRetained": true,
+  "retryCount": 0,
+  "usage": {
+    "input": 10066,
+    "output": 2120,
+    "reasoning": 646,
+    "cached": 0,
+    "cacheWrite": 10042
+  },
+  "usageDerivedUSDEstimate": 0.00231765,
+  "actualBillingUSD": null,
+  "reservedMicroUSD": 65536,
+  "latencyMs": {
+    "sum": 36683.469000000005,
+    "min": 3456.4155420000006,
+    "median": 4199.892750000001,
+    "max": 7317.702499999999
+  },
+  "priceSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "priceChecked": "2026-10-16",
+  "allQuestionsHaveOneUnit": true,
+  "humanGoldReview": "pending",
+  "runtimePrompt": "v1_unchanged",
+  "releaseAccepted": false,
+  "lastFullWorkerTests": {
+    "passed": 1540,
+    "reexecutedThisStep": false
+  },
+  "independentSemanticAudits": 3,
+  "independentSafetyAudit": "passed_final_stop_23_records",
+  "oldFailedRunLocksRetained": 4,
+  "next": "generic_subject_role_candidate_design_with_independent_new_development_oracle_and_multiunit_cases",
+  "entryScript": {
+    "path": "/private/tmp/studiquo-unit-v4-live-entry-20261016.mjs",
+    "sha256": "5fdee57c692dc35396ef15b170a6df189aa828c5a27f2ceae026b097be5a4cf8"
+  },
+  "nextDesign": "docs/RAG_UNIT_PLANNER_ROLE_FOLLOWUP.md"
+}

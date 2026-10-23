@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-16",
+  "scope": "local Docling body-only structure/semantic/recursive chunking; no Worker/iPad integration",
+  "sourceHashes": {
+    "tools/docling/.gitignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+    "tools/docling/README.md": "edef0471de95b2918a6fc770f98077a039431fb2397bbce146d921f51e1e35f1",
+    "tools/docling/VALIDATION.md": "b86cb21da118abb47af8c1d1782a43a1e1e0dea7ec7dc21650403767429f33d5",
+    "tools/docling/extract_pdf.py": "9d4fd9395aa1eafcc8e7ea826e9cd125c2919998ca918e8d6a3fd9dc59b5d074",
+    "tools/docling/prepare_manifest.py": "49055430806e1f268dd69fcf3f93fd4b77ff9ca7da03476695a79922d97bcd14",
+    "tools/docling/requirements.lock.txt": "36d3e26b6f3657340896d616d3d1c828dafbad7297a8d5329b679746eb018c49",
+    "tools/docling/requirements.txt": "da25e920090fc82c2907b7b978260126f334e814d2a6e32168d79dafc85e05cf",
+    "tools/docling/semantic_manifest.py": "b9427f1cfa3e61a984c7aead12f3f10f6bd5840e6fb973fe53b610cf8a6baf94",
+    "tools/docling/smoke.py": "74f76873126338700397f738581aacd1d71263ff783b9ab216af7ed684d9ff9e",
+    "tools/docling/structured_chunking.py": "74ff9b97e88bb047e8d6258c2579bd76b0bdff4d0aef9e5a2114ec17080aaf66",
+    "tools/docling/test_extract_pdf.py": "69735d47e713996f7feef97ca8135cd4e384051a859a8fdeea8fe87acd53416e",
+    "tools/docling/test_structured_chunking.py": "b2037944238ab6a495a3162fd7e6d203f7a2675b38a2b61bbf80fa4d01625493"
+  },
+  "tests": {
+    "python": {
+      "pass": 34,
+      "fail": 0
+    },
+    "independentContract": {
+      "pass": 34,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 34,
+      "fail": 0
+    },
+    "unresolvedHighMedium": 0
+  },
+  "realSyntheticSmoke": {
+    "pages": 2,
+    "bodyChunks": 4,
+    "protectedElements": 4,
+    "protectedTables": 2,
+    "sourceRangesVerified": true,
+    "pageStatesPreserved": true,
+    "privateFiles": true,
+    "semanticApplied": false,
+    "semanticFallbackReason": "no_vectors",
+    "implementerFinalLog": "/private/tmp/docling-chunks-smoke-03.log",
+    "parentDirectory": "/private/tmp/studiquo-structured-chunks-parent-01"
+  },
+  "semantic": {
+    "modelProvidedBy": "explicit precomputed local vector file",
+    "encoderInstalledByThisChange": false,
+    "unitBinding": "whole text + element/page/start/end/unit SHA + model label",
+    "scope": "same text/paragraph element, >=120 estimated tokens and multiple units",
+    "distanceThreshold": 0.35,
+    "realEmbeddingQualityEvaluated": false
+  },
+  "limits": {
+    "maxEstimatedTokens": 400,
+    "maxOverlapEstimatedTokens": 65,
+    "maxPages": 1000,
+    "maxElements": 20000,
+    "maxChunks": 20000,
+    "maxUnits": 20000,
+    "maxVectorDimensions": 4096,
+    "maxVectorComponents": 2000000,
+    "maxTextCodepoints": 8000000,
+    "maxOutputBytes": 33554432
+  },
+  "reviewFixes": [
+    "preserve page OCR/review state into chunks and protected elements",
+    "reject explicit JSON null vectors rather than silently falling back",
+    "share global input bounds and duplicate-ID validation with semantic manifest"
+  ],
+  "workerChanged": false,
+  "workerTestsRerun": false,
+  "priorWorkerPass": 1707,
+  "openaiAPICalls": 0,
+  "keyReads": 0,
+  "modelDownloads": 0,
+  "deploy": false,
+  "automation": "PAUSED",
+  "runtimeAndFrozenEvaluatorHashes": "unchanged",
+  "qualityImprovement": "not established",
+  "projectCopiesNeedingUpdate": [
+    "HYBRID_RAG.md"
+  ]
+}

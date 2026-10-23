@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_question_only_unit_planner_v4_io",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/unit-task-planner-request.mjs": "18c77817330d37f9e708127f6e7ae514b2a39009d1eeeac8923b71cb507d316a",
+    "mcp-server/scripts/rag-quality/unit-task-planner-response.mjs": "9199ea1070df96f4494b180621728d11ace58edcdb87fb2f3824afec1eee0e6e",
+    "mcp-server/src/rag-unit-task-planner-io.test.js": "4b6a8f9351d17278167f9d20b8e22ef046003ec0dc522e903ba1aa68379dd919"
+  },
+  "tests": {
+    "targetPassed": 9,
+    "workerPassed": 1476,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-unit-planner-io-all.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": "passed_9",
+  "lowCloneTestFix": "schema_mutation_4_to_3_and_manifest_clone_verified",
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "mockDevelopmentCases": 8,
+  "mockCandidateTasks": 13,
+  "externalSchemaAcceptance": "not_evaluated",
+  "modelQuality": "not_evaluated",
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "frozenV3SourceHashesMatch": true,
+  "frozenV3JournalHash": "70edfaabd3ebeb5ad8d51f1ba139fa1291b66505badf71f1350b5e2e06d26cd4",
+  "failedLocksRetained": 4,
+  "limits": {
+    "requestBytes": 32768,
+    "responseBytes": 262144,
+    "planBytes": 32768
+  },
+  "legacyRunnerCompatible": false,
+  "next": "design_separate_v4_bounded_run_and_independent_safety_gate"
+}

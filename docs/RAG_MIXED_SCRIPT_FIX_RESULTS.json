@@ -1,0 +1,69 @@
+{
+  "change": "Canonical mixed-script relevance tokens + legacy compatible quoted FTS query aliases; persisted FTS representation unchanged",
+  "indexVersion": 2,
+  "migrationRequired": false,
+  "reembeddingRequiredForThisChange": false,
+  "naturalLocalDiagnostic": {
+    "baseline": {
+      "positiveQueries": 8,
+      "negativeQueries": 2,
+      "canonicalTop5Coverage": 7,
+      "expandedCandidateRecall": 8,
+      "productionLexicalEligibleCoverage": 7,
+      "negativeLexicalGate": 2
+    },
+    "fixed": {
+      "positiveQueries": 8,
+      "negativeQueries": 2,
+      "canonicalTop5Coverage": 8,
+      "expandedCandidateRecall": 8,
+      "productionLexicalEligibleCoverage": 8,
+      "negativeLexicalGate": 2
+    }
+  },
+  "synthetic100PageLocalDiagnostic": {
+    "baseline": {
+      "positiveQueries": 55,
+      "negativeQueries": 5,
+      "canonicalTop5Coverage": 46,
+      "expandedCandidateRecall": 55,
+      "productionLexicalEligibleCoverage": 43,
+      "negativeLexicalGate": 5
+    },
+    "fixed": {
+      "positiveQueries": 55,
+      "negativeQueries": 5,
+      "canonicalTop5Coverage": 46,
+      "expandedCandidateRecall": 55,
+      "productionLexicalEligibleCoverage": 43,
+      "negativeLexicalGate": 5
+    },
+    "perQuestionCoverageRegressions": []
+  },
+  "tests": {
+    "newRegression": {
+      "passed": 6,
+      "failed": 0
+    },
+    "targetedRAG": {
+      "passed": 48,
+      "failed": 0
+    },
+    "allWorker": {
+      "passed": 767,
+      "failed": 0
+    }
+  },
+  "initialFullRun": "Could not load 21 test files due to missing worktree dependencies; npm ci with unchanged lockfile and ignored scripts followed by all tests passing",
+  "externalMaterialCalls": 0,
+  "deployment": false,
+  "iosChanged": false,
+  "limitations": [
+    "Lexical-only local diagnosis, not whole Hybrid RAG accuracy",
+    "Same observed natural sample, not independent holdout",
+    "No Gemini generation or reranker/vector remeasurement",
+    "Physical iPad/true scans remain untested",
+    "Persisted legacy mixed runs still lack whole Latin words; single Latin-only query against such rows retains previous limitations",
+    "Query aliases remain limited to 64 unique terms"
+  ]
+}

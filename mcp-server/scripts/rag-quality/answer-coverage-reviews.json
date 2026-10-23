@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "scope": "only explicit delta requirement; other requirements remain pending",
+  "basis": "Codex and prior independent AI content review; provenance hashes are not signatures",
+  "annotations": [
+    {
+      "variant": "v1",
+      "id": "e50-partial-03:explain",
+      "answerHash": "bab8decfaea94895bfcbc3b8c20f303a80b8f9ac2aa58bc5e983ce2c39d47427",
+      "state": "satisfied",
+      "quote": {
+        "start": 36,
+        "end": 43,
+        "hash": "eb69b0c962e0039d33bcca9258a6294f9f1420aa1d0e204c24e2f2bab79b4dc1"
+      }
+    },
+    {
+      "variant": "v1",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "29674e13384b41bcbb4a5f113d9c728ad8e0eb200383e24d08c125ec83f3c74e",
+      "state": "satisfied",
+      "quote": {
+        "start": 40,
+        "end": 50,
+        "hash": "78f41558178f312e02c959dd6cecf320068a06b1cba5738220a13fda088100d6"
+      }
+    },
+    {
+      "variant": "dedup",
+      "id": "e50-partial-03:explain",
+      "answerHash": "4b28bb8c68b6678c3ecca2851bae9a28f7a06072b39d25e685d5de37b249d21e",
+      "state": "satisfied",
+      "quote": {
+        "start": 25,
+        "end": 35,
+        "hash": "78f41558178f312e02c959dd6cecf320068a06b1cba5738220a13fda088100d6"
+      }
+    },
+    {
+      "variant": "dedup",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "ef6245137923deb9ac8f2a2c9c08a1f5de83928567555dfdad26a1fb30c91e93",
+      "state": "omitted",
+      "scan": {
+        "start": 0,
+        "end": 71
+      },
+      "reasonCode": "not_stated"
+    },
+    {
+      "variant": "dedup_plus_partial",
+      "id": "e50-partial-03:explain",
+      "answerHash": "7616ea1ed4c1b347b556474b7d7357ebc2b495c0e8776ffa69d8562668b6ce70",
+      "state": "satisfied",
+      "quote": {
+        "start": 80,
+        "end": 90,
+        "hash": "5e0ed0819d39b36a79c070187a5fd998250277ea9b72015843f2e08d6420824d"
+      }
+    },
+    {
+      "variant": "dedup_plus_partial",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "112825c7daacd18301d2c903f8ebc47208277464cc4b4087cfd31e159efce56f",
+      "state": "omitted",
+      "scan": {
+        "start": 0,
+        "end": 86
+      },
+      "reasonCode": "not_stated"
+    },
+    {
+      "variant": "partial_only",
+      "id": "e50-partial-03:explain",
+      "answerHash": "52cb7dae01eb5d0eac1b8e9467b0aeaab313176683d0405b11ff628ac6a26e75",
+      "state": "satisfied",
+      "quote": {
+        "start": 31,
+        "end": 38,
+        "hash": "eb69b0c962e0039d33bcca9258a6294f9f1420aa1d0e204c24e2f2bab79b4dc1"
+      }
+    },
+    {
+      "variant": "partial_only",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "e0dd6c55ca00ad4f06140cf6ce528d70509b7326e454847038cd94f82ffdacb5",
+      "state": "omitted",
+      "scan": {
+        "start": 0,
+        "end": 67
+      },
+      "reasonCode": "not_stated"
+    }
+  ]
+}

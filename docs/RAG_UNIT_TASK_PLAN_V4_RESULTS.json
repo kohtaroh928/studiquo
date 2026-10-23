@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_unit_task_plan_v4_schema_validator",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/task-plan-units-v4.mjs": "9e0db8c891204044ff94d75e4cd82dd25ec0cd4fdd2cee67541b23075f22e2aa",
+    "mcp-server/src/rag-unit-task-plan-v4.test.js": "0f1d3659479d6565587274f428c3ed0e8e02f5552250f7f67ebb9993c5a2fcde"
+  },
+  "limits": {
+    "questionBytes": 16384,
+    "units": 64,
+    "referencesPerRole": "question unit count, up to 64",
+    "tasks": 16,
+    "subjectsPerTask": 4,
+    "conditionsPerTask": 4,
+    "unresolved": 8,
+    "labelUTF16": 256,
+    "planBytes": 32768,
+    "resolvedBytes": 262144
+  },
+  "tests": {
+    "targetPassed": 14,
+    "workerPassed": 1450,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-unit-plan-v4-all.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": "passed_14",
+  "unresolvedHighMedium": 0,
+  "formalAcceptanceDoesNotProveMeaning": true,
+  "modelQuality": "not_evaluated",
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "frozenHashesMatch": true,
+  "failedLocksRetained": 4,
+  "next": "independent_semantic_oracle_matching_rules_then_question_only_v4_io"
+}

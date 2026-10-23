@@ -35,6 +35,27 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # ステージング接続用。Runするとアプリの接続先(mcpCloudEndpoint)が、起動引数でステージングのWorkerになる。
+  # 起動引数は、その実行の間だけ有効で、端末に保存されない。Debugビルドだけが、本番以外のホストに接続できる
+  # (WorkerEndpointPolicy)。ステージングのURLが変わったら、ここを書き換える。
+  studiquo-staging:
+    build:
+      targets:
+        studiquo: all
+    run:
+      config: Debug
+      commandLineArguments:
+        "-mcpCloudEndpoint https://studiquo-mcp-staging.studiquo-mcp-server.workers.dev": true
+    test:
+      config: Debug
+      targets:
+        - studiquoTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
   # UIテスト専用。studiquo スキームのテストは単体テストだけにして日常の実行を軽くし、
   # UIテストは `xcodebuild test -scheme studiquoUITests -only-testing:studiquoUITests/<クラス>` で動かす。
   studiquoUITests:

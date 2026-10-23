@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-17",
+  "scope": "disconnected_private_container_boundary",
+  "tests": {
+    "javascript": 28,
+    "python_services": 60,
+    "existing_docling": 49,
+    "failures": 0
+  },
+  "independent_review": {
+    "javascript": 28,
+    "unresolved_high_medium_low": 0
+  },
+  "wrangler_types": {
+    "version": "4.130.0",
+    "generated": true
+  },
+  "bundle_verified": true,
+  "synthetic_interop": {
+    "pages": 2,
+    "post_count": 1,
+    "readiness_count": 2,
+    "elapsed_seconds": 6.11,
+    "job_directory_removed": true,
+    "helper_stopped_before_return": true,
+    "container_lifecycle": "mock",
+    "transport": "real_loopback_node_fetch",
+    "docling": "real_offline"
+  },
+  "docker_available": false,
+  "linux_image_built": false,
+  "cloudflare_runtime_tested": false,
+  "deployed": false,
+  "paid_api_calls": 0,
+  "new_model_downloads": 0,
+  "quality_improvement_proven": false,
+  "automatic_schedule": "PAUSED",
+  "sha256": {
+    "services/docling-container/.gitignore": "895cf5c28a390df2a7a3c66ce6f788c1bbf81f110836547205dcdc71ff148e4e",
+    "services/docling-container/Dockerfile": "c4edb95e064252af3035bd5bcc2ed57cfc3a2587a765d69802d742f9e0e543ab",
+    "services/docling-container/Dockerfile.dockerignore": "9f698cf04e9178efa4097332ecbaebc46a4b0a30f34887d59a74196f3a0a3c49",
+    "services/docling-container/README.md": "417d34c4a03ae096ecfed977203f5a9b856f1eee1138185962b01f3b52199969",
+    "services/docling-processor/container_entry.py": "6b50c56ade90388ab81d52b5fd1dbe6b063df6d4b362eac345b14a4e7138293f",
+    "services/docling-processor/private_http.py": "2587e6af7d73a60d00c3f3774716847facac12ab0437725b3e9c776a1f77311a",
+    "services/docling-processor/test_container_entry.py": "bdf4021cd584f9ba3535810914fb1e511298832f892346202d9d7bb6b320c643",
+    "services/docling-processor/test_private_http.py": "38afbe656da3a600bddcb532b0536800e67b0d111986cc010dbeb849ab67754c",
+    "services/docling-worker/README.md": "4e6092f0a3538d0b45a47f701cc01ca8aec3391a41df8556fe335ec7fdcfc69d",
+    "services/docling-worker/index.js": "4300fcc00b5d6be21844f0f40483049d4683fb36b497f498166be6079dd03ceb",
+    "services/docling-worker/index.test.js": "afde3cc3aeb4592e62c7e8c38a9d305c57f02a56490fc2c9f9b9ab908c3b2a27",
+    "services/docling-worker/package.json": "b3ffd575118e21c301034b49a7e0fb62c21e8aa2de6057352490a7819e973d54",
+    "services/docling-worker/wrangler.example.jsonc": "0ece1f358854b185b262053b4442f7c8149287e696395bac3bbf09641d79cdc5"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-15",
+  "method": "schema/oracle consistency; NOT an extraction experiment",
+  "syntheticOnly": true,
+  "externalCalls": 0,
+  "modelEvaluated": false,
+  "humanReview": "pending",
+  "taxonomy": "task-plan-v2-20261015",
+  "questionCount": 6,
+  "declaredScopes": 16,
+  "ambiguousOperationScopes": 1,
+  "oracleHash": "ab511bd8c2bcada88fe7a6dd58aef45e3cb8dfb19a08d59b9fd7563f0170c801",
+  "schemaHash": "346df3228b54f48b93c447cc1db5e32958cffd46eb33071e6823c2a669348726",
+  "sourceHashes": {
+    "scripts/rag-quality/task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+    "scripts/rag-quality/task-plan-oracle-v2.mjs": "5f6f0174c49a6066b132b1b04bfa77ecea2f947e0a9d71dc39731e1086cd207a"
+  },
+  "v1InitialHashesUnchanged": true,
+  "previousReportChanges": [],
+  "semanticCompleteness": "pending",
+  "releaseAccepted": false,
+  "verification": {
+    "targetTestsPassed": 7,
+    "relatedTestsPassed": 27,
+    "workerTestsPassed": 1328,
+    "failures": 0,
+    "skipped": 0,
+    "independentTargetTestsPassed": 7,
+    "independentReview": "no unresolved High/Medium; request span matching and student subject binding corrected"
+  },
+  "runtimePolicyOutputChanges": 0
+}

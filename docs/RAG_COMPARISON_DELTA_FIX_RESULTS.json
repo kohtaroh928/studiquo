@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "model": "gpt-6-luna",
+  "method": "production handleAI request captured with local synthetic retrieval; real OpenAI generation; explicit medium/default; no deployed Cloudflare",
+  "dispatches": 6,
+  "completed": 6,
+  "failed": 0,
+  "usage": {
+    "input": 23705,
+    "output": 467,
+    "reasoning": 170,
+    "total": 24172
+  },
+  "reservedMicroUSD": 49152,
+  "uncachedStandardEstimatedUSD": 0.002604,
+  "latencyMs": {
+    "min": 1024,
+    "max": 2793,
+    "mean": 2167.5
+  },
+  "journalSHA256": "093a14bf5b051dd39dbead2b6865d3255f1771cae43248fb641e2158d8b9184e",
+  "previousRunPreserved": true,
+  "review": "Codex and independent AI complete; fixed 10 claim items pass; human teacher review pending",
+  "tests": {
+    "workerPass": 1285,
+    "finalTargetPass": 78,
+    "independentPass": 73,
+    "fail": 0,
+    "skip": 0
+  },
+  "findings": {
+    "explicitDeltaBothStyles": true,
+    "unknownPricePreservedBothStyles": true,
+    "unrequestedOneSidedMetricAbsentBothStyles": true,
+    "feeAndTimetableCorrectBothStyles": true
+  },
+  "limits": [
+    "fixed three development questions, one answer per style",
+    "local mock retrieval and production prompt capture; real OpenAI generation only",
+    "explicit metric request and mismatched units/conditions not tested with real LLM",
+    "human gold review, holdout, actual Cloudflare/PDF/OCR/iPad remain"
+  ],
+  "productionDeployed": false,
+  "claimScores": [
+    {
+      "caseId": "e50-versions-01",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "source_only",
+      "claimId": "c2",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "explain",
+      "claimId": "c2",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "source_only",
+      "claimId": "c2",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "pass"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "explain",
+      "claimId": "c2",
+      "result": "pass"
+    }
+  ]
+}

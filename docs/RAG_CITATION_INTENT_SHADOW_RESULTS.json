@@ -1,0 +1,1876 @@
+{
+  "schemaVersion": 1,
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "labelNotes": [
+    "required = minimum facts for the drafted answer scope; supporting = helpful additional facts, not erroneous citations.",
+    "protected marks conditions, negations or formulas; protectedRequiredMissing counts only required facts. No excerpt shortening is evaluated.",
+    "Biology input/output respiration and night facts are supporting: scope is ambiguous. Comparison night fact is also supporting under a minimum-mechanism rubric; a teacher may require it.",
+    "Independent sources carrying the same fact share one required label with alternative evidence. Source diversity is recorded separately from fact completeness.",
+    "Unlabelled passages are not automatically classified as irrelevant. Protected supporting facts are reported as supporting retention, not protected required loss."
+  ],
+  "method": "Offline fixed-reference shadow comparison. No product path/model calls. Oracle uses labels; not a deployable policy. Supporting references are not counted as erroneous citations.",
+  "dev": {
+    "baseline": {
+      "cases": 8,
+      "requiredFacts": 12,
+      "totalRequiredFacts": 12,
+      "fullyCoveredCases": 8,
+      "protectedRequiredFactLossCases": 0,
+      "references": 32,
+      "distinctSourcesSummed": 8,
+      "textCharacters": 9734,
+      "supportingFacts": 10,
+      "offIntentFacts": 0
+    },
+    "same_page_containment": {
+      "cases": 8,
+      "requiredFacts": 12,
+      "totalRequiredFacts": 12,
+      "fullyCoveredCases": 8,
+      "protectedRequiredFactLossCases": 0,
+      "references": 31,
+      "distinctSourcesSummed": 8,
+      "textCharacters": 9722,
+      "supportingFacts": 10,
+      "offIntentFacts": 0
+    },
+    "topic_representatives": {
+      "cases": 8,
+      "requiredFacts": 8,
+      "totalRequiredFacts": 12,
+      "fullyCoveredCases": 5,
+      "protectedRequiredFactLossCases": 0,
+      "references": 22,
+      "distinctSourcesSummed": 8,
+      "textCharacters": 6626,
+      "supportingFacts": 4,
+      "offIntentFacts": 0
+    },
+    "prefer_direct_headings": {
+      "cases": 8,
+      "requiredFacts": 11,
+      "totalRequiredFacts": 12,
+      "fullyCoveredCases": 7,
+      "protectedRequiredFactLossCases": 1,
+      "references": 25,
+      "distinctSourcesSummed": 8,
+      "textCharacters": 7430,
+      "supportingFacts": 6,
+      "offIntentFacts": 0
+    }
+  },
+  "holdout": {
+    "baseline": {
+      "cases": 8,
+      "requiredFacts": 16,
+      "totalRequiredFacts": 16,
+      "fullyCoveredCases": 8,
+      "protectedRequiredFactLossCases": 0,
+      "references": 20,
+      "distinctSourcesSummed": 9,
+      "textCharacters": 332,
+      "supportingFacts": 0,
+      "offIntentFacts": 0
+    },
+    "same_page_containment": {
+      "cases": 8,
+      "requiredFacts": 16,
+      "totalRequiredFacts": 16,
+      "fullyCoveredCases": 8,
+      "protectedRequiredFactLossCases": 0,
+      "references": 20,
+      "distinctSourcesSummed": 9,
+      "textCharacters": 332,
+      "supportingFacts": 0,
+      "offIntentFacts": 0
+    },
+    "topic_representatives": {
+      "cases": 8,
+      "requiredFacts": 8,
+      "totalRequiredFacts": 16,
+      "fullyCoveredCases": 4,
+      "protectedRequiredFactLossCases": 3,
+      "references": 12,
+      "distinctSourcesSummed": 8,
+      "textCharacters": 196,
+      "supportingFacts": 0,
+      "offIntentFacts": 0
+    },
+    "prefer_direct_headings": {
+      "cases": 8,
+      "requiredFacts": 12,
+      "totalRequiredFacts": 16,
+      "fullyCoveredCases": 4,
+      "protectedRequiredFactLossCases": 3,
+      "references": 16,
+      "distinctSourcesSummed": 9,
+      "textCharacters": 264,
+      "supportingFacts": 0,
+      "offIntentFacts": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "biology-comparison",
+      "split": "dev",
+      "description": "実stagingの5参照は全部異なる事実。補足を誤出典と数えない。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 3,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 3,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            3
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 387,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "reaction"
+          ],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            3,
+            5,
+            1
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 1162,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1",
+          "r3"
+        ],
+        "pages": [
+          3,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 777,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-input-output",
+      "split": "dev",
+      "description": "入力と出力の必須原文はpage1。比較説明は別目的。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 4,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 4,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            3
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 387,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 1,
+          "missingRequired": [
+            "reaction"
+          ],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            3,
+            5,
+            1
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 1162,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 2,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r3"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 390,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-example",
+      "split": "dev",
+      "description": "例を明示質問すると例は必須。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r4"
+        ],
+        "pages": [
+          2
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 374,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-experiment",
+      "split": "dev",
+      "description": "実験手順は独立した必要根拠。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r5"
+        ],
+        "pages": [
+          4
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 389,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-night",
+      "split": "dev",
+      "description": "夜という条件が答え。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            3,
+            5,
+            1
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 1162,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 1,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          5
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 385,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "split-materials",
+      "split": "dev",
+      "description": "一つの主題でも材料・生成物が分散。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 46,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 46,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 14,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "inputs",
+            "output"
+          ],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 46,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          2,
+          3
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "hidden-condition",
+      "split": "dev",
+      "description": "例の見出しにしか必要な否定条件がない。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 17,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "condition"
+          ],
+          "protectedRequiredMissing": [
+            "condition"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "same-page-overlap",
+      "split": "dev",
+      "description": "同pageの全文包含では条件を持つ長い原文を残す。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r2"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 19,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 19,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "qualifier-comparison",
+      "split": "holdout",
+      "description": "テーマ二つが同時に出ても意味・条件が足りない。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4"
+          ],
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "referenceCount": 4,
+          "distinctSources": 1,
+          "textCharacters": 66,
+          "requiredFacts": 3,
+          "totalRequiredFacts": 3,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4"
+          ],
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "referenceCount": 4,
+          "distinctSources": 1,
+          "textCharacters": 66,
+          "requiredFacts": 3,
+          "totalRequiredFacts": 3,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 18,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 3,
+          "missingRequired": [
+            "cooling",
+            "calibration",
+            "heating"
+          ],
+          "protectedRequiredMissing": [
+            "calibration"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r4"
+          ],
+          "pages": [
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 52,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 3,
+          "missingRequired": [
+            "calibration"
+          ],
+          "protectedRequiredMissing": [
+            "calibration"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "pages": [
+          2,
+          3,
+          4
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 48,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "formula-scope",
+      "split": "holdout",
+      "description": "数式と適用範囲が別の参照。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 14,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "scope"
+          ],
+          "protectedRequiredMissing": [
+            "scope"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "network-input-output",
+      "split": "holdout",
+      "description": "例だけが具体的な入力/出力を示す。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 37,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 37,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 14,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 1,
+          "missingRequired": [
+            "conversion"
+          ],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 14,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 1,
+          "missingRequired": [
+            "conversion"
+          ],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          2
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 23,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "negated-distinction",
+      "split": "holdout",
+      "description": "否定が比較の違いそのもの。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 51,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 51,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1"
+          ],
+          "pages": [
+            1
+          ],
+          "referenceCount": 1,
+          "distinctSources": 1,
+          "textCharacters": 14,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "absorb",
+            "reflect"
+          ],
+          "protectedRequiredMissing": [
+            "reflect"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 51,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          2,
+          3
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 37,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "cross-source-confirmation",
+      "split": "holdout",
+      "description": "同文でも別文書の裏付けは保存する。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 24,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 24,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 24,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            1
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 24,
+          "requiredFacts": 1,
+          "totalRequiredFacts": 1,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 12,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "cross-page-qualification",
+      "split": "holdout",
+      "description": "この抜粋に条件の明記がない価格と別ページの法人向け条件を区別する。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 31,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          2
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 19,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "sequence-layout",
+      "split": "holdout",
+      "description": "x² と x2 は異なる表記で、同じ式を裏付けるとみなさず両方を保持する。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [],
+          "pages": [],
+          "referenceCount": 0,
+          "distinctSources": 0,
+          "textCharacters": 0,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 2,
+          "missingRequired": [
+            "superscript",
+            "plain-form"
+          ],
+          "protectedRequiredMissing": [
+            "superscript",
+            "plain-form"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "unknown-topic",
+      "split": "holdout",
+      "description": "解析できない要約は勝手に例/応用を消さない。",
+      "policies": {
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 67,
+          "requiredFacts": 3,
+          "totalRequiredFacts": 3,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "same_page_containment": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 67,
+          "requiredFacts": 3,
+          "totalRequiredFacts": 3,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "topic_representatives": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 67,
+          "requiredFacts": 3,
+          "totalRequiredFacts": 3,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "prefer_direct_headings": {
+          "referenceIds": [
+            "r1",
+            "r3"
+          ],
+          "pages": [
+            1,
+            3
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 50,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 3,
+          "missingRequired": [
+            "condition"
+          ],
+          "protectedRequiredMissing": [
+            "condition"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        }
+      },
+      "labelledLowerBound": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 67,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    }
+  ]
+}
