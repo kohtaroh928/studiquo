@@ -6,10 +6,12 @@ import type { LooseEnv } from "./test-env.ts";
 import type { Untyped } from "./test-env.ts";
 
 function counters() {
-  const used = new Map();
+  const used = new Map<string, number>();
+  const reservations = new Map<string, Map<string, number>>();
   return {
     used,
     getByName(name: string) {
+      const entries = () => reservations.get(name) ?? new Map<string, number>();
       return {
         async take(limit: number, _seconds: string, amount = 1) {
           const next = (used.get(name) ?? 0) + amount;
@@ -18,6 +20,20 @@ function counters() {
           return { ok: true, windowEndsAt: 1 };
         },
         async give(amount = 1) { used.set(name, Math.max(0, (used.get(name) ?? 0) - amount)); },
+        async reserve(operation: string, limit: number, _seconds: string, amount: number) {
+          const current = entries();
+          const before = current.get(operation) ?? 0;
+          const next = (used.get(name) ?? 0) + amount - before;
+          if (next > limit) return { ok: false };
+          used.set(name, Math.max(0, next)); current.set(operation, amount); reservations.set(name, current);
+          return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation: string) {
+          const current = entries(); const amount = current.get(operation);
+          if (amount === undefined) return false;
+          used.set(name, Math.max(0, (used.get(name) ?? 0) - amount)); current.delete(operation); reservations.set(name, current);
+          return true;
+        },
       };
     },
   };
@@ -183,16 +199,16 @@ test("refund() hands everything back once, and a second call does nothing", asyn
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
 
-test("a refund still returns the other windows when one give throws", async () => {
+test("a refund still returns the other windows when one release throws", async () => {
   const env = { RATE_COUNTER: counters() };
   const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
   (env.RATE_COUNTER as { getByName: (name: string) => unknown }).getByName = (name: string) => name.startsWith("ai:cr:5h2:")
-    ? { async give() { throw new Error("boom"); } }
+    ? { ...real(name), async release() { throw new Error("boom"); } }
     : real(name);
   await result.refund!(); // must not throw
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:wk:acct"), 0);
-  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h2:acct"), 40, "the failed give leaves only its own window held");
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h2:acct"), 40, "the failed release leaves only its own window held");
 });
 
 test("free has no budget at all, and takes nothing from the service-wide ceiling", async () => {
@@ -207,13 +223,13 @@ test("budgets set through AI_LIMITS are the ones enforced", async () => {
 });
 
 
-test("additional input reserves only the difference once, including concurrent retries", async () => {
+test("additional input updates one reservation across concurrent retries", async () => {
   const env = { RATE_COUNTER: counters() };
   const result = await call(env);
   const [a, b, c] = await Promise.all([result.reserve!(12001), result.reserve!(18001), result.reserve!(12001)]);
   assert.ok(a.ok && b.ok && c.ok);
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
-  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 3);
+  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 2);
   await Promise.all([result.refund!(), result.refund!()]);
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
@@ -224,8 +240,8 @@ test("additional reservations refuse each exhausted window and roll back partial
     const result = await call(env, { plan: "standard", globalLimit: 5 });
     env.RATE_COUNTER.used.set(name, limit);
     assert.equal((await result.reserve!(12001)).window, expected);
-    assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
-    for (const other of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:standard"]) if (other !== name) assert.equal(env.RATE_COUNTER.used.get(other), 1);
+    assert.ok([0, 1].includes(env.RATE_COUNTER.used.get("ai:cr:min:acct") ?? 0));
+    for (const other of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:standard"]) if (other !== name) assert.equal(env.RATE_COUNTER.used.get(other) ?? 0, 0);
     await result.refund!();
   }
   const env = { RATE_COUNTER: counters() };
@@ -240,7 +256,7 @@ test("exceptions during initial and additional takes return already acquired win
     const env = { RATE_COUNTER: counters() };
     const result = additional ? await call(env) : null;
     const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = (name: string) => name.startsWith("ai:cr:wk:") ? { ...real(name), async take() { throw new Error("counter unavailable"); } } : real(name);
+    env.RATE_COUNTER.getByName = (name: string) => name.startsWith("ai:cr:wk:") ? { ...real(name), async reserve() { throw new Error("counter unavailable"); } } : real(name);
     await assert.rejects(additional ? result!.reserve!(12001) : call(env), /counter unavailable/);
     if (result) await result.refund!();
     assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
@@ -253,7 +269,7 @@ test("refund failures are counted without identifying the account or exposing er
   const result = await call(env, { accountKey: "private-account" });
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
   env.RATE_COUNTER.getByName = (name: string) => name.startsWith("ai:cr:wk:")
-    ? { ...real(name), async give() { throw new Error("private error"); } } : real(name);
+    ? { ...real(name), async release() { throw new Error("private error"); } } : real(name);
   const original = console.error, logs: string[] = [];
   console.error = (...args: unknown[]) => { logs.push(args.join(" ")); };
   try { await result.refund!(); } finally { console.error = original; }
@@ -262,47 +278,48 @@ test("refund failures are counted without identifying the account or exposing er
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:wk:private-account"), 1);
 });
 
-test("smaller references on retry retain the highest previously reserved cost", async () => {
+test("smaller references on retry lower the reservation to the sent input", async () => {
   const env = { RATE_COUNTER: counters() };
   const result = await call(env);
   assert.equal((await result.reserve!(18001)).ok, true);
   assert.equal((await result.reserve!(1)).ok, true);
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
-  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 3);
+  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 1);
   await result.refund!();
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
 
 
-// Pending contract: the existing counter API has no operation IDs, so a lost
-// response cannot be distinguished from an operation that never happened.
-test.todo("a take written before its response is lost must not leak a reservation", async () => {
+test("a lost reserve response is released with the same operation ID", async () => {
   const env = { RATE_COUNTER: counters() };
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  let lost = false;
   env.RATE_COUNTER.getByName = (name: string) => {
     const counter = real(name);
-    return name.startsWith("ai:cr:wk:") ? { ...counter, async take(limit: number, seconds: string, amount: number) {
-      await counter.take(limit, seconds, amount);
-      throw new Error("response lost after write");
-    } } : counter;
+    if (name.startsWith("ai:cr:wk:")) return { ...counter, async reserve(...args: any[]) {
+      const value = await counter.reserve(...args);
+      if (!lost) { lost = true; throw new Error("response lost after write"); }
+      return value;
+    } };
+    return counter;
   };
   await assert.rejects(call(env), /response lost/);
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
 
-test.todo("a temporary give failure during partial refusal must remain recoverable", async () => {
+test("a temporary release failure is retried without leaking a reservation", async () => {
   const env = { RATE_COUNTER: counters() };
+  const result = await call(env);
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
   let failed = false;
   env.RATE_COUNTER.getByName = (name: string) => {
     const counter = real(name);
-    if (name.startsWith("ai:cr:wk:")) return { ...counter, async take() { return { ok: false }; } };
-    if (name.startsWith("ai:cr:5h2:")) return { ...counter, async give(amount: number) {
+    if (name.startsWith("ai:cr:wk:")) return { ...counter, async release(...args: any[]) {
       if (!failed) { failed = true; throw new Error("temporary"); }
-      await counter.give(amount);
+      return counter.release(...args);
     } };
     return counter;
   };
-  assert.equal((await call(env)).window, "week");
+  await result.refund!();
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });

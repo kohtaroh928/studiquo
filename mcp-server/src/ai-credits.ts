@@ -126,68 +126,68 @@ export interface CreditResult { ok: boolean; window?: string; refund?: () => Pro
 
 export async function consumeCredits(env: Env, { accountKey, plan, kind, model, inputChars = 0, globalLimit, limits = DEFAULT_AI_LIMITS }: CreditRequest): Promise<CreditResult> {
   const budget = planBudget(plan, limits);
-  const initialCost = creditCost(kind, model, inputChars, limits);
-  const taken: { name: string; amount: number; windowEndsAt: number }[] = [];
-  // Retries retain the highest amount already reserved; the minute is taken once.
-  let reservedCost = 0;
-  let refunded = false;
-  // Serialize adjustments and refunds for this request. Each counter still enforces
-  // its own limit atomically across separate requests.
+  // Every counter gets a distinct request-scoped operation. The Durable Object
+  // persists it with the counter state, so an RPC response lost after a write
+  // can be retried or released without guessing whether it took effect.
+  const requestID = crypto.randomUUID();
+  const reserved = new Set<string>();
+  let released = false;
   let pending: Promise<unknown> = Promise.resolve();
   const serial = <T>(operation: () => Promise<T>): Promise<T> => {
     const next = pending.then(operation);
     pending = next.catch(() => {});
     return next;
   };
-  const give = async (items: typeof taken) => {
-    const results = await Promise.allSettled(items.map(({ name, amount, windowEndsAt }) =>
-      Promise.resolve().then(() => env.RATE_COUNTER.getByName(name).give(amount, windowEndsAt))));
-    const failed = results.filter(result => result.status === "rejected").length;
+  const operationFor = (name: string) => `${requestID}:${name}`;
+  const release = async (names: Iterable<string>) => {
+    let failed = 0;
+    for (const name of names) {
+      let releasedOne = false;
+      // A response can fail after the Durable Object saved the operation. The
+      // same operation ID makes a bounded retry safe; a lasting outage keeps
+      // the reservation only until that counter window expires.
+      for (let attempt = 0; attempt < 3 && !releasedOne; attempt += 1) {
+        try { await env.RATE_COUNTER.getByName(name).release(operationFor(name)); releasedOne = true; } catch { /* retry */ }
+      }
+      if (releasedOne) reserved.delete(name); else failed += 1;
+    }
     if (failed) console.error(JSON.stringify({ event: "ai_credit_refund_failed", failed }));
+    return failed === 0;
   };
   const refund = () => serial(async () => {
-    if (refunded) return;
-    refunded = true;
-    await give(taken);
+    if (released && reserved.size === 0) return;
+    // A failed release stays in `reserved`, making the next refund retry it.
+    await release([...reserved]);
+    released = reserved.size === 0;
   });
-
   if (budget.perMinute <= 0) return { ok: false, window: "minute" };
-  const takeTo = async (cost: number, initial: boolean): Promise<CreditResult> => {
-    if (refunded) throw new Error("Cannot reserve refunded credits");
+
+  const reserveTo = async (cost: number): Promise<CreditResult> => {
+    if (released && reserved.size === 0) throw new Error("Cannot reserve refunded credits");
     if (cost > Math.min(budget.fiveHours, budget.week)) return { ok: false, window: "input" };
-    const delta = Math.max(0, cost - reservedCost);
-    if (!initial && delta === 0) return { ok: true };
-    const batch: typeof taken = [];
-    try {
-      for (const window of windowsFor(accountKey)) {
-        if (window.perCall && !initial) continue;
-        const amount = window.perCall ? 1 : delta;
-        const result = await env.RATE_COUNTER.getByName(window.name).take(budget[window.limitKey], window.seconds, amount);
+    const requests = [
+      ...windowsFor(accountKey).map(window => ({ name: window.name, id: window.id, limit: budget[window.limitKey], seconds: window.seconds, amount: window.perCall ? 1 : cost })),
+      { name: `ai:global:${plan}`, id: "global", limit: globalLimit, seconds: 86_400, amount: cost },
+    ];
+    for (const request of requests) {
+      reserved.add(request.name); // include a write whose RPC reply is lost
+      try {
+        const result = await env.RATE_COUNTER.getByName(request.name).reserve(operationFor(request.name), request.limit, request.seconds, request.amount);
         if (!result.ok) {
-          await give(batch);
-          return { ok: false, window: window.id };
+          await release([...reserved]);
+          if (request.id === "global") console.error(JSON.stringify({ message: "AI global ceiling reached", plan, limit: globalLimit }));
+          return { ok: false, window: request.id };
         }
-        batch.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt as number });
+      } catch (error) {
+        await release([...reserved]);
+        throw error;
       }
-      const globalName = `ai:global:${plan}`;
-      const globalTake = await env.RATE_COUNTER.getByName(globalName).take(globalLimit, 86_400, delta);
-      if (!globalTake.ok) {
-        await give(batch);
-        console.error(JSON.stringify({ message: "AI global ceiling reached", plan, limit: globalLimit }));
-        return { ok: false, window: "global" };
-      }
-      batch.push({ name: globalName, amount: delta, windowEndsAt: globalTake.windowEndsAt as number });
-      taken.push(...batch);
-      reservedCost = Math.max(reservedCost, cost);
-      return { ok: true };
-    } catch (error) {
-      await give(batch);
-      throw error;
     }
+    return { ok: true };
   };
-  const first = await takeTo(initialCost, true);
+  const first = await reserveTo(creditCost(kind, model, inputChars, limits));
   if (!first.ok) return first;
-  return { ok: true, refund, reserve: chars => serial(() => takeTo(creditCost(kind, model, chars, limits), false)) };
+  return { ok: true, refund, reserve: chars => serial(() => reserveTo(creditCost(kind, model, chars, limits))) };
 }
 
 /**

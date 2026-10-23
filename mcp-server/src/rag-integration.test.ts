@@ -46,15 +46,20 @@ function env(overrides = {}) {
         values.set(k, v);
       },
     },
-    RATE_COUNTER: {
-      getByName() {
-        return {
-          async bump() { return true; },
-          async take() { return {ok:true, windowEndsAt:1}; },
-          async give() {},
-        };
-      },
-    },
+    RATE_COUNTER: (() => {
+      const used = new Map(), reservations = new Map();
+      return { getByName(name) { return {
+        async bump() { return true; },
+        async take() { return {ok:true, windowEndsAt:1}; }, async give() {},
+        async reserve(operation, limit, _seconds, amount) {
+          const key = `${name}:${operation}`, before = reservations.get(key) ?? 0;
+          const next = (used.get(name) ?? 0) + amount - before;
+          if (next > limit) return { ok: false };
+          used.set(name, next); reservations.set(key, amount); return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) ?? 0) - amount); reservations.delete(key); return true; },
+      }; } };
+    })(),
     ...overrides,
   };
 }
@@ -671,7 +676,7 @@ test("RAG reserves actual revalidated references before dispatch, retries once c
   const original = globalThis.fetch;
   try {
     for (const mode of ["ok", "retry", "refuse", "failure"]) {
-      const qenv = qualityEnvironment(), used = new Map();
+      const qenv = qualityEnvironment(), used = new Map(), reservations = new Map();
       const environment = { ...env(), ...qenv, AI_RETRY_BASE_MS: 0, RATE_COUNTER: { getByName(name) { return {
         async take(limit, seconds, amount = 1) {
           if (mode === "refuse" && name.startsWith("ai:cr:5h2:") && (used.get(name) || 0) >= 1) return { ok: false };
@@ -680,6 +685,15 @@ test("RAG reserves actual revalidated references before dispatch, retries once c
           used.set(name, next); return { ok: true, windowEndsAt: 1 };
         },
         async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+        async bump() { return true; },
+        async reserve(operation, limit, seconds, amount) {
+          const key = `${name}:${operation}`, previous = reservations.get(key) || 0;
+          if (mode === "refuse" && name.startsWith("ai:cr:5h2:") && previous >= 1) return { ok: false };
+          const next = (used.get(name) || 0) + amount - previous;
+          if (next > limit) return { ok: false };
+          used.set(name, next); reservations.set(key, amount); return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) || 0) - amount); reservations.delete(key); return true; },
       }; } } };
       await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
       environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
@@ -705,7 +719,7 @@ test("RAG reserves actual revalidated references before dispatch, retries once c
 test("revocation during additional credit reservation prevents model dispatch and returns all credits", async () => {
   const original = globalThis.fetch;
   try {
-    const qenv = qualityEnvironment(), used = new Map();
+    const qenv = qualityEnvironment(), used = new Map(), reservations = new Map();
     let revoked = false, calls = 0;
     const environment = { ...env(), ...qenv, RATE_COUNTER: { getByName(name) { return {
       async take(limit, seconds, amount = 1) {
@@ -719,6 +733,15 @@ test("revocation during additional credit reservation prevents model dispatch an
         return { ok: true, windowEndsAt: 1 };
       },
       async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+      async bump() { return true; },
+      async reserve(operation, limit, seconds, amount) {
+        const key = `${name}:${operation}`, previous = reservations.get(key) || 0, next = (used.get(name) || 0) + amount - previous;
+        if (next > limit) return { ok: false };
+        used.set(name, next); reservations.set(key, amount);
+        if (!revoked && name.startsWith("ai:cr:5h2:") && previous > 0) { revoked = true; qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1"); }
+        return { ok: true, windowEndsAt: 1 };
+      },
+      async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) || 0) - amount); reservations.delete(key); return true; },
     }; } } };
     await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
     environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
