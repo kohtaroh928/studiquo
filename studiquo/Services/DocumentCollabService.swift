@@ -68,9 +68,34 @@ enum DocumentCollabService {
 
     /// `code` is the invitee's friend code (as shown in the existing friend
     /// list) — the server resolves it to that person's room-participant key,
-    /// the same way adding a chat friend resolves a code.
+    /// the same way adding a chat friend resolves a code. The answer is
+    /// `pending`: the friend joins only after accepting.
     static func invite(roomID: String, code: String, role: String) async throws -> StatusResult {
         try await request(path: "api/document/rooms/\(roomID)/invite", method: "POST", body: ["code": code, "role": role])
+    }
+
+    /// An offer to join someone's document room. It seats nobody until the
+    /// invited person accepts it (see mcp-server/src/document-collab.js).
+    struct PendingInvite: Codable, Identifiable, Equatable {
+        var roomID: String
+        var role: String
+        var inviterName: String?
+        var createdAt: Double
+        var id: String { roomID }
+    }
+    struct InviteAnswer: Codable { let status: String; let role: String? }
+
+    /// The invitations waiting for this person's answer.
+    static func pendingInvites() async throws -> [PendingInvite] {
+        try await request(path: "api/document/invites", method: "GET", body: Optional<String>.none)
+    }
+
+    static func acceptInvite(roomID: String) async throws -> InviteAnswer {
+        try await request(path: "api/document/rooms/\(roomID)/invite/accept", method: "POST", body: [String: String]())
+    }
+
+    static func declineInvite(roomID: String) async throws -> InviteAnswer {
+        try await request(path: "api/document/rooms/\(roomID)/invite/decline", method: "POST", body: [String: String]())
     }
 
     static func participants(roomID: String) async throws -> [Participant] {
@@ -109,7 +134,7 @@ enum DocumentCollabService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if http.statusCode == 429 { throw RateLimitedError() }

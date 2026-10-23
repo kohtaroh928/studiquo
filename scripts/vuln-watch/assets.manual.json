@@ -1,0 +1,45 @@
+{
+  "_comment": "資産台帳への手書き補足。キーは「npm:パッケージ名」または「SwiftURL:identity(Package.resolvedのidentity)」。sensitive=認証・課金・個人情報に関わる依存(優先度を加点)。nvd=NVDのキーワードとCPEの絞り込み。vendorsを指定したときだけNVD側の一致を「確定」にできる。",
+  "assets": {
+    "npm:jose": {
+      "sensitive": true,
+      "usage": "JWTの署名・検証",
+      "nvd": { "keyword": "jose", "vendors": ["panva"], "products": ["jose"] }
+    },
+    "npm:@simplewebauthn/server": {
+      "sensitive": true,
+      "usage": "パスキー(WebAuthn)の検証",
+      "nvd": { "keyword": "simplewebauthn", "products": ["simplewebauthn", "server"] }
+    },
+    "npm:@noble/hashes": {
+      "sensitive": true,
+      "usage": "ハッシュ計算(認証まわり)",
+      "nvd": { "keyword": "noble-hashes", "products": ["noble-hashes", "hashes"] }
+    },
+    "npm:zod": {
+      "usage": "入力検証",
+      "nvd": { "keyword": "zod", "products": ["zod"] }
+    },
+    "npm:@modelcontextprotocol/sdk": {
+      "usage": "MCPサーバー",
+      "nvd": { "keyword": "modelcontextprotocol", "products": ["typescript-sdk", "sdk", "model_context_protocol"] }
+    },
+    "SwiftURL:googlesignin-ios": {
+      "sensitive": true,
+      "usage": "Googleサインイン",
+      "nvd": { "keyword": "GoogleSignIn", "vendors": ["google"], "products": ["googlesignin", "googlesignin-ios", "google_sign-in"] }
+    },
+    "SwiftURL:purchases-ios": {
+      "sensitive": true,
+      "usage": "課金(RevenueCat)",
+      "nvd": { "keyword": "RevenueCat purchases-ios", "vendors": ["revenuecat"], "products": ["purchases-ios", "purchases_ios"] }
+    },
+    "SwiftURL:appauth-ios": { "sensitive": true, "usage": "OAuth(Googleサインインの下層)" },
+    "SwiftURL:gtmappauth": { "sensitive": true, "usage": "OAuth(Googleサインインの下層)" },
+    "SwiftURL:app-check": { "sensitive": true, "usage": "アプリ認証の補助" },
+    "SwiftURL:swiftmath": {
+      "usage": "数式の組版",
+      "nvd": { "keyword": "SwiftMath", "products": ["swiftmath"] }
+    }
+  }
+}

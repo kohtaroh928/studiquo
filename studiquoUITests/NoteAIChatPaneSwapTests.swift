@@ -225,7 +225,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(single.waitForExistence(timeout: 5), "1画面の項目がありません。")
         single.tap()
         settle()
-        try? XCTSkipIf(!chatIsShown, "1画面に戻すと臨時画面も閉じる仕様のため、確認の対象がありません。")
+        // 1画面に戻すと臨時画面も閉じる仕様。閉じていなければ、そこに「ペインに入れ替え」が残らないことを確かめる。
         XCTAssertFalse(floatingToPane.exists, "単画面の臨時画面に「ペインに入れ替え」が出ています。")
     }
 
@@ -330,7 +330,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(drawingBarControls.firstMatch.waitForExistence(timeout: 10), "チャットを閉じても描画バーが戻りません。")
     }
 
-    func testOpeningPhotoStudyDropsTheSwap() throws {
+    func testOpeningPhotoStudyDropsTheSwap() {
         splitWithFilesBrowser()
         aiButton.tap()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10))
@@ -338,14 +338,14 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
 
         chooseFromSplitMenu("写真アプリと2分割")
         let library = app.descendants(matching: .any)["photo-study-library"].firstMatch
-        try XCTSkipUnless(library.waitForExistence(timeout: 10), "写真資料のペインが開かないため確認できません。")
+        XCTAssertTrue(library.waitForExistence(timeout: 10), "写真アプリと2分割を選んでも、写真資料のペインが開きません。")
         XCTAssertTrue(swappedPane.waitForNonExistence(timeout: 10), "写真資料を開いても入れ替えが残っています。")
     }
 
-    func testOpeningTheChatWhilePhotoStudyIsOpenDropsPhotoStudy() throws {
+    func testOpeningTheChatWhilePhotoStudyIsOpenDropsPhotoStudy() {
         chooseFromSplitMenu("写真アプリと2分割")
         let library = app.descendants(matching: .any)["photo-study-library"].firstMatch
-        try XCTSkipUnless(library.waitForExistence(timeout: 10), "写真資料のペインが開かないため確認できません。")
+        XCTAssertTrue(library.waitForExistence(timeout: 10), "写真アプリと2分割を選んでも、写真資料のペインが開きません。")
 
         aiButton.tap()
         XCTAssertTrue(waitForChat(), "写真資料の表示中にAIトークが開きません。")

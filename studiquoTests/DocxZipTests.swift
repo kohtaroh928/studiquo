@@ -126,4 +126,42 @@ final class DocxZipTests: XCTestCase {
 
         XCTAssertThrowsError(try DocxZip.read(Data(zip)))
     }
+
+    // MARK: Whole-archive limits
+
+    private func isLimitExceeded(_ error: Error) -> Bool {
+        if case DocxZip.ZipError.limitExceeded = error { return true }
+        return false
+    }
+
+    /// Every entry can be small enough on its own and the archive still a bomb.
+    func testReadRejectsAnArchiveWithTooManyEntries() throws {
+        let entries = (0..<6).map { DocxZip.Entry(path: "part\($0).xml", data: Data("<a/>".utf8)) }
+        let zip = try DocxZip.write(entries)
+
+        XCTAssertEqual(try DocxZip.read(zip, maxEntries: 6).count, 6)
+        XCTAssertThrowsError(try DocxZip.read(zip, maxEntries: 5)) { XCTAssertTrue(isLimitExceeded($0)) }
+    }
+
+    func testReadRejectsAnArchiveThatInflatesPastTheTotalLimit() throws {
+        let entries = (0..<4).map { DocxZip.Entry(path: "part\($0).xml", data: Data(repeating: 0x41, count: 1_000)) }
+        let zip = try DocxZip.write(entries)
+
+        XCTAssertEqual(try DocxZip.read(zip, maxTotalUncompressedBytes: 4_000).count, 4)
+        XCTAssertThrowsError(try DocxZip.read(zip, maxTotalUncompressedBytes: 3_999)) { XCTAssertTrue(isLimitExceeded($0)) }
+    }
+
+    func testDocxReaderReportsAnOversizedArchiveAsSuch() throws {
+        let entries = (0..<6).map { DocxZip.Entry(path: "part\($0).xml", data: Data("<a/>".utf8)) }
+        let zip = try DocxZip.write(entries)
+        // Tampering with the count is enough to cross a small limit; the shipped
+        // one is checked by `testTheShippedLimitsAreWhatImportLimitsSays`.
+        XCTAssertThrowsError(try DocxZip.read(zip, maxEntries: 1)) { XCTAssertTrue(self.isLimitExceeded($0)) }
+    }
+
+    /// The real limits are what ships; the small ones above only prove the check exists.
+    func testTheShippedLimitsAreWhatImportLimitsSays() {
+        XCTAssertEqual(ImportLimits.maxZipEntries, 2_000)
+        XCTAssertGreaterThan(ImportLimits.maxZipTotalUncompressedBytes, DocxZip.maxEntryUncompressedSize)
+    }
 }

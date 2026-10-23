@@ -29,15 +29,7 @@ final class NoteAIChatFloatingFrameTests: XCTestCase {
         app.launchArguments = ["--note-ai-chat-ui-test"] + (reset ? ["--note-ai-chat-reset-frame"] : [])
         app.launch()
         XCTAssertTrue(aiButton.waitForExistence(timeout: 30), "AIトークのボタンが表示されません。")
-        let wantsLandscape = orientation == .landscapeLeft || orientation == .landscapeRight
-        let deadline = Date().addingTimeInterval(8)
-        while Date() < deadline {
-            let frame = app.windows.firstMatch.frame
-            if (frame.width > frame.height) == wantsLandscape { return }
-            XCUIDevice.shared.orientation = orientation
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        throw XCTSkip("このシミュレータは向きを変えられません。")
+        try XCUIDevice.shared.requireOrientation(orientation, window: app.windows.firstMatch)
     }
 
     private var aiButton: XCUIElement { app.buttons["note-ai-toolbar-button"] }

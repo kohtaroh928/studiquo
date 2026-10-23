@@ -1,0 +1,31 @@
+# Proposes updates for the dependencies that are checked in. Needs "Dependabot
+# alerts" and "Dependabot security updates" switched on in the repository settings
+# (docs/notes/ci-setup.md). It only opens pull requests; nothing is merged by itself.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /mcp-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  # scripts/vuln-watch has its own lockfile (typescript and @types/node, dev only).
+  - package-ecosystem: npm
+    directory: /scripts/vuln-watch
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  # Moves the commit SHAs in .github/workflows/*.yml (and their version comments).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+# The Swift packages (GoogleSignIn, RevenueCat, SwiftMath) are declared in
+# project.yml for XcodeGen, which Dependabot does not read. Update them by hand:
+# see docs/notes/ci-setup.md.

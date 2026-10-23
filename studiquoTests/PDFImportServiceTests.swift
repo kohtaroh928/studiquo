@@ -40,6 +40,33 @@ final class PDFImportServiceTests: XCTestCase {
         return url
     }
 
+    func testExtractPagesChecked_refusesAPDFWithTooManyPagesAndReturnsNoPages() {
+        let url = makePDF(name: "long.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url, maxPages: 2)
+        XCTAssertEqual(result.rejection, .tooManyPages(limit: 2))
+        XCTAssertTrue(result.pages.isEmpty, "half a PDF must never look like a finished import")
+    }
+
+    func testExtractPagesChecked_stopsWhenTheRenderedPagesOutgrowTheBudget() {
+        let url = makePDF(name: "heavy.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url, maxRenderedBytes: 1)
+        XCTAssertEqual(result.rejection, .renderedPagesTooLarge)
+        XCTAssertTrue(result.pages.isEmpty)
+    }
+
+    func testExtractPagesChecked_acceptsAPDFWithinTheLimits() {
+        let url = makePDF(name: "fine.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url)
+        XCTAssertNil(result.rejection)
+        XCTAssertEqual(result.pages.count, 3)
+    }
+
+    func testExtractPagesChecked_unreadableFileIsNotARejection() {
+        let result = PDFImportService.extractPagesChecked(from: workDir.appendingPathComponent("missing.pdf"))
+        XCTAssertNil(result.rejection)
+        XCTAssertTrue(result.pages.isEmpty)
+    }
+
     func testExtractPages_returnsAllPagesForUnprotectedPDF() {
         let url = makePDF(name: "plain.pdf", pageCount: 3)
         let pages = PDFImportService.extractPages(from: url)
@@ -352,13 +379,20 @@ final class PDFImportServiceTests: XCTestCase {
     /// renders, the main thread must keep getting turns.
     @MainActor
     func testExtractPagesAsync_keepsTheMainThreadResponsive() async throws {
-        let url = makeLongPDF(name: "long.pdf", pages: 150)
-
-        // Baseline: how long the same work blocks the thread when run directly.
-        let baselineStart = Date()
-        _ = PDFImportService.extractPages(from: url)
-        let blockedFor = Date().timeIntervalSince(baselineStart)
-        try XCTSkipIf(blockedFor < 0.6, "machine too fast for the comparison to mean anything (\(blockedFor)s)")
+        // Baseline: how long the same work blocks the thread when run directly. A fast
+        // machine finishes 150 pages too quickly for the comparison to mean anything, so
+        // add pages until the direct run blocks long enough — never skip the check.
+        var url = makeLongPDF(name: "long.pdf", pages: 150)
+        var blockedFor: TimeInterval = 0
+        for pages in [150, 300, 600, 1200] {
+            url = makeLongPDF(name: "long-\(pages).pdf", pages: pages)
+            let baselineStart = Date()
+            _ = PDFImportService.extractPages(from: url)
+            blockedFor = Date().timeIntervalSince(baselineStart)
+            if blockedFor >= 0.6 { break }
+        }
+        XCTAssertGreaterThanOrEqual(blockedFor, 0.6,
+                                    "even 1200 pages blocked for only \(blockedFor)s, so the responsiveness comparison proves nothing")
 
         var finished = false
         let work = Task { @MainActor in

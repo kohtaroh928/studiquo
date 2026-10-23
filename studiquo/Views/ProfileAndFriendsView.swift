@@ -1566,19 +1566,26 @@ final class FriendStore: ObservableObject {
     /// `studiquo://friend/add?token=…` custom-scheme link — kept working so
     /// a link someone already sent through Mail/Messages before this change
     /// still redeems.
-    func add(url: URL) {
+    /// Whether `url` was one of our invite links. An address that is not (a stray
+    /// `studiquo://` link, or an https link for another host or path) changes nothing,
+    /// and the caller should not move the student anywhere for it.
+    @discardableResult
+    func add(url: URL) -> Bool {
         let isLegacyCustomSchemeLink = url.scheme?.lowercased() == "studiquo"
             && url.host?.lowercased() == "friend" && url.path == "/add"
         let isUniversalLink = url.scheme?.lowercased() == "https"
             && url.host?.lowercased() == URL(string: WorkerAIProvider.defaultEndpoint)?.host?.lowercased()
             && url.path == "/invite"
         guard isLegacyCustomSchemeLink || isUniversalLink,
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return false }
         if let token = items.first(where: { $0.name == "token" })?.value {
             pendingLinkToken = token
+            return true
         } else if let code = items.first(where: { $0.name == "code" })?.value {
             pendingDeepLinkCode = code
+            return true
         }
+        return false
     }
 
     func confirmPendingDeepLinkRequest() {

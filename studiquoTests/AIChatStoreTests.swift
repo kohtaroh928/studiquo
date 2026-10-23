@@ -158,6 +158,61 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertEqual(store.threads.count, 1)
     }
 
+    func testResendAppendsTheEditedPromptWithoutConsumingTheComposer() async {
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in onDelta("最初の返答") }
+        store.activeDraft = "元の質問"
+        store.send()
+        await settle(store)
+        let thread = try! XCTUnwrap(store.selectedThread)
+        let threadKey = AIChatStore.threadKey(thread)
+
+        let stagedAttachment = AIChatAttachment(name: "次に送る資料", path: "", kind: .file)
+        store.activeDraft = "入力中の下書き"
+        store.activeAttachments = [stagedAttachment]
+        store.setContextOverride("次の送信だけの文脈", forKey: threadKey)
+        var resentTurns: [AITurn] = []
+        var resentContext = "not called"
+        provider.chat = { turns, context, images, expectsImages, onDelta in
+            resentTurns = turns
+            resentContext = context
+            XCTAssertTrue(images.isEmpty)
+            XCTAssertFalse(expectsImages)
+            onDelta("書き直しへの返答")
+        }
+
+        XCTAssertTrue(store.resend("  書き直した質問  "))
+        await settle(store)
+
+        XCTAssertEqual(thread.title, "元の質問")
+        XCTAssertEqual(
+            thread.sortedMessages.map(\.text),
+            ["元の質問", "最初の返答", "書き直した質問", "書き直しへの返答"]
+        )
+        XCTAssertEqual(resentTurns.map(\.text), ["元の質問", "最初の返答", "書き直した質問"])
+        XCTAssertEqual(resentContext, "", "入力欄用の文脈を履歴の再送へ混ぜない")
+        XCTAssertEqual(store.activeDraft, "入力中の下書き")
+        XCTAssertEqual(store.activeAttachments, [stagedAttachment])
+        XCTAssertEqual(store.contextOverrides[threadKey], "次の送信だけの文脈")
+    }
+
+    func testResendIsRejectedWhileTheThreadIsResponding() async {
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in
+            onDelta("途中")
+            try await Task.sleep(for: .seconds(30))
+        }
+        store.activeDraft = "元の質問"
+        store.send()
+        let thread = try! XCTUnwrap(store.selectedThread)
+
+        XCTAssertFalse(store.resend("書き直した質問"))
+        XCTAssertEqual(thread.sortedMessages.count, 2)
+
+        store.cancelResponse()
+        await settle(store)
+    }
+
     func testOnlyExplicitlySelectedContextIsSentAndOpenNoteIsExcluded() async {
         let (store, _) = makeStore()
         var seenTurns: [AITurn] = []
