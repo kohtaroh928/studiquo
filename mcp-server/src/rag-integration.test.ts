@@ -700,3 +700,34 @@ test("RAG reserves actual revalidated references before dispatch, retries once c
     }
   } finally { globalThis.fetch = original; }
 });
+
+
+test("revocation during additional credit reservation prevents model dispatch and returns all credits", async () => {
+  const original = globalThis.fetch;
+  try {
+    const qenv = qualityEnvironment(), used = new Map();
+    let revoked = false, calls = 0;
+    const environment = { ...env(), ...qenv, RATE_COUNTER: { getByName(name) { return {
+      async take(limit, seconds, amount = 1) {
+        const previous = used.get(name) || 0;
+        if (previous + amount > limit) return { ok: false };
+        used.set(name, previous + amount);
+        if (!revoked && name.startsWith("ai:cr:5h2:") && previous > 0) {
+          revoked = true;
+          qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1");
+        }
+        return { ok: true, windowEndsAt: 1 };
+      },
+      async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+    }; } } };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
+    globalThis.fetch = async () => { calls++; return new Response(sse(["回答"])); };
+    const result = await chat(environment, { messages: [{ role: "assistant", text: "x".repeat(3980) }, { role: "user", text: "光合成とは？" }], noteContext: "x".repeat(8000), rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.equal(revoked, true);
+    assert.equal(result.response.status, 503);
+    assert.equal(JSON.parse(result.text).code, "rag_authorization_changed");
+    assert.equal(calls, 0);
+    assert.ok([...used.values()].every(value => value === 0));
+  } finally { globalThis.fetch = original; }
+});

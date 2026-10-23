@@ -424,8 +424,15 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
         safetyId: account,
         ...(ragRequested ? { beforeDispatch: async () => {
           rag = await revalidateRetrieval(env, session, rag);
-          const extra = await gate.reserve!(baseInputChars + rag.context.length);
+          const reservedContext = rag.context;
+          const extra = await gate.reserve!(baseInputChars + reservedContext.length);
           if (!extra.ok) throw new CreditLimitError(creditLimitResponse(extra.window!));
+          // Reservation may wait on counters while the source is revoked. Do not
+          // send, or use an obsolete reservation, if authorization changed.
+          rag = await revalidateRetrieval(env, session, rag);
+          if (rag.context !== reservedContext) {
+            throw new CreditLimitError(json({ error: "参照資料の利用状態が変わりました。もう一度お試しください。", code: "rag_authorization_changed" }, 503));
+          }
           referencesSent = rag.context;
           const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
           // Off by default: moving the excerpts changes what the model sees, so
