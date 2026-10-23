@@ -1,5 +1,6 @@
 # gitleaks の設定。標準ルールに、誤検知と確認済みのものだけを除外する。
 # 新しい除外を足すときは、なぜ秘密ではないかをここにコメントで残す。
+title = "Studiquo secret detection"
 [extend]
 useDefault = true
 

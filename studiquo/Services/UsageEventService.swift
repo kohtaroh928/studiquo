@@ -23,6 +23,6 @@ enum UsageEventService {
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        _ = try? await session.data(for: request)
+        _ = try? await session.dataNoticing(for: request)
     }
 }

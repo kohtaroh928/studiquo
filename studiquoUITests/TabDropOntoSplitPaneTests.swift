@@ -28,22 +28,13 @@ final class TabDropOntoSplitPaneTests: XCTestCase {
         try waitForOrientation(orientation)
     }
 
-    /// The simulator rotates a moment after being asked, and some cannot rotate from a
-    /// test at all. A "landscape" test run in a portrait window would drop on the wrong
-    /// pane and prove nothing, so wait for the real shape — and skip, not pass, if it
-    /// never arrives.
+    /// The simulator rotates a moment after being asked. A "landscape" test run in a
+    /// portrait window would drop on the wrong pane and prove nothing, so wait for the
+    /// real shape — and fail, not skip or pass, if it never arrives.
     private func waitForOrientation(_ orientation: UIDeviceOrientation) throws {
-        let wantsLandscape = orientation == .landscapeLeft || orientation == .landscapeRight
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 15))
-        let deadline = Date().addingTimeInterval(8)
-        while Date() < deadline {
-            let frame = window.frame
-            if (frame.width > frame.height) == wantsLandscape { return }
-            XCUIDevice.shared.orientation = orientation
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        throw XCTSkip("This simulator would not rotate to \(wantsLandscape ? "landscape" : "portrait") (window \(window.frame)); the test needs the real layout.")
+        try XCUIDevice.shared.requireOrientation(orientation, window: window)
     }
 
     // MARK: Gestures

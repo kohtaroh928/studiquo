@@ -440,7 +440,7 @@ enum ServerPlanClient {
         var request = URLRequest(url: baseURL.appending(path: "api/plan"))
         request.timeoutInterval = 10
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await URLSession.shared.dataNoticing(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return plan(fromResponse: data)
     }

@@ -6,7 +6,13 @@ import QuartzCore
 /// deleted once both issues are pinned down — nothing in the app depends on it.
 enum GestureDiagnostics {
     /// stdout so `devicectl ... --console` can stream it off the device.
-    private static func emit(_ message: String) { print("[GDIAG] \(message)"); fflush(stdout) }
+    /// Debug builds only: a release build prints nothing, so the instrumentation
+    /// that is still wired in leaves no output on a student's iPad.
+    private static func emit(_ message: String) {
+        #if DEBUG
+        print("[GDIAG] \(message)"); fflush(stdout)
+        #endif
+    }
 
     // MARK: Pan frame pacing
 

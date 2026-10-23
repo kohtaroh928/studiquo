@@ -69,7 +69,7 @@ final class GoogleSignInService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(idToken: idToken, randomValue: randomValue, nonce: nonce))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             if (response as? HTTPURLResponse)?.statusCode == 403, PasskeyRequired.isIn(body: data) { throw GoogleSignInServiceError.passkeyRequired }
             throw GoogleSignInServiceError.serverRejected

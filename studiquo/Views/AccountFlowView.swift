@@ -63,6 +63,11 @@ struct AccountGateView: View {
             }
         }
         .environmentObject(authentication)
+        // Why the server is paused, or that this build must be updated (ServerNotice.swift).
+        .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // The sign-in, verification and onboarding screens show an email address
+        // and take a password or a code: not for the app switcher.
+        .hidesInAppSwitcher(when: authentication.state != .authenticated)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
@@ -71,6 +76,12 @@ struct AccountGateView: View {
         .task(id: authentication.state) {
             guard !cleanupPending else { return }
             await authentication.checkPasskeyRequirement()
+        }
+        // Remembers which account this device is signed in as (LibraryLedger).
+        // Nothing depends on it yet; it only starts the record.
+        .task(id: authentication.state) {
+            guard !cleanupPending, authentication.state == .authenticated else { return }
+            await LibraryIdentityService.refresh()
         }
         // The Worker can only answer "which plan?" once there is a session.
         .task(id: authentication.state) {
@@ -202,7 +213,7 @@ private struct CreateAccountView: View {
                 TextField("メールアドレス", text: $email)
                     .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                     .accountFieldStyle()
-                SecureField(isPasswordReset ? "新しいパスワード（8文字以上）" : "パスワード（8文字以上）", text: $password)
+                SecureField(isPasswordReset ? "新しいパスワード（12文字以上）" : "パスワード（12文字以上）", text: $password)
                     .textContentType(.newPassword)
                     .accountFieldStyle()
                 if !authentication.errorMessage.isEmpty {
@@ -260,7 +271,7 @@ private struct EmailVerificationView: View {
                 if authentication.needsNewPassword {
                     // The server refused the password (it appears in a known
                     // breach) but kept the code valid: ask for another one here.
-                    SecureField("新しいパスワード(8文字以上)", text: $newPassword)
+                    SecureField("新しいパスワード(12文字以上)", text: $newPassword)
                         .textContentType(.newPassword)
                         .accountFieldStyle()
                         .frame(maxWidth: 320)
@@ -275,7 +286,7 @@ private struct EmailVerificationView: View {
                     }
                     .buttonStyle(.themePrimary)
                     .controlSize(.large)
-                    .disabled(code.count != 6 || newPassword.count < 8 || authentication.isEmailVerifyBusy)
+                    .disabled(code.count != 6 || newPassword.count < 12 || authentication.isEmailVerifyBusy)
                 } else {
                     Button("確認") {
                         Task {

@@ -152,4 +152,132 @@ final class NotebookEncryptionServiceTests: XCTestCase {
     private func rawBytes(_ key: SymmetricKey) -> Data {
         key.withUnsafeBytes { Data($0) }
     }
+
+    // MARK: Keys are never replaced
+
+    private func keys(_ service: String) -> [NotebookEncryptionKeyStore.StoredKey] {
+        NotebookEncryptionKeyStore.allKeys(service: service)
+    }
+
+    /// The whole point: the sealed notebook reaches a new device before its key
+    /// does. Opening it there must fail without making a key, so nothing can be
+    /// overwritten; and once the key arrives the same notebook opens.
+    func testUnlockWithoutTheKeyFailsCreatesNothingAndSucceedsOnceTheKeyArrives() throws {
+        let service = uniqueKeyService()
+        let (notebook, page1, _) = makeNotebook()
+        NotebookEncryptionService.lock(notebook, keyService: service)
+        let original = try XCTUnwrap(keys(service).first)
+        NotebookEncryptionKeyStore.deleteKey(service: service) // this device has not received the key yet
+
+        XCTAssertFalse(NotebookEncryptionService.unlock(notebook, keyService: service))
+        XCTAssertTrue(keys(service).isEmpty, "opening must never create a key")
+
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: original.id, key: original.key, service: service)) // the key syncs in
+        XCTAssertTrue(NotebookEncryptionService.unlock(notebook, keyService: service))
+        XCTAssertEqual(page1.recognizedText, "微分積分の基礎")
+    }
+
+    /// Two devices each make a key before either has synced. When they sync,
+    /// both keys exist and every notebook still opens: nothing was overwritten.
+    func testTwoKeysMadeBeforeSyncingBothKeepOpeningTheirNotebooks() throws {
+        let service = uniqueKeyService()
+        let (notebookA, pageA, _) = makeNotebook()
+        NotebookEncryptionService.lock(notebookA, keyService: service)
+        let keyA = try XCTUnwrap(keys(service).first)
+        NotebookEncryptionKeyStore.deleteKey(service: service) // device B starts without it
+
+        let (notebookB, pageB, _) = makeNotebook()
+        NotebookEncryptionService.lock(notebookB, keyService: service) // B makes its own key
+        XCTAssertEqual(keys(service).count, 1)
+        XCTAssertNotEqual(keys(service).first?.id, keyA.id)
+
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: keyA.id, key: keyA.key, service: service)) // A's key syncs in
+        XCTAssertEqual(keys(service).count, 2)
+        XCTAssertTrue(NotebookEncryptionService.unlock(notebookA, keyService: service))
+        XCTAssertTrue(NotebookEncryptionService.unlock(notebookB, keyService: service))
+        XCTAssertEqual(pageA.recognizedText, "微分積分の基礎")
+        XCTAssertEqual(pageB.recognizedText, "微分積分の基礎")
+    }
+
+    func testLockingNeverRemovesAnExistingKeyAndReusesTheNewestOne() throws {
+        let service = uniqueKeyService()
+        let older = SymmetricKey(size: .bits256)
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: "00112233445566778899aabbccddeeff", key: older, service: service))
+        let (first, _, _) = makeNotebook()
+        let (second, _, _) = makeNotebook()
+
+        NotebookEncryptionService.lock(first, keyService: service)
+        NotebookEncryptionService.lock(second, keyService: service)
+
+        XCTAssertEqual(keys(service).count, 1, "an existing key is used, not replaced or added to")
+        XCTAssertEqual(rawBytes(try XCTUnwrap(keys(service).first).key), rawBytes(older))
+        XCTAssertTrue(NotebookEncryptionService.unlock(first, keyService: service))
+        XCTAssertTrue(NotebookEncryptionService.unlock(second, keyService: service))
+    }
+
+    /// Notebooks sealed by builds from before this change have no key id and
+    /// were sealed with the single original key. They must still open, the
+    /// original key must survive, and re-sealing with it keeps the old format.
+    func testNotebooksSealedByTheOldFormatStillOpenAndTheOldKeySurvives() throws {
+        let service = uniqueKeyService()
+        let legacyKey = SymmetricKey(size: .bits256)
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: nil, key: legacyKey, service: service))
+        let (notebook, page1, _) = makeNotebook()
+
+        NotebookEncryptionService.lock(notebook, keyService: service)
+        let blob = try XCTUnwrap(notebook.encryptedContent)
+        XCTAssertNotEqual(Array(blob.prefix(4)), Array("SQK1".utf8), "sealed with the id-less key stays in the old format")
+        XCTAssertTrue(NotebookEncryptionService.unlock(notebook, keyService: service))
+        XCTAssertEqual(page1.recognizedText, "微分積分の基礎")
+        XCTAssertEqual(keys(service).count, 1)
+        XCTAssertNil(keys(service).first?.id)
+        XCTAssertEqual(rawBytes(try XCTUnwrap(keys(service).first).key), rawBytes(legacyKey))
+    }
+
+    func testANewKeyBlobNamesItsKeyAndAWrongKeyWithTheSameIdDoesNotOpenIt() throws {
+        let service = uniqueKeyService()
+        let (notebook, _, _) = makeNotebook()
+        NotebookEncryptionService.lock(notebook, keyService: service)
+        let blob = try XCTUnwrap(notebook.encryptedContent)
+        XCTAssertEqual(Array(blob.prefix(4)), Array("SQK1".utf8))
+        let id = try XCTUnwrap(keys(service).first?.id)
+
+        NotebookEncryptionKeyStore.deleteKey(service: service)
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: id, key: SymmetricKey(size: .bits256), service: service))
+
+        XCTAssertFalse(NotebookEncryptionService.unlock(notebook, keyService: service))
+        XCTAssertEqual(notebook.encryptedContent, blob)
+    }
+
+    /// A notebook whose key has not reached this device stays sealed. Putting it
+    /// away again must not overwrite the sealed content with its empty fields.
+    func testLockingAnAlreadySealedNotebookLeavesTheSealedContentAlone() throws {
+        let service = uniqueKeyService()
+        let (notebook, page1, _) = makeNotebook()
+        XCTAssertTrue(NotebookEncryptionService.lock(notebook, keyService: service))
+        let sealed = try XCTUnwrap(notebook.encryptedContent)
+        let key = try XCTUnwrap(keys(service).first)
+        NotebookEncryptionKeyStore.deleteKey(service: service)
+        XCTAssertFalse(NotebookEncryptionService.unlock(notebook, keyService: service)) // key not here yet
+
+        XCTAssertTrue(NotebookEncryptionService.lock(notebook, keyService: service))
+
+        XCTAssertEqual(notebook.encryptedContent, sealed)
+        XCTAssertTrue(keys(service).isEmpty, "locking an already-sealed notebook makes no key")
+        NotebookEncryptionKeyStore.addKey(id: key.id, key: key.key, service: service)
+        XCTAssertTrue(NotebookEncryptionService.unlock(notebook, keyService: service))
+        XCTAssertEqual(page1.recognizedText, "微分積分の基礎")
+    }
+
+    func testLockReportsSuccess() {
+        let (notebook, _, _) = makeNotebook()
+        XCTAssertTrue(NotebookEncryptionService.lock(notebook, keyService: uniqueKeyService()))
+        XCTAssertNotNil(notebook.encryptedContent)
+    }
+
+    func testWrapRefusesAKeyIdThatIsNotValid() {
+        XCTAssertNil(SealedBlob.wrap(Data([1, 2, 3]), keyID: "not-hex"))
+        XCTAssertEqual(SealedBlob.wrap(Data([1, 2, 3]), keyID: nil), Data([1, 2, 3]))
+        XCTAssertNotNil(SealedBlob.wrap(Data([1, 2, 3]), keyID: SealedBlob.newKeyID()))
+    }
 }

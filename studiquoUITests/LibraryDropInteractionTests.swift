@@ -411,8 +411,8 @@ final class LibraryDropInteractionTests: XCTestCase {
         }
     }
 
-    /// Side by side. Needs a landscape window: skipped, not failed, where the simulator will
-    /// not rotate (the portrait test below covers the same behaviour in every environment).
+    /// Side by side. Needs a landscape window: fails, not skips, where the simulator will
+    /// not rotate, so a missing landscape check is never mistaken for a pass.
     func testDocumentTabsDropIntoSplitPane() throws {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -420,13 +420,7 @@ final class LibraryDropInteractionTests: XCTestCase {
         app.launch()
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 15))
-        let deadline = Date().addingTimeInterval(8)
-        while window.frame.width <= window.frame.height, Date() < deadline {
-            XCUIDevice.shared.orientation = .landscapeLeft
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        try XCTSkipUnless(window.frame.width > window.frame.height,
-                          "This simulator would not rotate to landscape (window \(window.frame)).")
+        try XCUIDevice.shared.requireOrientation(.landscapeLeft, window: window)
         exerciseDocumentTabDrops(in: app, openSplit: openHorizontalSplit)
     }
 
@@ -837,6 +831,15 @@ final class FriendRequestsInteractionTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--friend-requests-ui-test"]
         app.launch()
+
+        // 縦向きなど狭い画面では、サイドバーは初期状態で閉じている(開くボタンが出る)。
+        // ログイン前提のエラーが出ることがあるので、先に閉じる。
+        if app.alerts["エラー"].waitForExistence(timeout: 3) { app.alerts["エラー"].buttons["OK"].tap() }
+        // 通常幅ではシステムの「サイドバーを表示」、狭い幅ではアプリ独自の「friends-sidebar-toggle」。
+        let sidebarToggle = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label == %@", "friends-sidebar-toggle", "サイドバーを表示"
+        )).firstMatch
+        if sidebarToggle.waitForExistence(timeout: 5) { sidebarToggle.tap() }
 
         let button = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "申請・招待")).firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 15))

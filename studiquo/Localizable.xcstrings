@@ -2301,6 +2301,36 @@
         }
       }
     },
+    "コピーしました" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied"
+          }
+        }
+      }
+    },
+    "書き直す" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        }
+      }
+    },
+    "メッセージを書き直す" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit message"
+          }
+        }
+      }
+    },
     "ゴミ箱" : {
       "localizations" : {
         "en" : {
@@ -10997,6 +11027,160 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "龍谷大学"
+          }
+        }
+      }
+    },
+    "閲覧データを消去" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear browsing data"
+          }
+        }
+      }
+    },
+    "消去する" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        }
+      }
+    },
+    "このブラウザに保存されたCookie・ログイン状態・サイトのデータをすべて消します。Studiquoのノートには影響しません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This removes all cookies, sign-ins and site data saved by this browser. Your Studiquo notes are not affected."
+          }
+        }
+      }
+    },
+    "AI機能は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI features are temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "フレンドとチャットは一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Friends and chat are temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "共同編集は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared editing is temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "MCP連携は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MCP connections are temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "ログインは一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in is temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "メールの送信は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending email is temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "通知は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications are temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "一部の機能は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some features are temporarily unavailable. Please try again in a little while."
+          }
+        }
+      }
+    },
+    "ただいまメンテナンス中です。しばらくしてからもう一度お試しください。端末内のノートはそのまま使えます。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Studiquo is under maintenance. Please try again in a little while. Notes on this device keep working."
+          }
+        }
+      }
+    },
+    "このバージョンのStudiquoはご利用いただけなくなりました。App Storeで最新版に更新してください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version of Studiquo can no longer be used. Please update to the latest version in the App Store."
+          }
+        }
+      }
+    },
+    "アプリを更新" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update the app"
           }
         }
       }

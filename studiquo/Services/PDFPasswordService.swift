@@ -150,9 +150,7 @@ enum PDFPasswordService {
     /// A temp URL for the stripped copy. It lives in its own temporary folder
     /// so the visible filename can stay exactly the same as the original PDF.
     static func destinationURL(for source: URL) -> URL {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = StudiquoWorkFiles.makeFolder()
         return folder.appendingPathComponent(source.lastPathComponent)
     }
 

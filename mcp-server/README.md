@@ -13,7 +13,7 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 
 1. iPadのホーム画面の「＋」→「MCPクラウド連携」でMCP URLをコピーします。
 2. Claudeまたは対応するChatGPTのカスタムMCP連携にURLを登録します。
-3. ブラウザーに表示された12文字の接続コードを、同じ画面の「接続コード」に入力します。接続先と権限を確認して許可します。端末トークンを外部サービスに貼り付ける必要はありません。
+3. iPadの同じ画面の「AIアプリを接続する」で、接続するAIアプリ(Claude/ChatGPT/Codex/その他)を選んで「コードを発行」を押します。表示された12文字のコード(5分間・1回だけ有効)を、AIアプリのブラウザー画面の入力欄にご自身で入力します。コードは選んだ種類のAIアプリでしか使えず、他の人に教える必要はありません。端末トークンを外部サービスに貼り付ける必要もありません。
 4. 会話中に「この内容をstudiquoの文書にして」などと依頼します。MCPツールは依頼IDを返し、iPadが開いている間は約30秒以内に、閉じている場合は次回起動時に取り込みます。MCPの`get_import_status`で取り込み済みか確認できます。
 5. 接続はiPadの「MCPクラウド連携」から解除できます。解除後、発行済みアクセストークンもMCPに使えません。
 
@@ -32,25 +32,27 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 | `POST /api/ai/grade` | 答案画像を採点基準で採点する（Luna固定） |
 | `POST /api/ai/review` | 復習教材（解説＋一問一答）を作る（Luna固定） |
 
-認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.js`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.js`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
+認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.ts`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.ts`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
 
-AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.js`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Luna 1 / Sol 20 / Terra 22 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
+AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.ts`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Luna 1 / Sol 20 / Terra 22 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
 
-| | 1分(回数) | 5時間 | 1日 | 1か月 |
-|---|---|---|---|---|
-| standard | 5 | 40 | 60 | 120 |
-| plus | 10 | 400 | 600 | 1,500 |
-| pro | 20 | 1,000 | 1,500 | 4,000 |
+| | 1分(回数) | 5時間 | 1週間 |
+|---|---|---|---|
+| standard | 5 | 10 | 30 |
+| plus | 10 | 100 | 350 |
+| pro | 20 | 250 | 920 |
 
-上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `day` / `month` / `global`）を返します。別に、機能ごとのサービス全体の1日の上限（`GLOBAL_*_DAILY_LIMIT`）も残してあります。重みや上限を直すときは`ai-credits.js`の表だけを変えます（アプリに表示するクレジット数は`SubscriptionPlansView.swift`に手で合わせます）。
+5時間と1週間は、最初に使ったときから数えます(暦の週ではありません)。入力が長いリクエストは多く数えます(12,000文字までは1倍、そこから6,000文字ごとに1倍ずつ加算。チャットは古いターンから落として最大60,000文字まで送る)。上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `week` / `global`）を返します。`global`はプランごとのサービス全体の1日の上限で、そのプランの購読者数に比例して増え、最低額を下回りません。
+
+数値はすべて`src/ai-limits.ts`の`DEFAULT_AI_LIMITS`にあり、配備時に環境変数`AI_LIMITS`(変えたい値だけを書いたJSON)で上書きできます。例: `{"plans":{"pro":{"week":1200}},"global":{"headroom":4}}`。不正な値は無視してログに出します。プランの上限を変えたら、アプリの表示(`PlanAllowance.swift`)も手で合わせます。
 
 `/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデルを選べます（standardはChatGPT Luna、plusはLunaに加えてTerra・Sol、proはさらにAstra）。プラン外のモデルは403です。`model`を省略した場合はLunaを呼びます。AnthropicのコードはWorkerに残っていますが、どのプランの表にも載せていないため無効です。
 
 **AIを使える人の条件と安全策**（OpenAIの利用条件が13歳未満を対象外とし、未成年には保護者の同意を求めるため）:
 
-- アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.js`が403で止めます。
-- 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。
-- 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちているときは通します。`AI_MODERATION=off`で無効化）。
+- アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.ts`が403で止めます。
+- 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。`PAYWALL_ENABLED`が`true`でないときも使えません(課金なしのアカウントを量産して全体の1日上限を使い切られるのを防ぐため。AIを解禁するときは両方を`true`にします)。
+- 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちている・読めないときは送らずに503（`code: "moderation_unavailable"`）を返し、消費した回数は戻します。`AI_MODERATION=off`で無効化）。
 - OpenAIへ送るときは`store: false`と、アカウントのハッシュを元にした`safety_identifier`を付けます（アカウントIDそのものは送りません）。
 
 システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** モデルは`OPENAI_*_MODEL`で差し替えられます。
@@ -128,11 +130,12 @@ openssl rand -base64 32 | npx wrangler secret put SNAPSHOT_ENCRYPTION_KEY
 | --- | --- | --- |
 | `MAINTENANCE_MODE` | `"true"` | アプリ・MCP・OAuthの経路が、`Retry-After: 300`つきの503(`code: "maintenance"`)を返す。`/health`、アプリ関連づけファイル、法務・招待ページ、お知らせの一覧、管理画面は動き続ける。障害や不具合のあるリリースを止めるときに使う。 |
 | `MIN_APP_BUILD` | ビルド番号(例: `"5"`) | アプリのAPIで、それより古いビルドに426(`code: "app_update_required"`)を返す。ビルド番号は、iOSが付けるUser-Agent(`studiquo/<ビルド> CFNetwork/…`)から読むので、この確認を入れる前のビルドにも効く。アプリ以外のクライアントは対象外。数値でない値や0以下は、無効として扱う。 |
+| `DISABLED_FEATURES` | `"chat,email"`のようなカンマ区切り | 機能を1つずつ止める。止めた経路は503(`code: "feature_disabled"`、`feature`に機能名、`Retry-After: 300`)。名前は`ai`、`chat`、`collab`、`mcp`、`signin`、`email`、`push`。`email`と`push`は送信だけを止める。退会・ログアウト・セッション更新と`/health`は止めない。`/health`の`disabledFeatures`に効いた名前が出る。詳細は`docs/RUNBOOK.md`のRB-13。 |
 | `SESSION_MAX_DAYS` | 日数(既定365) | ログインを更新(`/api/session/refresh`)できる期間の上限。ログインの始まりからこの日数を過ぎると、更新されず、手元のトークンが切れたあとに再ログインになる。 |
 
 ## トークンの署名
 
-Workerが発行するトークンに署名を付け、でっち上げたトークンを、**KVを読む前に**拒否する仕組みです(`src/token-signature.js`)。トークンの形がまねしやすく、偽のトークンでもKVの読み取りが起きて、大量に送られるとアカウント共有のKVの上限を使い切られるため、これを防ぎます。IPを大量に変える連打にも効きます(WAFのIP単位の制限では止められない)。
+Workerが発行するトークンに署名を付け、でっち上げたトークンを、**KVを読む前に**拒否する仕組みです(`src/token-signature.ts`)。トークンの形がまねしやすく、偽のトークンでもKVの読み取りが起きて、大量に送られるとアカウント共有のKVの上限を使い切られるため、これを防ぎます。IPを大量に変える連打にも効きます(WAFのIP単位の制限では止められない)。
 
 | 変数(Worker secret) | 値 | 動作 |
 | --- | --- | --- |
@@ -150,7 +153,7 @@ Workerが発行するトークンに署名を付け、でっち上げたトー�
 
 ## ID トークンのnonce(Apple・Google)
 
-Sign in with Apple / GoogleのIDトークンが、**このサインインのために作られたもの**だとWorkerが確かめる仕組みです(`src/id-token-nonce.js`)。確かめないと、IDトークンのコピーを、期限が切れるまで、別の人が送り直せます。
+Sign in with Apple / GoogleのIDトークンが、**このサインインのために作られたもの**だとWorkerが確かめる仕組みです(`src/id-token-nonce.ts`)。確かめないと、IDトークンのコピーを、期限が切れるまで、別の人が送り直せます。
 
 1. アプリが、ランダムなnonce(生の値)を作る。
 2. そのSHA-256(小文字の16進)を、Apple / Googleに渡す。IDトークンの`nonce`に入って返ってくる。
@@ -175,3 +178,7 @@ npm run dev
 ```
 
 KVネームスペース `STUDIQUO_DATA` のIDは `wrangler.jsonc` に設定済みです。別のCloudflareアカウントで動かす場合は、`npx wrangler kv namespace create STUDIQUO_DATA` で作り直してIDを差し替えてください。
+
+## 共同編集の招待
+
+招待(`POST /api/document/rooms/:id/invite`)は、相手を参加者にしません。保留の招待(`doc-invite:<相手のキー>:<部屋>`、14日で失効、1人あたり20件まで)を作り、相手に通知します。相手が `POST .../invite/accept` を呼んだ時点で、招待した人がまだ部屋の所有者であれば参加者になります(所有者でなくなっていれば410)。`POST .../invite/decline` で断り、`GET /api/document/invites` で保留の一覧を見られます。すでに参加している人の役割変更だけは、そのまま反映されます。

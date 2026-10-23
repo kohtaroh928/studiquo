@@ -1040,30 +1040,14 @@ struct CalendarHomeView: View {
     /// Includes anything running *through* the day, not just starting on it,
     /// so a multi-day entry stays visible for its whole span.
     private var selectedDayEvents: [CalendarEvent] {
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: selectedDate)
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
-        return events.filter { $0.startDate < dayEnd && $0.endDate >= dayStart }
+        events.filter { CalendarDayMath.overlapsDay(start: $0.startDate, end: $0.endDate, day: selectedDate) }
     }
 
     /// Which event kinds land on each day, so the calendar grid can mark a
     /// day without the cost of re-scanning every event per cell. A multi-day
     /// entry marks every day it spans, not just the one it starts on.
     private func makeEventKindsByDay() -> [Date: Set<CalendarEventKind>] {
-        let calendar = Calendar.current
-        var result: [Date: Set<CalendarEventKind>] = [:]
-        for event in events {
-            var cursor = calendar.startOfDay(for: event.startDate)
-            let lastDay = calendar.startOfDay(for: event.endDate)
-            var daysWalked = 0
-            while cursor <= lastDay, daysWalked < 366 {
-                result[cursor, default: []].insert(event.kind)
-                guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
-                cursor = next
-                daysWalked += 1
-            }
-        }
-        return result
+        CalendarDayMath.kindsByDay(events.map { (start: $0.startDate, end: $0.endDate, kind: $0.kind) })
     }
 
     private var todayStudySeconds: TimeInterval {
@@ -1080,19 +1064,7 @@ struct CalendarHomeView: View {
     }
 
     private var currentStudyStreak: Int {
-        let calendar = Calendar.current
-        let studiedDays = Set(studyActivities.map { calendar.startOfDay(for: $0.startedAt) })
-        var cursor = calendar.startOfDay(for: .now)
-        if !studiedDays.contains(cursor), let yesterday = calendar.date(byAdding: .day, value: -1, to: cursor) {
-            cursor = yesterday
-        }
-        var streak = 0
-        while studiedDays.contains(cursor) {
-            streak += 1
-            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previous
-        }
-        return streak
+        CalendarDayMath.studyStreak(studyDates: studyActivities.map(\.startedAt))
     }
 
     var body: some View {
@@ -1495,10 +1467,7 @@ struct CalendarHomeView: View {
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        return minutes >= 60
-            ? L("\(minutes / 60)時間\(minutes % 60)分")
-            : L("\(minutes)分")
+        StudyDurationFormat.text(duration)
     }
 
     private func eventLegend(_ kind: CalendarEventKind) -> some View {
@@ -1639,74 +1608,20 @@ private struct StudyTimeBarChart: View {
 
     private var calendar: Calendar { .current }
 
-    private struct Bar: Identifiable {
-        let id = UUID()
-        let label: String
-        let seconds: TimeInterval
-        /// The day (week/month) or the month's first day (year) this bar
-        /// represents — used to build the tapped-detail text.
-        let date: Date
-        /// The bar for the selected day / current month, drawn in full colour.
-        let isHighlighted: Bool
-    }
+    private typealias Bar = StudyBarMath.Bar
 
-    private func seconds(on day: Date) -> TimeInterval {
-        activities
-            .filter { calendar.isDate($0.startedAt, inSameDayAs: day) }
-            .reduce(0) { $0 + $1.duration }
-    }
-
-    private func seconds(inMonthOf day: Date) -> (total: TimeInterval, days: Int) {
-        guard let interval = calendar.dateInterval(of: .month, for: day),
-              let dayCount = calendar.range(of: .day, in: .month, for: day)?.count else {
-            return (0, 1)
-        }
-        let total = activities
-            .filter { $0.startedAt >= interval.start && $0.startedAt < interval.end }
-            .reduce(0) { $0 + $1.duration }
-        return (total, max(dayCount, 1))
+    private var samples: [StudyBarMath.Sample] {
+        activities.map { StudyBarMath.Sample(startedAt: $0.startedAt, seconds: $0.duration) }
     }
 
     private var bars: [Bar] {
+        let mathSpan: StudyBarMath.Span
         switch span {
-        case .week:
-            guard let start = calendar.dateInterval(of: .weekOfYear, for: referenceDate)?.start else { return [] }
-            let symbols = orderedWeekdaySymbols
-            return (0..<7).compactMap { offset in
-                guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-                return Bar(
-                    label: symbols[offset],
-                    seconds: seconds(on: day),
-                    date: day,
-                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
-                )
-            }
-        case .month:
-            guard let interval = calendar.dateInterval(of: .month, for: referenceDate),
-                  let dayCount = calendar.range(of: .day, in: .month, for: referenceDate)?.count else { return [] }
-            return (0..<dayCount).compactMap { offset in
-                guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
-                return Bar(
-                    label: "\(calendar.component(.day, from: day))",
-                    seconds: seconds(on: day),
-                    date: day,
-                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
-                )
-            }
-        case .year:
-            let year = calendar.component(.year, from: referenceDate)
-            let selectedMonth = calendar.component(.month, from: referenceDate)
-            return (1...12).compactMap { month in
-                guard let day = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else { return nil }
-                let stats = seconds(inMonthOf: day)
-                return Bar(
-                    label: "\(month)",
-                    seconds: stats.total / Double(stats.days), // the month's daily average
-                    date: day,
-                    isHighlighted: month == selectedMonth
-                )
-            }
+        case .week: mathSpan = .week
+        case .month: mathSpan = .month
+        case .year: mathSpan = .year
         }
+        return StudyBarMath.bars(span: mathSpan, reference: referenceDate, samples: samples, calendar: calendar)
     }
 
     private var selectedBar: Bar? {
@@ -1727,25 +1642,9 @@ private struct StudyTimeBarChart: View {
         }
     }
 
-    /// Weekday short symbols rotated to the locale's first weekday, so the
-    /// labels line up with the bars.
-    private var orderedWeekdaySymbols: [String] {
-        let symbols = calendar.veryShortWeekdaySymbols
-        let shift = calendar.firstWeekday - 1
-        return Array(symbols[shift...] + symbols[..<shift])
-    }
+    private var averageSeconds: TimeInterval { StudyBarMath.averageSeconds(of: bars) }
 
-    /// Average over the periods that actually had study, not over every bar.
-    /// Dividing by all 31 days of a month made a real hour read as "0分".
-    private var averageSeconds: TimeInterval {
-        let active = bars.filter { $0.seconds > 0 }
-        guard !active.isEmpty else { return 0 }
-        return active.reduce(0) { $0 + $1.seconds } / Double(active.count)
-    }
-
-    private var totalSeconds: TimeInterval {
-        bars.reduce(0) { $0 + $1.seconds }
-    }
+    private var totalSeconds: TimeInterval { StudyBarMath.totalSeconds(of: bars) }
 
     private var averageLabel: String {
         switch span {
@@ -1760,8 +1659,7 @@ private struct StudyTimeBarChart: View {
     }
 
     private func durationText(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        return minutes >= 60 ? L("\(minutes / 60)時間\(minutes % 60)分") : L("\(minutes)分")
+        StudyDurationFormat.text(seconds)
     }
 
     var body: some View {
@@ -1937,10 +1835,7 @@ private struct MonthCalendarGrid: View {
     /// Always 42 cells (6 full weeks) so the grid's height doesn't jump
     /// between months with four weeks and months with six.
     private var daysToDisplay: [Date] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
-              let gridStart = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start)?.start
-        else { return [] }
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+        CalendarDayMath.daysToDisplay(month: displayedMonth, calendar: calendar)
     }
 
     private func shiftMonth(by delta: Int) {
@@ -1969,21 +1864,11 @@ enum EventReminderNotifications {
 
         // An absolute reminder date wins; events saved before the editor
         // switched to one fall back to their stored offset.
-        let requested: Date?
-        if let explicit = event.reminderDate {
-            requested = explicit
-        } else {
-            let option = EventReminderOption(minutesBefore: event.reminderMinutesBefore)
-            requested = option == .none
-                ? nil
-                : event.startDate.addingTimeInterval(-Double(option.rawValue) * 60)
-        }
-        guard let requested else { return }
-
-        // Never fire at or after the event itself, even if the start time was
-        // dragged earlier after the reminder was set.
-        let fireDate = min(requested, event.startDate.addingTimeInterval(-60))
-        guard fireDate > .now else { return }
+        guard let fireDate = EventReminderPlan.fireDate(
+            explicit: event.reminderDate,
+            minutesBefore: event.reminderMinutesBefore,
+            start: event.startDate
+        ), fireDate > .now else { return }
 
         let content = UNMutableNotificationContent()
         content.title = event.title
@@ -2050,11 +1935,11 @@ private struct CalendarEventEditor: View {
     /// A notification at or after the thing it is reminding you about is
     /// useless, so the picker is bounded rather than merely validated.
     private var latestReminderDate: Date {
-        startDate.addingTimeInterval(-60)
+        EventReminderPlan.latestReminderDate(start: startDate)
     }
 
     private var effectiveReminderDate: Date {
-        min(reminderDate ?? latestReminderDate, latestReminderDate)
+        EventReminderPlan.effectiveReminderDate(requested: reminderDate, start: startDate)
     }
 
     var body: some View {
@@ -2128,14 +2013,11 @@ private struct CalendarEventEditor: View {
     /// Kept in step with `reminderDate` so anything still reading the old
     /// offset field (and the summary line below) stays correct.
     private var minutesBeforeStart: Int {
-        max(1, Int(abs(startDate.timeIntervalSince(effectiveReminderDate)) / 60))
+        EventReminderPlan.minutesBeforeStart(start: startDate, reminder: effectiveReminderDate)
     }
 
     private var reminderSummary: String {
-        let minutes = minutesBeforeStart
-        if minutes < 60 { return L("予定の\(minutes)分前に通知します。") }
-        if minutes < 60 * 24 { return L("予定の約\(minutes / 60)時間前に通知します。") }
-        return L("予定の約\(minutes / (60 * 24))日前に通知します。")
+        EventReminderPlan.summary(minutes: minutesBeforeStart)
     }
 
     private func save() {

@@ -1414,8 +1414,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                   ) else { return }
             guard Date().timeIntervalSince(since) >= self.straightenHoldDuration else { return }
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
-            let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
-
             // A scribble is an erase gesture (for the pen — see the lift-time
             // check below, which is pen-only), not a shape to correct. If the
             // stroke so far turns back on itself over existing ink, don't let
@@ -1431,54 +1429,128 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 return
             }
 
-            if self.isRectangleCorrectionEnabled,
-               Self.rectangleIfClosedLoop(self.previewStroke()) != nil {
+            var enabled = Set<HoldCorrection>()
+            if self.isRectangleCorrectionEnabled { enabled.insert(.rectangle) }
+            if self.isTriangleCorrectionEnabled { enabled.insert(.triangle) }
+            if self.isPolylineCorrectionEnabled { enabled.insert(.polyline) }
+            if self.isParabolaCorrectionEnabled { enabled.insert(.parabola) }
+            if self.isCurveCorrectionEnabled { enabled.insert(.curve) }
+            if self.isLineCorrectionEnabled { enabled.insert(.line) }
+            if self.isEllipseCorrectionEnabled { enabled.insert(.ellipse) }
+            guard let match = Self.classifyHold(preview, start: start, current: current, enabled: enabled) else { return }
+
+            switch match.kind {
+            case .rectangle:
                 self.isRectangleLocked = true
                 self.prepareLockedShape(at: current, snapToSquare: true)
                 self.emitRectanglePreview()
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isTriangleCorrectionEnabled,
-                      let triangle = Self.triangleIfClosedLoop(self.previewStroke()) {
+            case .triangle:
                 self.isTriangleLocked = true
-                self.prepareLockedNormalizedShape(points: triangle.points, at: current)
+                self.prepareLockedNormalizedShape(points: match.points, at: current)
                 self.emitNormalizedShapePreview()
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isPolylineCorrectionEnabled,
-                      let polyline = Self.polylineIfRecognized(self.previewStroke()) {
+            case .polyline, .parabola, .curve:
                 self.isParabolaLocked = true
-                self.prepareLockedNormalizedShape(points: polyline.points, at: current)
+                self.prepareLockedNormalizedShape(points: match.points, at: current)
                 self.emitNormalizedShapePreview()
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isParabolaCorrectionEnabled,
-                      let parabola = Self.parabolaIfRecognized(self.previewStroke()) {
-                self.isParabolaLocked = true
-                self.prepareLockedNormalizedShape(points: parabola.points, at: current)
-                self.emitNormalizedShapePreview()
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isCurveCorrectionEnabled,
-                      let curve = Self.curveIfRecognized(self.previewStroke()) {
-                self.isParabolaLocked = true
-                self.prepareLockedNormalizedShape(points: curve.points, at: current)
-                self.emitNormalizedShapePreview()
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isLineCorrectionEnabled,
-                      distanceFromStart > 16,
-                      !Self.looksLikeClosedLoop(
-                        points: self.rawPoints.map(\.location), width: self.strokeWidth, start: start, current: current
-                      ) {
+            case .line:
                 self.isStraightened = true
                 self.emitStraightPreview(to: current)
-                self.triggerCorrectionFeedback(at: current)
-            } else if self.isEllipseCorrectionEnabled,
-                      Self.looksLikeClosedLoop(
-                        points: self.rawPoints.map(\.location), width: self.strokeWidth, start: start, current: current
-                      ) {
+            case .ellipse:
                 self.isEllipseLocked = true
                 self.prepareLockedShape(at: current, snapToSquare: false)
                 self.emitEllipsePreview()
-                self.triggerCorrectionFeedback(at: current)
+            }
+            self.triggerCorrectionFeedback(at: current)
+        }
+    }
+
+    /// The shapes a held stroke can snap to.
+    enum HoldCorrection: Hashable {
+        case rectangle, triangle, polyline, parabola, curve, line, ellipse
+    }
+
+    /// Which shape a held stroke snaps to, and the corrected points for the
+    /// kinds that carry them (triangle, polyline, parabola, curve).
+    ///
+    /// The one place the recognisers are ranked against each other, so the
+    /// boundaries between them can be tested as a whole. Each recogniser has
+    /// its own gate (is this plausibly my shape at all?); where two gates are
+    /// both open, the one whose result lies closer to the pen's own points
+    /// wins, so a recogniser never claims a stroke another explains better.
+    ///
+    /// - A stroke that comes back near its start is a closed loop and is
+    ///   decided only among rectangle, triangle and ellipse. It never falls
+    ///   through to a line or curve, and a loop that is none of the three
+    ///   stays freehand.
+    /// - An open stroke is decided among polyline, parabola/curve and line.
+    ///   A polyline must fit the points at least as closely as the smooth
+    ///   curve does, and the line is kept for strokes that really are nearly
+    ///   straight.
+    static func classifyHold(
+        _ stroke: InkStroke, start: CGPoint, current: CGPoint, enabled: Set<HoldCorrection>
+    ) -> (kind: HoldCorrection, points: [InkPoint])? {
+        let points = stroke.points.map(\.location)
+        if looksLikeClosedLoop(points: points, width: stroke.width, start: start, current: current) {
+            var candidates: [(kind: HoldCorrection, error: CGFloat, points: [InkPoint])] = []
+            if enabled.contains(.rectangle), let rectangle = rectangleFit(stroke) {
+                candidates.append((.rectangle, rectangle.error, []))
+            }
+            if enabled.contains(.triangle), let triangle = triangleFit(stroke) {
+                candidates.append((.triangle, triangle.error, triangle.points))
+            }
+            if enabled.contains(.ellipse), let error = ellipseFitError(stroke) {
+                candidates.append((.ellipse, error, []))
+            }
+            guard let best = candidates.min(by: { $0.error < $1.error }) else { return nil }
+            return (best.kind, best.points)
+        }
+
+        // Open stroke. Smooth fits first (parabola, then the general curve),
+        // so the polyline can be held against them.
+        var smooth: (kind: HoldCorrection, points: [InkPoint])?
+        if enabled.contains(.parabola), let parabola = parabolaIfRecognized(stroke) {
+            smooth = (.parabola, parabola.points)
+        } else if enabled.contains(.curve), let curve = curveIfRecognized(stroke) {
+            smooth = (.curve, curve.points)
+        }
+        if enabled.contains(.polyline), let polyline = polylineIfRecognized(stroke) {
+            let polylineError = meanDistance(points, to: polyline.points.map(\.location))
+            if let smooth {
+                let smoothError = meanDistance(points, to: smooth.points.map(\.location))
+                if polylineError <= smoothError { return (.polyline, polyline.points) }
+            } else {
+                return (.polyline, polyline.points)
             }
         }
+        if let smooth { return smooth }
+        if enabled.contains(.line), isNearlyStraight(points), hypot(current.x - start.x, current.y - start.y) > 16 {
+            return (.line, [])
+        }
+        return nil
+    }
+
+    /// The most a stroke may bow away from the chord between its ends, as a
+    /// fraction of that chord, and still be straightened. Past it the stroke
+    /// is an arc or a wave, and snapping it to a ruler line is a surprise.
+    static let straightenMaxBend: CGFloat = 0.10
+    /// The most a stroke's drawn length may exceed its chord. Rules out
+    /// strokes that double back before the hold.
+    static let straightenMaxLengthRatio: CGFloat = 1.25
+
+    static func isNearlyStraight(_ points: [CGPoint]) -> Bool {
+        guard let first = points.first, let last = points.last else { return false }
+        let chord = hypot(last.x - first.x, last.y - first.y)
+        guard chord > 0 else { return false }
+        let travelled = zip(points, points.dropFirst()).reduce(CGFloat.zero) {
+            $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y)
+        }
+        return bend(of: points) <= straightenMaxBend && travelled <= chord * straightenMaxLengthRatio
+    }
+
+    /// Mean distance from each of `points` to the polyline `path`.
+    static func meanDistance(_ points: [CGPoint], to path: [CGPoint]) -> CGFloat {
+        guard !points.isEmpty else { return .greatestFiniteMagnitude }
+        return points.reduce(CGFloat.zero) { $0 + distance(from: $1, to: path) } / CGFloat(points.count)
     }
 
     /// Felt as a snap through the pencil itself: `UICanvasFeedbackGenerator`
@@ -1638,7 +1710,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let cx = bounds.midX, cy = bounds.midY
         let rx = max(bounds.width / 2, 1), ry = max(bounds.height / 2, 1)
         return (0...steps).map { step in
-            let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
+            let angle: CGFloat = CGFloat(step) / CGFloat(steps) * 2 * .pi
             return InkPoint(
                 location: CGPoint(x: cx + cos(angle) * rx, y: cy + sin(angle) * ry),
                 force: 0.5,
@@ -2134,45 +2206,85 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Shape recognition (circle/ellipse)
 
-    /// Recognised on lift (unlike the straight line, a closed loop has no
-    /// natural "hold here" point to trigger on live): if the stroke closes
-    /// back near where it started and every point sits close to the ellipse
-    /// inscribed in its own bounding box, it's replaced with a clean one.
-    private func ellipseIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+    /// How far a closed loop strays from the ellipse inscribed in its own
+    /// bounds, as the mean distance of its points to that ellipse, or `nil`
+    /// when it is not ellipse-like at all.
+    ///
+    /// Gated on both the mean and the worst point. The mean alone lets a loop
+    /// with a few spikes through; the worst point alone rejects a hand
+    /// circle whose pen jittered once.
+    static func ellipseFitError(_ stroke: InkStroke) -> CGFloat? {
         let points = stroke.points.map(\.location)
         guard points.count >= 12, let first = points.first, let last = points.last else { return nil }
-
-        let bounds = stroke.bounds
+        let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
         guard bounds.width >= 24, bounds.height >= 24 else { return nil }
-        let diagonal = hypot(bounds.width, bounds.height)
+        guard hypot(last.x - first.x, last.y - first.y) <= hypot(bounds.width, bounds.height) * 0.35 else { return nil }
 
-        let closureGap = hypot(last.x - first.x, last.y - first.y)
-        guard closureGap <= diagonal * 0.35 else { return nil }
+        // Fit once to the axis-aligned bounds and once to the bounds along
+        // the stroke's own principal axes, and keep the better: a tilted
+        // oval is an oval, not a failed circle. (What is drawn in its place
+        // is still the axis-aligned ellipse.)
+        let mean = min(
+            ellipseMeanGap(points, axisAngle: 0, inset: stroke.width),
+            ellipseMeanGap(points, axisAngle: principalAngle(of: points), inset: stroke.width)
+        )
+        return mean < .greatestFiniteMagnitude ? mean : nil
+    }
 
-        let cx = bounds.midX, cy = bounds.midY
-        let rx = max(bounds.width / 2, 1), ry = max(bounds.height / 2, 1)
-        let deviation = points.reduce(CGFloat(0)) { total, point in
-            let dx = (point.x - cx) / rx
-            let dy = (point.y - cy) / ry
-            return total + abs(sqrt(dx * dx + dy * dy) - 1)
-        } / CGFloat(points.count)
-        guard deviation <= 0.22 else { return nil }
-
-        let steps = 72
-        let ellipsePoints = (0...steps).map { step -> InkPoint in
-            let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
-            return InkPoint(
-                location: CGPoint(x: cx + cos(angle) * rx, y: cy + sin(angle) * ry),
-                force: 0.5,
-                timeOffset: TimeInterval(step) / Double(steps)
-            )
+    private static func principalAngle(of points: [CGPoint]) -> CGFloat {
+        let n = CGFloat(points.count)
+        let cx = points.reduce(CGFloat.zero) { $0 + $1.x } / n
+        let cy = points.reduce(CGFloat.zero) { $0 + $1.y } / n
+        var sxx = CGFloat.zero, syy = CGFloat.zero, sxy = CGFloat.zero
+        for p in points {
+            sxx += (p.x - cx) * (p.x - cx); syy += (p.y - cy) * (p.y - cy); sxy += (p.x - cx) * (p.y - cy)
         }
-        var result = stroke
-        result.points = ellipsePoints
-        return result
+        return 0.5 * atan2(2 * sxy, sxx - syy)
+    }
+
+    /// Mean distance of `points` from the ellipse inscribed in their bounds
+    /// along axes turned by `axisAngle`; `.greatestFiniteMagnitude` when
+    /// the loop is too small or strays too far (see `ellipseFitError`).
+    private static func ellipseMeanGap(_ points: [CGPoint], axisAngle: CGFloat, inset: CGFloat) -> CGFloat {
+        let c = cos(axisAngle), s = sin(axisAngle)
+        let local = points.map { CGPoint(x: $0.x * c + $0.y * s, y: -$0.x * s + $0.y * c) }
+        guard let first = local.first else { return .greatestFiniteMagnitude }
+        var rect = CGRect(origin: first, size: .zero)
+        for p in local.dropFirst() { rect = rect.union(CGRect(origin: p, size: .zero)) }
+        let bounds = rect.insetBy(dx: inset, dy: inset)
+        guard bounds.width >= 24, bounds.height >= 24 else { return .greatestFiniteMagnitude }
+        let cx = bounds.midX, cy = bounds.midY
+        let rx = bounds.width / 2, ry = bounds.height / 2
+        var total = CGFloat.zero, worst = CGFloat.zero
+        for point in local {
+            let dx = point.x - cx, dy = point.y - cy
+            let rho = hypot(dx / rx, dy / ry)
+            // Distance along the ray from the centre to the ellipse.
+            let gap = rho > 0 ? hypot(dx, dy) * abs(1 - 1 / rho) : min(rx, ry)
+            total += gap
+            worst = max(worst, gap)
+        }
+        let mean = total / CGFloat(local.count)
+        let scale = min(rx, ry)
+        guard mean <= scale * 0.13, worst <= scale * 0.40 else { return .greatestFiniteMagnitude }
+        return mean
     }
 
     static func rectangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+        guard let fit = rectangleFit(stroke) else { return nil }
+        var result = stroke
+        result.points = Self.rectanglePoints(in: Self.correctedRectangleBounds(fit.bounds))
+        return result
+    }
+
+    /// A rectangle's bounds and the mean distance of the stroke's points
+    /// from its edges, or `nil` when the stroke is not rectangular.
+    ///
+    /// All four corners of the bounds must be visited closely. A circle
+    /// passes within 0.41 of its radius of each corner, so the corner radius
+    /// has to stay well under that (0.16 of the shorter side is 0.32 of a
+    /// circle's radius) or every circle reads as a square.
+    static func rectangleFit(_ stroke: InkStroke) -> (bounds: CGRect, error: CGFloat)? {
         let points = stroke.points.map(\.location)
         guard points.count >= 12, let first = points.first, let last = points.last else { return nil }
         let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
@@ -2180,7 +2292,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let diagonal = hypot(bounds.width, bounds.height)
         guard hypot(last.x - first.x, last.y - first.y) <= diagonal * 0.35 else { return nil }
 
-        let cornerRadius = min(bounds.width, bounds.height) * 0.24
+        let side = min(bounds.width, bounds.height)
+        let cornerRadius = side * 0.16
         let corners = [
             CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
             CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY),
@@ -2193,13 +2306,21 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             total + min(abs(point.x - bounds.minX), abs(point.x - bounds.maxX),
                         abs(point.y - bounds.minY), abs(point.y - bounds.maxY))
         } / CGFloat(points.count)
-        guard averageEdgeDistance <= min(bounds.width, bounds.height) * 0.12 else { return nil }
-        var result = stroke
-        result.points = Self.rectanglePoints(in: Self.correctedRectangleBounds(bounds))
-        return result
+        guard averageEdgeDistance <= side * 0.08 else { return nil }
+        return (bounds, averageEdgeDistance)
     }
 
     static func triangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+        guard let fit = triangleFit(stroke) else { return nil }
+        var result = stroke
+        result.points = fit.points
+        return result
+    }
+
+    /// The triangle through the three hull points of greatest area, as a
+    /// closed outline, and the mean distance of the stroke's points from its
+    /// edges; `nil` when the stroke is not triangular.
+    static func triangleFit(_ stroke: InkStroke) -> (points: [InkPoint], error: CGFloat)? {
         let points = stroke.points.map(\.location)
         guard points.count >= 10, let first = points.first, let last = points.last else { return nil }
         let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
@@ -2239,11 +2360,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         guard averageDeviation <= diagonal * 0.075 else { return nil }
 
         let closed = vertices + [vertices[0]]
-        var result = stroke
-        result.points = closed.enumerated().map { index, point in
+        return (closed.enumerated().map { index, point in
             InkPoint(location: point, force: 0.5, timeOffset: Double(index) / 3)
-        }
-        return result
+        }, averageDeviation)
     }
 
     // MARK: Polyline recognition
@@ -2321,6 +2440,18 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let runCount = indices.count - 1
         guard (2...8).contains(runCount) else { return nil }
         guard (1..<(indices.count - 1)).contains(where: { turn(at: $0) >= .pi * 35 / 180 }) else { return nil }
+        // An arc cut into a few chords turns the same way at every joint, and
+        // gently. Corners that are really corners (a staircase, a zigzag, a
+        // box with one side missing) either alternate or turn sharply. Left
+        // to the polyline, an arc would be redrawn as a lopsided chain.
+        if runCount >= 3 {
+            let signedTurns = (1..<(indices.count - 1)).map { k -> CGFloat in
+                let a = points[indices[k - 1]], b = points[indices[k]], c = points[indices[k + 1]]
+                return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+            }
+            let sameWay = signedTurns.allSatisfy { $0 > 0 } || signedTurns.allSatisfy { $0 < 0 }
+            if sameWay, (1..<(indices.count - 1)).allSatisfy({ turn(at: $0) < .pi * 70 / 180 }) { return nil }
+        }
 
         // A line through each run's own points.
         var lines: [(point: CGPoint, direction: CGPoint)] = []
@@ -2373,10 +2504,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // not.
         for run in 0..<runCount {
             let a = vertices[run], b = vertices[run + 1]
-            let allowed = max(hypot(b.x - a.x, b.y - a.y) * 0.05, slack * 0.75)
-            for index in indices[run]...indices[run + 1]
-            where distanceToSegment(points[index], a, b) > allowed {
-                return nil
+            let length = hypot(b.x - a.x, b.y - a.y)
+            let allowed = max(length * 0.05, slack * 0.75)
+            // A hand rounds its corners a little. Points within an eighth of
+            // the run of a corner shared with a neighbouring run are left
+            // out, so that a slightly rounded corner is not read as a bow.
+            // The middle of the run, where a wave's hump would be, is still
+            // held to the line.
+            let cornerZone = length * 0.13
+            for index in indices[run]...indices[run + 1] {
+                let point = points[index]
+                if run > 0, hypot(point.x - a.x, point.y - a.y) <= cornerZone { continue }
+                if run < runCount - 1, hypot(point.x - b.x, point.y - b.y) <= cornerZone { continue }
+                if distanceToSegment(point, a, b) > allowed { return nil }
             }
         }
 
@@ -2416,7 +2556,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             sxx += (p.x - cx) * (p.x - cx); syy += (p.y - cy) * (p.y - cy); sxy += (p.x - cx) * (p.y - cy)
         }
         guard sxx + syy > 0.000_001 else { return nil }
-        let angle = 0.5 * atan2(2 * sxy, sxx - syy)
+        let angle: CGFloat = 0.5 * atan2(2 * sxy, sxx - syy)
         var direction = CGPoint(x: cos(angle), y: sin(angle))
         // Point along the way the run was drawn, so the ends line up.
         if let a = points.first, let b = points.last,
@@ -2470,10 +2610,21 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             return InkPoint(location: CGPoint(x: midX + nx * width / 2, y: minY + ny * height),
                             force: 0.5, timeOffset: Double(index) / 64)
         }
+        // The fit has to hold in points as well as in the normalised space
+        // above, where a tall stroke forgives a lot: a check mark or a rounded
+        // "V" is not a parabola just because one passes within 14% of its
+        // height.
+        let diagonal = hypot(width, height)
+        let error = meanDistance(points, to: fitted.map(\.location))
+        guard error <= diagonal * Self.smoothFitMaxError else { return nil }
         var result = stroke
         result.points = fitted
         return result
     }
+
+    /// The most a parabola or other fitted curve may stray from the pen's
+    /// own points, as a fraction of the stroke's diagonal (mean distance).
+    static let smoothFitMaxError: CGFloat = 0.02
 
     // MARK: General curve fitting
 
@@ -2546,7 +2697,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // Waves. The frequency is searched over; amplitude and phase fall out
         // of the linear fit as the sine and cosine coefficients.
         for step in 0...30 {
-            let omega = 0.6 + CGFloat(step) * 0.25
+            let omega: CGFloat = 0.6 + CGFloat(step) * 0.25
             consider(Self.fit(points, basis: [
                 { sin(omega * $0) }, { cos(omega * $0) }, { _ in 1 },
             ]))
@@ -2589,6 +2740,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 timeOffset: Double(index) / 96
             )
         }
+        let error = meanDistance(raw, to: fitted.map(\.location))
+        guard error <= hypot(width, height) * Self.smoothFitMaxError else { return nil }
         var result = stroke
         result.points = fitted
         return result

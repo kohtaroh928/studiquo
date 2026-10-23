@@ -23,7 +23,7 @@ struct NotebookLockState {
         if !success {
             faceIDMessage = "認証できませんでした。もう一度お試しください"
         } else if !decrypted {
-            faceIDMessage = "ノートの内容を復号できませんでした"
+            faceIDMessage = "ノートの内容を復号できませんでした。別の端末で保護したノートの鍵は、届くまでしばらくかかることがあります。時間をおいてもう一度お試しください。"
         } else {
             faceIDMessage = "認証してノートを開いてください"
         }
@@ -141,7 +141,8 @@ struct NotebookLockGate<Content: View>: View {
             if isGated {
                 lockPlaceholder
             } else {
-                content()
+                // A protected notebook that is open must not show in the app switcher.
+                content().hidesInAppSwitcher(when: notebook.isLocked || notebook.hasLockedPDFToUnlock)
             }
         }
         .onAppear {
@@ -214,12 +215,11 @@ struct NotebookLockGate<Content: View>: View {
             lockState.recordPDFPasswordVerified()
             return
         }
-        let tempFolder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempFolder = StudiquoWorkFiles.makeFolder()
         do {
             try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
             let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-            try data.write(to: sourceURL)
+            try data.write(to: sourceURL, options: .completeFileProtection)
             _ = try PDFPasswordService.unlock(sourceURL, password: pdfPasswordEntry)
             lockState.recordPDFPasswordVerified()
             NotificationCenter.default.post(
