@@ -577,6 +577,45 @@ test("a mailbox proof is used up by the registration it was given for", async ()
   assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 403);
 });
 
+// MARK: A challenge is single-use even when the store's delete has not propagated
+
+function fakeAtomicCounter() {
+  const counts = new Map();
+  return { getByName(name: string) { return { async bump(limit: number) {
+    const used = (counts.get(name) ?? 0) + 1;
+    if (used > limit) return false;
+    counts.set(name, used);
+    return true;
+  } }; } };
+}
+
+test("a login challenge cannot be used twice even if a second request still reads it from the store", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeAtomicCounter();
+  const challenge = JSON.stringify({ kind: "authentication", challenge: "challenge-value" });
+  const record = JSON.stringify({ id: "cred-1", publicKey: [1, 2, 3], counter: 0, transports: ["internal"], userKey: "k" });
+  // Reads of the challenge keep returning it after the first request deleted it,
+  // as a lagging replica can.
+  const realGet = env.STUDIQUO_DATA.get;
+  env.STUDIQUO_DATA.get = async (key: string, type: string) => {
+    if (key === "passkeys:challenge:tx-1") return type === "json" ? JSON.parse(challenge) : challenge;
+    if (key === "passkeys:credential:cred-1") return type === "json" ? JSON.parse(record) : record;
+    return realGet(key, type);
+  };
+  const verify = () => handlePasskeys(
+    new URL("https://example.test/api/passkeys/login/verify"),
+    new Request("https://example.test/api/passkeys/login/verify", {
+      method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.88" },
+      body: JSON.stringify({ transaction: "tx-1", randomValue: "p".repeat(40), credential: { id: "cred-1" } }),
+    }),
+    env,
+  );
+  const first = await verify();
+  assert.notEqual(first!.status, 400, "the first use reaches verification");
+  const second = await verify();
+  assert.equal(second!.status, 400, "the second use of the same challenge is refused");
+});
+
 // --- registering a passkey: a software authenticator that answers truthfully ---
 
 import { accountHasPasskey } from "./passkey-policy.ts";
