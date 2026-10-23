@@ -1,0 +1,176 @@
+{
+  "observedAtUTC": "2026-10-11T04:12:05.293Z",
+  "externalCalls": 2,
+  "productionEligible": false,
+  "method": "Synthetic selected full references + production ragAnswerPolicy; direct Gemini, not public CHAT_SYSTEM/handleAI/Cloudflare search. Max2/20s/31s/no automatic retry. Regex checks preliminary; manual review required.",
+  "fixtureIdentity": "3892913a1e99839db4ca27e3022997f00843dacfa50cd09304d1fa8f612a62c0",
+  "originalMeasurement": {
+    "fixtureIdentity": "3892913a1e99839db4ca27e3022997f00843dacfa50cd09304d1fa8f612a62c0",
+    "method": "Synthetic selected full references + production ragAnswerPolicy; direct Gemini, not public CHAT_SYSTEM/handleAI/Cloudflare search. Max2/20s/31s/no automatic retry. Regex checks preliminary; manual review required.",
+    "planned": 2,
+    "attempted": 2,
+    "manualReview": "pending",
+    "rows": [
+      {
+        "id": "multi-formula-domain",
+        "httpStatus": 200,
+        "outcome": "completed",
+        "elapsedMs": 1738,
+        "headersMs": 1733,
+        "completeMs": 1738,
+        "phase": "complete",
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 706,
+          "output": 206,
+          "thoughts": null,
+          "total": 912
+        },
+        "error": null,
+        "hint": null,
+        "controlValidity": null,
+        "proposalValidity": {
+          "valid": true,
+          "reason": "preliminary_checks_pass"
+        },
+        "checks": {
+          "formula": true,
+          "definitions": true,
+          "velocityUnit": true,
+          "accelerationUnit": true,
+          "timeUnit": true,
+          "constantAcceleration": true,
+          "exception": true
+        },
+        "manualReview": "pending",
+        "citations": [
+          {
+            "sourceId": "synthetic-motion",
+            "title": "速度と一定加速度",
+            "pageNumber": 7,
+            "chunkId": "evaluation-multi-formula-domain-r1"
+          },
+          {
+            "sourceId": "synthetic-motion",
+            "title": "適用範囲と例",
+            "pageNumber": 8,
+            "chunkId": "evaluation-multi-formula-domain-r2"
+          }
+        ]
+      },
+      {
+        "id": "multi-cross-source-exception",
+        "httpStatus": 200,
+        "outcome": "completed",
+        "elapsedMs": 1443,
+        "headersMs": 1443,
+        "completeMs": 1443,
+        "phase": "complete",
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 652,
+          "output": 128,
+          "thoughts": null,
+          "total": 780
+        },
+        "error": null,
+        "hint": null,
+        "controlValidity": null,
+        "proposalValidity": {
+          "valid": false,
+          "reason": "preliminary_checks_fail"
+        },
+        "checks": {
+          "monthlyPrice": true,
+          "corporateOnly": true,
+          "individualExcluded": true,
+          "paperShipping": true,
+          "separateShipping": true,
+          "amountUnknown": false,
+          "noInventedShippingAmount": true
+        },
+        "manualReview": "pending",
+        "citations": [
+          {
+            "sourceId": "synthetic-plan",
+            "title": "合成プランの案内",
+            "pageNumber": 10,
+            "chunkId": "evaluation-multi-cross-source-exception-r1"
+          },
+          {
+            "sourceId": "synthetic-terms",
+            "title": "対象者と配送の補足",
+            "pageNumber": 2,
+            "chunkId": "evaluation-multi-cross-source-exception-r2"
+          }
+        ]
+      }
+    ]
+  },
+  "regraded": {
+    "reason": "Evaluation-only missing passive Japanese wording for unspecified concrete shipping fee corrected. Original metrics retained; identical private answers rechecked without resending.",
+    "externalCalls": 0,
+    "cases": [
+      {
+        "id": "multi-formula-domain",
+        "checks": {
+          "formula": true,
+          "definitions": true,
+          "velocityUnit": true,
+          "accelerationUnit": true,
+          "timeUnit": true,
+          "constantAcceleration": true,
+          "exception": true
+        },
+        "externalCalls": 0
+      },
+      {
+        "id": "multi-cross-source-exception",
+        "checks": {
+          "monthlyPrice": true,
+          "corporateOnly": true,
+          "individualExcluded": true,
+          "paperShipping": true,
+          "separateShipping": true,
+          "amountUnknown": true,
+          "noInventedShippingAmount": true
+        },
+        "externalCalls": 0
+      }
+    ]
+  },
+  "manualReview": {
+    "status": "primary_and_independent_agent_checked",
+    "humanTeacherReview": "pending",
+    "notes": "Both synthetic answers match selected original full references. Formula/definitions/SI units/constant acceleration/nonconstant exception preserved. Monthly price/corporate-only/personal exclusion/paper shipping/extra shipping/unspecified regional fee preserved. No unsupported amount or new source identifier found.",
+    "independentReviewer": "evidence_selection_review"
+  },
+  "limitations": [
+    "Two authored development cases, one sample each; not blind holdout or general accuracy.",
+    "Direct Gemini answer with production grounded policy, not public CHAT_SYSTEM, streaming, Cloudflare search or app navigation.",
+    "Evaluation chunk IDs are synthetic and are not D1/Vectorize identifiers.",
+    "Regex results are preliminary signals and require semantic review.",
+    "No deployment, public feature flag, provider, migration, real-material or iPad changes in this step."
+  ],
+  "usage": {
+    "prompt": 1358,
+    "output": 334,
+    "total": 1692,
+    "actualBilling": "not inspected"
+  },
+  "tests": {
+    "targeted": {
+      "passed": 28,
+      "failed": 0
+    },
+    "full": {
+      "passed": 1050,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 46828.583917
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-17",
+  "scope": "local Docling chunk metadata; Worker/iPad/DB not integrated",
+  "sourceHashes": {
+    "tools/docling/metadata.py": "1afed6b4e0a78b7103705f3671649280e3edfa5bc52a042c7b1e4b45d197a8ff",
+    "tools/docling/test_metadata.py": "e0205ae228595119f7351d300f7edf6496999009e0da3e05e5532a8531dca35f",
+    "tools/docling/extract_pdf.py": "3bb4ee7bdd9d08e065ee34634060940bc40ed771ddcff0541cc980b47dd4e2b7",
+    "tools/docling/README.md": "00a25a4457251a100bb384cbbc3c07604e9fdc2dd02fd2f8db731b693accd681",
+    "tools/docling/VALIDATION.md": "2bb40560f72784c34daed91fc520ad8cf448983cd01dce0f833c2a5d82c77c17"
+  },
+  "tests": {
+    "pythonPass": 43,
+    "independentPass": 43,
+    "fail": 0,
+    "unresolvedHighMedium": 0
+  },
+  "realSyntheticSmoke": {
+    "pages": 2,
+    "bodyChunks": 4,
+    "protectedElements": 4,
+    "tables": 2,
+    "metadataIntegrity": true,
+    "privateFiles": true,
+    "directory": "/private/tmp/studiquo-metadata-smoke-20261017-01"
+  },
+  "runtimeAndFrozenChecks": {
+    "count": 12,
+    "unchanged": true
+  },
+  "workerChanged": false,
+  "workerTestsRerun": false,
+  "databaseConnected": false,
+  "openaiAPICalls": 0,
+  "modelDownloads": 0,
+  "automation": "PAUSED",
+  "qualityImprovement": "not established",
+  "projectCopiesNeedingUpdate": [
+    "HYBRID_RAG.md"
+  ]
+}

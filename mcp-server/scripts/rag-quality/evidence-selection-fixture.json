@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "labelStatus": "agent-authored synthetic draft; human review pending; holdout authored alongside implementation, not independently blind",
+  "cases": [
+    {
+      "id": "comparison-duplicate",
+      "split": "dev",
+      "question": "光合成と呼吸のしくみを比較して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "光合成は光を利用し糖を作る。"
+        },
+        {
+          "page": 2,
+          "text": "光合成は光を利用し糖を作る。"
+        },
+        {
+          "page": 3,
+          "text": "光合成は光を利用し糖を作る。"
+        },
+        {
+          "page": 4,
+          "text": "光合成は光を利用し糖を作る。"
+        },
+        {
+          "page": 5,
+          "text": "呼吸は糖を分解してエネルギーを得る。"
+        }
+      ],
+      "requiredFacts": [
+        "光を利用し糖を作る",
+        "糖を分解してエネルギーを得る"
+      ],
+      "acceptablePages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": "price-model-reserve",
+      "split": "dev",
+      "question": "架空計の価格と型番を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "架空計の型番はABC123。"
+        },
+        {
+          "page": 2,
+          "text": "架空計の型番はABC123。"
+        },
+        {
+          "page": 3,
+          "text": "架空計の型番はABC123。"
+        },
+        {
+          "page": 4,
+          "text": "架空計の型番はABC123。"
+        },
+        {
+          "page": 5,
+          "text": "架空計の型番はABC123。"
+        },
+        {
+          "page": 6,
+          "text": "架空計の価格は100円。"
+        }
+      ],
+      "requiredFacts": [
+        "ABC123",
+        "100円"
+      ],
+      "acceptablePages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "id": "condition",
+      "split": "dev",
+      "question": "架空計の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "架空計の価格は100円。\n\n紹介。\n\n連絡先。\n\nただし冷却した場合のみ。"
+        }
+      ],
+      "requiredFacts": [
+        "100円",
+        "冷却した場合のみ"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "negation",
+      "split": "dev",
+      "question": "架空計の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "架空計の価格は100円。\n\n紹介。\n\n項目。\n\n水中では使えない。"
+        }
+      ],
+      "requiredFacts": [
+        "100円",
+        "水中では使えない"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "formula",
+      "split": "dev",
+      "question": "架空系の数式を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "架空系の数式はx² = 2。\n\nこれは近似式。"
+        }
+      ],
+      "requiredFacts": [
+        "x² = 2",
+        "近似式"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "mechanism-distributed",
+      "split": "dev",
+      "question": "光合成を説明して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "光合成は光を利用する。"
+        },
+        {
+          "page": 2,
+          "text": "光合成では葉緑体が関わる。"
+        },
+        {
+          "page": 3,
+          "text": "光合成では二酸化炭素から糖を作る。"
+        }
+      ],
+      "requiredFacts": [
+        "光を利用する",
+        "葉緑体",
+        "二酸化炭素から糖"
+      ],
+      "acceptablePages": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "independent-sources",
+      "split": "dev",
+      "question": "光合成を説明して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "光合成は光を利用する。",
+          "sourceId": "synthetic-a"
+        },
+        {
+          "page": 2,
+          "text": "光合成は光を利用する。",
+          "sourceId": "synthetic-b"
+        }
+      ],
+      "requiredFacts": [
+        "光を利用する"
+      ],
+      "acceptablePages": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "missing-price",
+      "split": "dev",
+      "question": "架空計の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "架空計の型番はABC123。"
+        }
+      ],
+      "requiredFacts": [
+        "架空計の価格は100円。"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "energy-duplicate",
+      "split": "holdout",
+      "question": "位置エネルギーと運動エネルギーの特徴を比較して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "位置エネルギーは高さに関わる。"
+        },
+        {
+          "page": 2,
+          "text": "位置エネルギーは高さに関わる。"
+        },
+        {
+          "page": 3,
+          "text": "位置エネルギーは高さに関わる。"
+        },
+        {
+          "page": 4,
+          "text": "位置エネルギーは高さに関わる。"
+        },
+        {
+          "page": 5,
+          "text": "運動エネルギーは速さに関わる。"
+        }
+      ],
+      "requiredFacts": [
+        "高さに関わる",
+        "速さに関わる"
+      ],
+      "acceptablePages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": "device-reserve",
+      "split": "holdout",
+      "question": "試験器の型番と価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "試験器の型番はXYZ789。"
+        },
+        {
+          "page": 2,
+          "text": "試験器の型番はXYZ789。"
+        },
+        {
+          "page": 3,
+          "text": "試験器の型番はXYZ789。"
+        },
+        {
+          "page": 4,
+          "text": "試験器の型番はXYZ789。"
+        },
+        {
+          "page": 5,
+          "text": "試験器の型番はXYZ789。"
+        },
+        {
+          "page": 6,
+          "text": "試験器の価格は200円。"
+        }
+      ],
+      "requiredFacts": [
+        "XYZ789",
+        "200円"
+      ],
+      "acceptablePages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "id": "remote-qualifier",
+      "split": "holdout",
+      "question": "試験器の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "試験器の価格は200円。\n\n説明。\n\n案内。\n\n使用には校正を要する。"
+        }
+      ],
+      "requiredFacts": [
+        "200円",
+        "校正を要する"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "formula-layout",
+      "split": "holdout",
+      "question": "試験系の数式を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "試験系の数式はx² = 4。"
+        },
+        {
+          "page": 2,
+          "text": "試験系の数式はx2 = 4。"
+        }
+      ],
+      "requiredFacts": [
+        "x² = 4",
+        "x2 = 4"
+      ],
+      "acceptablePages": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "novel-price",
+      "split": "holdout",
+      "question": "試験器の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "試験器の価格は200円。"
+        },
+        {
+          "page": 2,
+          "text": "試験器の価格は300円。"
+        }
+      ],
+      "requiredFacts": [
+        "200円",
+        "300円"
+      ],
+      "acceptablePages": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "conditions-year",
+      "split": "holdout",
+      "question": "2025年の試験器の価格を教えて",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "試験器の2024年の価格は200円。"
+        },
+        {
+          "page": 2,
+          "text": "試験器の2024年の価格は200円。"
+        },
+        {
+          "page": 3,
+          "text": "試験器の2024年の価格は200円。"
+        },
+        {
+          "page": 4,
+          "text": "試験器の2024年の価格は200円。"
+        },
+        {
+          "page": 5,
+          "text": "試験器の2024年の価格は200円。"
+        },
+        {
+          "page": 6,
+          "text": "試験器の2025年の価格は300円。"
+        }
+      ],
+      "requiredFacts": [
+        "2025年の価格は300円。"
+      ],
+      "acceptablePages": [
+        6
+      ]
+    },
+    {
+      "id": "long-form",
+      "split": "holdout",
+      "question": "呼吸のしくみを説明して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "呼吸は糖を分解する。\n\nエネルギーは細胞活動に利用する。\n\n酸素が関わる説明。"
+        }
+      ],
+      "requiredFacts": [
+        "糖を分解する",
+        "細胞活動",
+        "酸素"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    },
+    {
+      "id": "unknown-question",
+      "split": "holdout",
+      "question": "この教材を要約して",
+      "candidates": [
+        {
+          "page": 1,
+          "text": "導入。\n\n詳細を説明する。\n\n結論。"
+        }
+      ],
+      "requiredFacts": [
+        "導入",
+        "詳細",
+        "結論"
+      ],
+      "acceptablePages": [
+        1
+      ]
+    }
+  ]
+}

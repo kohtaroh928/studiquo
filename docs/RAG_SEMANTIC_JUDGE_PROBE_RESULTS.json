@@ -1,0 +1,161 @@
+{
+ "date": "2026-10-22",
+ "note": "使い捨ての試験(リポジトリ外)の集計。質問・抜粋・本文は含まない。実装はしていない。",
+ "data": {
+  "items": 73,
+  "positives": 64,
+  "negatives": 9,
+  "source": "調整済みの第2〜第6回で、今のコード(f3e2571)が出典ありと判断した質問"
+ },
+ "environment": "Workers AI REST(Macから)。遅延はWorker内の束縛の値ではない",
+ "models": {
+  "clef-flash": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 9,
+   "pos": 64,
+   "wrongReject": 3,
+   "p50": 564,
+   "p95": 847,
+   "neurons": 5.4,
+   "inputTokens": 1567,
+   "outputTokens": 0,
+   "usdPer1000Calls": 0.06
+  },
+  "clef": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 9,
+   "pos": 64,
+   "wrongReject": 2,
+   "p50": 470,
+   "p95": 711,
+   "neurons": 34.2,
+   "inputTokens": 1567,
+   "outputTokens": 0,
+   "usdPer1000Calls": null
+  },
+  "qwen3-30b-a3b-fp8": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 8,
+   "pos": 64,
+   "wrongReject": 2,
+   "p50": 2794,
+   "p95": 4901,
+   "neurons": 17.1,
+   "inputTokens": 1717,
+   "outputTokens": 301,
+   "usdPer1000Calls": 0.188
+  },
+  "gemma-4-26b-a4b-it": {
+   "fail": 1,
+   "neg": 9,
+   "caught": 9,
+   "pos": 63,
+   "wrongReject": 0,
+   "p50": 5339,
+   "p95": 14883,
+   "neurons": 22.2,
+   "inputTokens": 1515,
+   "outputTokens": 313,
+   "usdPer1000Calls": 0.245
+  },
+  "gpt-oss-20b": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 9,
+   "pos": 64,
+   "wrongReject": 0,
+   "p50": 2149,
+   "p95": 6261,
+   "neurons": 39.3,
+   "inputTokens": 1835,
+   "outputTokens": 220,
+   "usdPer1000Calls": 0.433
+  },
+  "llama-3.3-70b-instruct-fp8-fast": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 9,
+   "pos": 64,
+   "wrongReject": 1,
+   "p50": 858,
+   "p95": 2014,
+   "neurons": 46.3,
+   "inputTokens": 1681,
+   "outputTokens": 7,
+   "usdPer1000Calls": 0.508
+  },
+  "llama-3.1-8b-instruct-fp8": {
+   "fail": 0,
+   "neg": 9,
+   "caught": 7,
+   "pos": 64,
+   "wrongReject": 6,
+   "p50": 1078,
+   "p95": 1620,
+   "neurons": 23.1,
+   "inputTokens": 1662,
+   "outputTokens": 7,
+   "usdPer1000Calls": 0.255
+  }
+ },
+ "clefProbabilities": {
+  "clef-flash": {
+   "negatives": [
+    0.052,
+    0.065,
+    0.073,
+    0.076,
+    0.088,
+    0.089,
+    0.101,
+    0.13,
+    0.212
+   ],
+   "positivesLowest8": [
+    0.287,
+    0.374,
+    0.418,
+    0.639,
+    0.645,
+    0.65,
+    0.748,
+    0.75
+   ]
+  },
+  "clef": {
+   "negatives": [
+    0.018,
+    0.018,
+    0.02,
+    0.022,
+    0.038,
+    0.041,
+    0.08,
+    0.154,
+    0.308
+   ],
+   "positivesLowest8": [
+    0.296,
+    0.456,
+    0.579,
+    0.657,
+    0.764,
+    0.772,
+    0.803,
+    0.811
+   ]
+  }
+ },
+ "clefFlashRepeatability": "同じ入力2回で確率が完全に一致(73問)",
+ "softGate_clefFlash": {
+  "stopBelow0.25_partial0.25to0.5": {
+   "negativesStopped": "9/9",
+   "positivesStopped": "0/64",
+   "positivesPartial": 3
+  }
+ },
+ "inSampleWarning": "しきい値は学習データでの値。新しい質問で事前に固定して測るまで汎化は言えない"
+}

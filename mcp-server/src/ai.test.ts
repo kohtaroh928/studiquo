@@ -79,7 +79,7 @@ function responsesOK(text: string) {
   const events = [
     { type: "response.created" },
     { type: "response.output_text.delta", delta: text },
-    { type: "response.completed" },
+    { type: "response.completed", response: { status: "completed" } },
   ];
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), {
     status: 200, headers: { "content-type": "text/event-stream" },
@@ -864,7 +864,7 @@ test("a chat stream with damaged events in it still delivers the readable text",
     `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "前半" })}`,
     "data: null",
     `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "後半" })}`,
-    `data: ${JSON.stringify({ type: "response.completed" })}`,
+    `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed" } })}`,
   ].join("\n\n") + "\n\n";
   const fetchState = installFetch(() => new Response(raw, { status: 200 }));
   try {

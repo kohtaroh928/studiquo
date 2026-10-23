@@ -1,0 +1,214 @@
+{
+  "date": "2026-10-15",
+  "method": "fixed synthetic six question-only real Luna extraction; no live retrieval",
+  "externalCalls": 6,
+  "modelEvaluated": true,
+  "releaseAccepted": false,
+  "limits": {
+    "dispatches": 6,
+    "requestBytes": 24576,
+    "responseBytes": 262144,
+    "inputTokens": 32768,
+    "outputTokens": 8192,
+    "reservedMicroUSD": 8192,
+    "totalReservedMicroUSD": 49152,
+    "timeoutMs": 60000,
+    "totalMs": 360000,
+    "pricingDate": "2026-10-15",
+    "inputMicroUSDPerToken": 0.125,
+    "outputMicroUSDPerToken": 0.5
+  },
+  "requestManifestHash": "04c7d0b6b5becc2c6979ddcaa2ad422b91a10cff84c3685a4f3c7e9053b6e086",
+  "sourceHashes": {
+    "task-planner-live.mjs": "fd737ea36e5b3448397ec4034031c782e82007908aaf833ea73407b606288e30",
+    "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+    "task-planner-response.mjs": "dfdb1adfc572ff8318a9f233696abe6ff93eb344f33f4721be9496a55747caf4",
+    "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec"
+  },
+  "verification": {
+    "targetPassed": 10,
+    "relatedPassed": 36,
+    "workerPassed": 1350,
+    "failures": 0,
+    "skipped": 0,
+    "independentCodeTests": 10,
+    "independentSafetyTests": 10,
+    "independentReview": "no unresolved High/Medium after deadline/terminal fixes",
+    "runtimePolicyOutputChanges": 0
+  },
+  "liveEvaluation": {
+    "status": "completed",
+    "runId": "studiquo-rag-task-planner-v2-20261015-01",
+    "dispatches": 6,
+    "completed": 6,
+    "failed": 0,
+    "unresolved": 0,
+    "journalHash": "3db97c7d969eefc34f821f71f402d2b92926d08f0c572acc8c8a154ac88e6bf3",
+    "chainVerified": true,
+    "reservedMicroUSD": 49152,
+    "usage": {
+      "input": 4728,
+      "output": 5357,
+      "reasoning": 3775,
+      "total": 10085
+    },
+    "uncachedEstimateUSD": 0.0031513,
+    "conservativeEstimateUSD": 0.0032695,
+    "elapsedMs": {
+      "sum": 52280.597542,
+      "mean": 8713.432923666667,
+      "min": 7679.173542,
+      "max": 10242.559042
+    },
+    "comparisons": [
+      {
+        "index": 0,
+        "taskCount": 2,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      },
+      {
+        "index": 1,
+        "taskCount": 2,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      },
+      {
+        "index": 2,
+        "taskCount": 2,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      },
+      {
+        "index": 3,
+        "taskCount": 3,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      },
+      {
+        "index": 4,
+        "taskCount": 3,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      },
+      {
+        "index": 5,
+        "taskCount": 3,
+        "version": 2,
+        "annotationMatches": 0,
+        "missingAnnotationIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "extraTaskIds": [
+          "t1",
+          "t2",
+          "t3"
+        ],
+        "ambiguousMatches": 0,
+        "semanticCompleteness": "pending",
+        "evidenceSupport": "unknown",
+        "releaseAccepted": false
+      }
+    ],
+    "independentSemanticReview": {
+      "reviewer": "independent AI reviewer",
+      "status": "completed",
+      "productionAdoption": "held",
+      "humanReview": "pending",
+      "findings": [
+        {
+          "index": 0,
+          "requirementIds": [
+            "r1",
+            "r2"
+          ],
+          "type": "merged_independent_value_scopes_and_question_word_attribute"
+        },
+        {
+          "index": 3,
+          "requirementIds": [
+            "r1"
+          ],
+          "type": "condition_retained_in_attribute_but_not_condition_role"
+        }
+      ],
+      "semanticallyRetainedCases": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "annotationEquivalence": "strict span mismatch is not semantic failure; accepted alternative spans require independent review",
+      "unknownPermissionViolations": 0
+    },
+    "humanReview": "pending",
+    "rerunAllowed": false
+  }
+}

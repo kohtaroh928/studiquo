@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-14",
+  "method": "fixed separate synthetic boundary suite; production handleAI capture with local mock retrieval; explicit medium/default; real OpenAI generation only",
+  "syntheticOnly": true,
+  "model": "gpt-6-luna",
+  "dispatches": 6,
+  "completed": 6,
+  "failed": 0,
+  "usage": {
+    "input": 26899,
+    "output": 1199,
+    "reasoning": 658,
+    "total": 28098
+  },
+  "reservedMicroUSD": 49152,
+  "uncachedStandardEstimatedUSD": 0.0032894,
+  "latencyMs": {
+    "min": 1917,
+    "max": 4449,
+    "mean": 2990.8333333333335
+  },
+  "journalSHA256": "006abeb697e4b084841883e1f375c10c2945989b2e8a9cb080eca8e1106d63d8",
+  "tests": {
+    "workerPass": 1298,
+    "relatedPass": 79,
+    "finalModulePass": 11,
+    "fail": 0,
+    "skip": 0
+  },
+  "independentReview": "code and security reviewed; fixed6 semantic checks met; human gold pending",
+  "semanticResults": [
+    {
+      "id": "boundary-explicit-metric:source_only",
+      "checks": "pass",
+      "presentationOrder": "not_applicable"
+    },
+    {
+      "id": "boundary-explicit-metric:explain",
+      "checks": "pass",
+      "presentationOrder": "not_applicable"
+    },
+    {
+      "id": "boundary-equal-category:explain",
+      "checks": "pass",
+      "presentationOrder": "not_applicable"
+    },
+    {
+      "id": "boundary-equal-category:source_only",
+      "checks": "pass",
+      "presentationOrder": "not_applicable"
+    },
+    {
+      "id": "boundary-different-conditions:source_only",
+      "checks": "pass",
+      "presentationOrder": "known-values-before-inability-conclusion"
+    },
+    {
+      "id": "boundary-different-conditions:explain",
+      "checks": "pass",
+      "presentationOrder": "known-values-before-inability-conclusion"
+    }
+  ],
+  "runtimeOutputValidatorImplemented": false,
+  "recognitionScope": "limited lighting duration, price, explicit brightness/temperature syntax",
+  "noConditionRecognition": "legacy behavior; not equality certification",
+  "remaining": [
+    "broader parsing and measurement conditions",
+    "answer ordering instruction incomplete",
+    "minutes-only upstream detail gate",
+    "runtime forced output validation",
+    "untouched holdout20",
+    "real Cloudflare/PDF/OCR/iPad"
+  ],
+  "productionDeployed": false
+}

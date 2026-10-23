@@ -1,0 +1,621 @@
+{
+  "date": "2026-10-16",
+  "scope": "four-stage 24-job offline comparison integration",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-comparison.mjs": "a35df8707a466430da808623ca4a1fc5d9ca9d0ac10b5b7596b6704af454e8e2",
+    "mcp-server/scripts/rag-quality/subject-role-comparison-journal.mjs": "eff6a9f0e675cff5a196986d58c9f218ad26394d385ac6fd4923a6ddf9e675c0",
+    "mcp-server/src/rag-subject-role-comparison.test.js": "d3a819ad8e8a567d9ecba4be6d2be958b3cacca6343c0351e9f00d1084c4d521",
+    "mcp-server/src/rag-subject-role-comparison-journal.test.js": "cfa1cbaedea0c307dbdaa38d336b49c63a64dc35daa28db75c82e56fd3118e51",
+    "mcp-server/src/test-support/rag-subject-role-comparison.mjs": "9578afbec3495202bdda66fd3f498b4d420e1cbc7a18673b90679c7b2ce97fe0"
+  },
+  "manifest": {
+    "version": 1,
+    "suiteId": "subject-role-comparison-offline-four-stage-v1",
+    "contractVersion": 4,
+    "syntheticOnly": true,
+    "transportAttached": false,
+    "persistenceAttached": true,
+    "reviewGateAttached": true,
+    "dispatchAuthorized": false,
+    "releaseAccepted": false,
+    "input": {
+      "version": 1,
+      "contractVersion": 4,
+      "promptPolicyVersion": "subject-role-v1",
+      "syntheticOnly": true,
+      "questionCount": 12,
+      "variants": [
+        "baseline",
+        "candidate"
+      ],
+      "externalCalls": 0,
+      "modelEvaluated": false,
+      "releaseAccepted": false,
+      "questionFileHash": "8c4cf2e469624fed70222297bc56d8e838f0aa515c92c923dc6e9e25b12032e8",
+      "parentReferenceRequestHash": "7d35a10a8a61128296c7ba32c6fafbdc4620f672320ba18a3e1cbc7f611a74c1",
+      "rulesHash": "1cb48063c12288e41f8a513f9b337dcaca6b1e8f0054229acb090c5ace24535c",
+      "rows": [
+        {
+          "variant": "baseline",
+          "index": 0,
+          "caseId": "role-concept-conditions",
+          "questionHash": "aabe2854ff60e03cf6d879c4d932cde4c3f7c01d4ac100260e9c0e461b9e145f",
+          "requestHash": "246819caa6d981940abfaa44d7b261dbc3d947be9c6a722caf99e398e3e0e6a4",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "b9ea7a93845bc1200a120bc4c7f37f7246aab12d54a3c9b1a39ef9dafade8a7f",
+          "bytes": 7163
+        },
+        {
+          "variant": "baseline",
+          "index": 1,
+          "caseId": "role-qualified-concept",
+          "questionHash": "8d819d9112856a59c1832f280cf8caffae22ef4031955aee38102a0fc0806162",
+          "requestHash": "1ad52ce2cff803a9593b17964d57bff996a554735cba9b4d97e47be31d32b9a1",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "013664389736b18b2fe9a972588e4312a4c1be5dd7673f89086f3cb607d3da30",
+          "bytes": 7278
+        },
+        {
+          "variant": "baseline",
+          "index": 2,
+          "caseId": "role-explain-across-units",
+          "questionHash": "fe9fa817f2799de56bed81956db29f484005379edf87841400fc4996643b7175",
+          "requestHash": "f3081ce12a85e8a14325072b5f3c5dc84d23b486af7377d262c3a140d0e781b0",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "b4996d882c83f02b38074448dec6a95a6d0588c66d1a4367a59abc98840786c9",
+          "bytes": 7196
+        },
+        {
+          "variant": "baseline",
+          "index": 3,
+          "caseId": "role-separate-attributes",
+          "questionHash": "6d659f73008ec70ae32dfce64986918278fbae678ad1b5baa8efda1a76d04663",
+          "requestHash": "9b6342f5ae55e18876782feee498b516aa9f4d4e08fd69bb6a506ce520c20066",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "08539ca28a96208afad9a33eaea1b24e07abb244fdb7f84db47900a2c65579c3",
+          "bytes": 7316
+        },
+        {
+          "variant": "baseline",
+          "index": 4,
+          "caseId": "role-compare-with-condition",
+          "questionHash": "9095ac8eebccb2eca75ffd189ccad24be49dbbfd62e8beb35a441751a3c1d5b0",
+          "requestHash": "2990f57731811359ad538b8e5e3772f313a042b02a39fa1bbb9118ee1e19b63f",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "2df76dc27b10cbf242381aad423787cf800b6757e380e734d3fb7bab646ea460",
+          "bytes": 7282
+        },
+        {
+          "variant": "baseline",
+          "index": 5,
+          "caseId": "role-calculate-with-operands",
+          "questionHash": "4c017cf301a210ce35a47e30c2ba50bdf2917c03434de526c89a462ddfb6f25b",
+          "requestHash": "c496c1deec2d943a8e63343ac52a5e4c100980aae763fc25d5d0cfc1d5366d1c",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "d337a1795067074d99431bf33cd6705224a8bbc0e626952637d4a9a15f5b5821",
+          "bytes": 7305
+        },
+        {
+          "variant": "baseline",
+          "index": 6,
+          "caseId": "role-recommend-with-distractors",
+          "questionHash": "5a923a1030ae4e8307db54094cc13fd2790e9fda796614f711007910b9c9d607",
+          "requestHash": "fcddfafbc6dc27edee7762af8915e1d6b1f44ac9647e35a8545036843a5df395",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "1154ba605b21049b2e15234ba617a1a82e46fa13634dc0386cc8fe6163e6f566",
+          "bytes": 7421
+        },
+        {
+          "variant": "baseline",
+          "index": 7,
+          "caseId": "role-joint-summary",
+          "questionHash": "ebd61004fae23b674b3a27c9e45b95a78730c8fe758b4428459d05dceb6b5877",
+          "requestHash": "8d57390f4921b98b7935ca3074bd14c957e4974eb0179a0d01c141b52ad6ea63",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "653cc8ec22a4e99dff2617e6a5718b00cfec9c8200bea165a7fc674052533034",
+          "bytes": 7246
+        },
+        {
+          "variant": "baseline",
+          "index": 8,
+          "caseId": "role-unnamed-target",
+          "questionHash": "a32dec33d1a20e5f8620cafd5b051e6e0af840145c001bfef9cd1dad1ad38ce5",
+          "requestHash": "56b51209e3f89bb3db4d1859812eaad0adef57b6614a01f32630820d3fea707d",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "6084f0a00d718f278ed13ce7cb09e7edde5b82d0bf8e7c9962de76dcbf35df48",
+          "bytes": 7079
+        },
+        {
+          "variant": "baseline",
+          "index": 9,
+          "caseId": "role-explicitly-unnamed",
+          "questionHash": "deb3f58abfcb571deec59a7492254c45902faeec6e852c1f567823d54e5ee193",
+          "requestHash": "e18f3c5e95e46679bfb0c5df90e1f36b6d81b03d0da5f8dd198467e8a26770f8",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "54b52c60c82a097748fb745eaed6e47536ed5675ca40b6e59d7af09e0c3c6787",
+          "bytes": 7224
+        },
+        {
+          "variant": "baseline",
+          "index": 10,
+          "caseId": "role-operation-word-in-name",
+          "questionHash": "2ac6d4fe53a1c217cf4a5f023b62f109ab309185ab479ef0bbcf611f32adc138",
+          "requestHash": "9156284680c0e0eee63d0e2a1aafab59d55cae8f44417cbb5eab3fac7a54d629",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "d359f34984b7fec43a3dee95cd9d5f7a479a983f275d60fd56545b04c4d118a9",
+          "bytes": 7196
+        },
+        {
+          "variant": "baseline",
+          "index": 11,
+          "caseId": "role-background-not-target",
+          "questionHash": "08eaf9e9bd3c90172f10d04fc4585f182c79feb0201b343d8e09d73935764719",
+          "requestHash": "166450b686ed978c36251ed5e84f0f9ef978092ba4a81e09716b49b5261a4f4c",
+          "instructionsHash": "b6199de0cd13a2c8e3450582f269699c9ebcb80353b1f62bfd59bdb544db74ea",
+          "schemaHash": "cbb945a2f419e9ed8194d2894bffa24ec94370d90370c3e96fa7767dca06796f",
+          "bytes": 7407
+        },
+        {
+          "variant": "candidate",
+          "index": 0,
+          "caseId": "role-concept-conditions",
+          "questionHash": "aabe2854ff60e03cf6d879c4d932cde4c3f7c01d4ac100260e9c0e461b9e145f",
+          "requestHash": "9dbccd832d263d283743b3164d8d7bf6ea3ea138f36ef4852c4134bfa1a45c60",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "b9ea7a93845bc1200a120bc4c7f37f7246aab12d54a3c9b1a39ef9dafade8a7f",
+          "bytes": 8449
+        },
+        {
+          "variant": "candidate",
+          "index": 1,
+          "caseId": "role-qualified-concept",
+          "questionHash": "8d819d9112856a59c1832f280cf8caffae22ef4031955aee38102a0fc0806162",
+          "requestHash": "15c466177df91a0de1f9b835f933a5e1109fdc4b2e602f3c05c4566b43986e1b",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "013664389736b18b2fe9a972588e4312a4c1be5dd7673f89086f3cb607d3da30",
+          "bytes": 8564
+        },
+        {
+          "variant": "candidate",
+          "index": 2,
+          "caseId": "role-explain-across-units",
+          "questionHash": "fe9fa817f2799de56bed81956db29f484005379edf87841400fc4996643b7175",
+          "requestHash": "fbd7b93094dd885d5b8f8811a2bd3533fe3d871cae72d9859fb10043e7c300ac",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "b4996d882c83f02b38074448dec6a95a6d0588c66d1a4367a59abc98840786c9",
+          "bytes": 8482
+        },
+        {
+          "variant": "candidate",
+          "index": 3,
+          "caseId": "role-separate-attributes",
+          "questionHash": "6d659f73008ec70ae32dfce64986918278fbae678ad1b5baa8efda1a76d04663",
+          "requestHash": "797a78094e7f70d06a6e8b76d47143d3952fac1d32470bc3ecfd9d21b2e9f1a6",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "08539ca28a96208afad9a33eaea1b24e07abb244fdb7f84db47900a2c65579c3",
+          "bytes": 8602
+        },
+        {
+          "variant": "candidate",
+          "index": 4,
+          "caseId": "role-compare-with-condition",
+          "questionHash": "9095ac8eebccb2eca75ffd189ccad24be49dbbfd62e8beb35a441751a3c1d5b0",
+          "requestHash": "9099d3e8834d4e7d3a8098c2d3e32686eef765d42b63c6ef3cac34c698d66037",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "2df76dc27b10cbf242381aad423787cf800b6757e380e734d3fb7bab646ea460",
+          "bytes": 8568
+        },
+        {
+          "variant": "candidate",
+          "index": 5,
+          "caseId": "role-calculate-with-operands",
+          "questionHash": "4c017cf301a210ce35a47e30c2ba50bdf2917c03434de526c89a462ddfb6f25b",
+          "requestHash": "35f5bf5269c0c9eb3396554feb7dfa11fc367c890397869394327cd84d14ca1e",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "d337a1795067074d99431bf33cd6705224a8bbc0e626952637d4a9a15f5b5821",
+          "bytes": 8591
+        },
+        {
+          "variant": "candidate",
+          "index": 6,
+          "caseId": "role-recommend-with-distractors",
+          "questionHash": "5a923a1030ae4e8307db54094cc13fd2790e9fda796614f711007910b9c9d607",
+          "requestHash": "81a037734f7542a6f1ee6a36f678962966e96018b7adf1ea6707d854383358a2",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "1154ba605b21049b2e15234ba617a1a82e46fa13634dc0386cc8fe6163e6f566",
+          "bytes": 8707
+        },
+        {
+          "variant": "candidate",
+          "index": 7,
+          "caseId": "role-joint-summary",
+          "questionHash": "ebd61004fae23b674b3a27c9e45b95a78730c8fe758b4428459d05dceb6b5877",
+          "requestHash": "52d1a9cac9cf20908b96af19d55af0d8cc837cf37ce3ac95b90ea01b218392da",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "653cc8ec22a4e99dff2617e6a5718b00cfec9c8200bea165a7fc674052533034",
+          "bytes": 8532
+        },
+        {
+          "variant": "candidate",
+          "index": 8,
+          "caseId": "role-unnamed-target",
+          "questionHash": "a32dec33d1a20e5f8620cafd5b051e6e0af840145c001bfef9cd1dad1ad38ce5",
+          "requestHash": "dfaa09d10bd3fcb1bd59947170abb9e783cbbf6b96c1162469c646e044dc5ebf",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "6084f0a00d718f278ed13ce7cb09e7edde5b82d0bf8e7c9962de76dcbf35df48",
+          "bytes": 8365
+        },
+        {
+          "variant": "candidate",
+          "index": 9,
+          "caseId": "role-explicitly-unnamed",
+          "questionHash": "deb3f58abfcb571deec59a7492254c45902faeec6e852c1f567823d54e5ee193",
+          "requestHash": "447a335416f150a05c585a85719a248f1ce450870cc175a4b1ee3f7d72a3ce09",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "54b52c60c82a097748fb745eaed6e47536ed5675ca40b6e59d7af09e0c3c6787",
+          "bytes": 8510
+        },
+        {
+          "variant": "candidate",
+          "index": 10,
+          "caseId": "role-operation-word-in-name",
+          "questionHash": "2ac6d4fe53a1c217cf4a5f023b62f109ab309185ab479ef0bbcf611f32adc138",
+          "requestHash": "5cba2eaf7b6210058dbf1a4b0cb53c028e8718fb01876349dd3c8826bd1f940e",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "d359f34984b7fec43a3dee95cd9d5f7a479a983f275d60fd56545b04c4d118a9",
+          "bytes": 8482
+        },
+        {
+          "variant": "candidate",
+          "index": 11,
+          "caseId": "role-background-not-target",
+          "questionHash": "08eaf9e9bd3c90172f10d04fc4585f182c79feb0201b343d8e09d73935764719",
+          "requestHash": "907ee6cbfb177d69302ae057ba3609fd0e78e9d9a3c3347d9d1fc99bee7610d4",
+          "instructionsHash": "74207a73fe6799fe72ae8cc96df0d1a29e90e9a5e1975b81d90eaba1503ffe2a",
+          "schemaHash": "cbb945a2f419e9ed8194d2894bffa24ec94370d90370c3e96fa7767dca06796f",
+          "bytes": 8693
+        }
+      ]
+    },
+    "limits": {
+      "pairs": 12,
+      "dispatches": 24,
+      "checkpoints": [
+        2,
+        8,
+        16,
+        24
+      ],
+      "pairCheckpoints": [
+        1,
+        4,
+        8,
+        12
+      ],
+      "reservedMicroUSD": 8192,
+      "stageReservedMicroUSD": [
+        16384,
+        49152,
+        65536,
+        65536
+      ],
+      "totalReservedMicroUSD": 196608,
+      "requestBytes": 32768,
+      "responseBytes": 262144,
+      "planBytes": 32768,
+      "requestMs": 60000,
+      "stageMs": [
+        120000,
+        360000,
+        480000,
+        480000
+      ],
+      "journalBytes": 2097152,
+      "reviewBytes": 262144,
+      "artifactBytes": 8388608,
+      "collectionBytes": 2097152,
+      "artifactCount": 4,
+      "collectionCount": 4
+    },
+    "jobs": [
+      {
+        "ordinal": 0,
+        "pairIndex": 0,
+        "index": 0,
+        "variant": "baseline",
+        "stage": 0,
+        "requestHash": "246819caa6d981940abfaa44d7b261dbc3d947be9c6a722caf99e398e3e0e6a4",
+        "questionHash": "aabe2854ff60e03cf6d879c4d932cde4c3f7c01d4ac100260e9c0e461b9e145f"
+      },
+      {
+        "ordinal": 1,
+        "pairIndex": 0,
+        "index": 0,
+        "variant": "candidate",
+        "stage": 0,
+        "requestHash": "9dbccd832d263d283743b3164d8d7bf6ea3ea138f36ef4852c4134bfa1a45c60",
+        "questionHash": "aabe2854ff60e03cf6d879c4d932cde4c3f7c01d4ac100260e9c0e461b9e145f"
+      },
+      {
+        "ordinal": 2,
+        "pairIndex": 1,
+        "index": 1,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "15c466177df91a0de1f9b835f933a5e1109fdc4b2e602f3c05c4566b43986e1b",
+        "questionHash": "8d819d9112856a59c1832f280cf8caffae22ef4031955aee38102a0fc0806162"
+      },
+      {
+        "ordinal": 3,
+        "pairIndex": 1,
+        "index": 1,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "1ad52ce2cff803a9593b17964d57bff996a554735cba9b4d97e47be31d32b9a1",
+        "questionHash": "8d819d9112856a59c1832f280cf8caffae22ef4031955aee38102a0fc0806162"
+      },
+      {
+        "ordinal": 4,
+        "pairIndex": 2,
+        "index": 2,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "f3081ce12a85e8a14325072b5f3c5dc84d23b486af7377d262c3a140d0e781b0",
+        "questionHash": "fe9fa817f2799de56bed81956db29f484005379edf87841400fc4996643b7175"
+      },
+      {
+        "ordinal": 5,
+        "pairIndex": 2,
+        "index": 2,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "fbd7b93094dd885d5b8f8811a2bd3533fe3d871cae72d9859fb10043e7c300ac",
+        "questionHash": "fe9fa817f2799de56bed81956db29f484005379edf87841400fc4996643b7175"
+      },
+      {
+        "ordinal": 6,
+        "pairIndex": 3,
+        "index": 3,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "797a78094e7f70d06a6e8b76d47143d3952fac1d32470bc3ecfd9d21b2e9f1a6",
+        "questionHash": "6d659f73008ec70ae32dfce64986918278fbae678ad1b5baa8efda1a76d04663"
+      },
+      {
+        "ordinal": 7,
+        "pairIndex": 3,
+        "index": 3,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "9b6342f5ae55e18876782feee498b516aa9f4d4e08fd69bb6a506ce520c20066",
+        "questionHash": "6d659f73008ec70ae32dfce64986918278fbae678ad1b5baa8efda1a76d04663"
+      },
+      {
+        "ordinal": 8,
+        "pairIndex": 4,
+        "index": 4,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "2990f57731811359ad538b8e5e3772f313a042b02a39fa1bbb9118ee1e19b63f",
+        "questionHash": "9095ac8eebccb2eca75ffd189ccad24be49dbbfd62e8beb35a441751a3c1d5b0"
+      },
+      {
+        "ordinal": 9,
+        "pairIndex": 4,
+        "index": 4,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "9099d3e8834d4e7d3a8098c2d3e32686eef765d42b63c6ef3cac34c698d66037",
+        "questionHash": "9095ac8eebccb2eca75ffd189ccad24be49dbbfd62e8beb35a441751a3c1d5b0"
+      },
+      {
+        "ordinal": 10,
+        "pairIndex": 5,
+        "index": 5,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "35f5bf5269c0c9eb3396554feb7dfa11fc367c890397869394327cd84d14ca1e",
+        "questionHash": "4c017cf301a210ce35a47e30c2ba50bdf2917c03434de526c89a462ddfb6f25b"
+      },
+      {
+        "ordinal": 11,
+        "pairIndex": 5,
+        "index": 5,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "c496c1deec2d943a8e63343ac52a5e4c100980aae763fc25d5d0cfc1d5366d1c",
+        "questionHash": "4c017cf301a210ce35a47e30c2ba50bdf2917c03434de526c89a462ddfb6f25b"
+      },
+      {
+        "ordinal": 12,
+        "pairIndex": 6,
+        "index": 6,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "fcddfafbc6dc27edee7762af8915e1d6b1f44ac9647e35a8545036843a5df395",
+        "questionHash": "5a923a1030ae4e8307db54094cc13fd2790e9fda796614f711007910b9c9d607"
+      },
+      {
+        "ordinal": 13,
+        "pairIndex": 6,
+        "index": 6,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "81a037734f7542a6f1ee6a36f678962966e96018b7adf1ea6707d854383358a2",
+        "questionHash": "5a923a1030ae4e8307db54094cc13fd2790e9fda796614f711007910b9c9d607"
+      },
+      {
+        "ordinal": 14,
+        "pairIndex": 7,
+        "index": 7,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "52d1a9cac9cf20908b96af19d55af0d8cc837cf37ce3ac95b90ea01b218392da",
+        "questionHash": "ebd61004fae23b674b3a27c9e45b95a78730c8fe758b4428459d05dceb6b5877"
+      },
+      {
+        "ordinal": 15,
+        "pairIndex": 7,
+        "index": 7,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "8d57390f4921b98b7935ca3074bd14c957e4974eb0179a0d01c141b52ad6ea63",
+        "questionHash": "ebd61004fae23b674b3a27c9e45b95a78730c8fe758b4428459d05dceb6b5877"
+      },
+      {
+        "ordinal": 16,
+        "pairIndex": 8,
+        "index": 8,
+        "variant": "baseline",
+        "stage": 3,
+        "requestHash": "56b51209e3f89bb3db4d1859812eaad0adef57b6614a01f32630820d3fea707d",
+        "questionHash": "a32dec33d1a20e5f8620cafd5b051e6e0af840145c001bfef9cd1dad1ad38ce5"
+      },
+      {
+        "ordinal": 17,
+        "pairIndex": 8,
+        "index": 8,
+        "variant": "candidate",
+        "stage": 3,
+        "requestHash": "dfaa09d10bd3fcb1bd59947170abb9e783cbbf6b96c1162469c646e044dc5ebf",
+        "questionHash": "a32dec33d1a20e5f8620cafd5b051e6e0af840145c001bfef9cd1dad1ad38ce5"
+      },
+      {
+        "ordinal": 18,
+        "pairIndex": 9,
+        "index": 9,
+        "variant": "candidate",
+        "stage": 3,
+        "requestHash": "447a335416f150a05c585a85719a248f1ce450870cc175a4b1ee3f7d72a3ce09",
+        "questionHash": "deb3f58abfcb571deec59a7492254c45902faeec6e852c1f567823d54e5ee193"
+      },
+      {
+        "ordinal": 19,
+        "pairIndex": 9,
+        "index": 9,
+        "variant": "baseline",
+        "stage": 3,
+        "requestHash": "e18f3c5e95e46679bfb0c5df90e1f36b6d81b03d0da5f8dd198467e8a26770f8",
+        "questionHash": "deb3f58abfcb571deec59a7492254c45902faeec6e852c1f567823d54e5ee193"
+      },
+      {
+        "ordinal": 20,
+        "pairIndex": 10,
+        "index": 10,
+        "variant": "baseline",
+        "stage": 3,
+        "requestHash": "9156284680c0e0eee63d0e2a1aafab59d55cae8f44417cbb5eab3fac7a54d629",
+        "questionHash": "2ac6d4fe53a1c217cf4a5f023b62f109ab309185ab479ef0bbcf611f32adc138"
+      },
+      {
+        "ordinal": 21,
+        "pairIndex": 10,
+        "index": 10,
+        "variant": "candidate",
+        "stage": 3,
+        "requestHash": "5cba2eaf7b6210058dbf1a4b0cb53c028e8718fb01876349dd3c8826bd1f940e",
+        "questionHash": "2ac6d4fe53a1c217cf4a5f023b62f109ab309185ab479ef0bbcf611f32adc138"
+      },
+      {
+        "ordinal": 22,
+        "pairIndex": 11,
+        "index": 11,
+        "variant": "candidate",
+        "stage": 3,
+        "requestHash": "907ee6cbfb177d69302ae057ba3609fd0e78e9d9a3c3347d9d1fc99bee7610d4",
+        "questionHash": "08eaf9e9bd3c90172f10d04fc4585f182c79feb0201b343d8e09d73935764719"
+      },
+      {
+        "ordinal": 23,
+        "pairIndex": 11,
+        "index": 11,
+        "variant": "baseline",
+        "stage": 3,
+        "requestHash": "166450b686ed978c36251ed5e84f0f9ef978092ba4a81e09716b49b5261a4f4c",
+        "questionHash": "08eaf9e9bd3c90172f10d04fc4585f182c79feb0201b343d8e09d73935764719"
+      }
+    ],
+    "sourceHashes": {
+      "subject-role-paired-ledger.mjs": "46a30e553ec65a28a08e42529fc30f9294e2f31b2de02564a0057755d27c52d1",
+      "subject-role-task-planner-request.mjs": "b630c89cbf7e60a80de3e932d3460f0d7a4267efea9fd27b4a8f366687d580ff",
+      "subject-role-task-planner-response.mjs": "59293ecd9c6ce9774103319be274d78e225d5a6b067e53beaa452c0b6047b802",
+      "role-preservation-questions-v1.json": "8c4cf2e469624fed70222297bc56d8e838f0aa515c92c923dc6e9e25b12032e8",
+      "role-preservation-oracle-v1.json": "77eabb99802363c2a910e4e98981058f7bf63beae76ec1c9f7084266ad6fb08a",
+      "unit-task-planner-secret-guard.mjs": "adbea8c375e1a90441a6eace4259599cb72d813fe488956b49d30c78275972d6",
+      "question-units.mjs": "00781da530a7f6c27c5e586caebc3ce5795b784cae27f2734386c2a3408f3a25",
+      "task-plan-units-v4.mjs": "9e0db8c891204044ff94d75e4cd82dd25ec0cd4fdd2cee67541b23075f22e2aa",
+      "unit-plan-semantic-review.mjs": "92be84e0468181d165e6e940c11f77f38a2e91af45c02eeede3b97a2f1c57865",
+      "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+      "unit-task-planner-request.mjs": "18c77817330d37f9e708127f6e7ae514b2a39009d1eeeac8923b71cb507d316a",
+      "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "question-task-fixture.mjs": "5faba8476b6a84338b8d1d465b809eef0328fbfc8192f946ca3b5842b2363310",
+      "task-plan-paired-draft.json": "da62542b60cc32a348faad176a71bc11266829e9220d1d5659561cc026d2bf43",
+      "subject-role-comparison.mjs": "a35df8707a466430da808623ca4a1fc5d9ca9d0ac10b5b7596b6704af454e8e2",
+      "subject-role-comparison-journal.mjs": "eff6a9f0e675cff5a196986d58c9f218ad26394d385ac6fd4923a6ddf9e675c0",
+      "subject-role-review-artifact.mjs": "681af4a51b0f2f71b5a860743eb0a634736d751b0e7370fa6a70ae0231f516ab"
+    }
+  },
+  "stages": 4,
+  "plannedPairs": 12,
+  "plannedJobs": 24,
+  "stageJobs": [
+    2,
+    6,
+    8,
+    8
+  ],
+  "reservationMicroUSD": 196608,
+  "reservationIsBillingLimit": false,
+  "transportAttached": false,
+  "dispatchAuthorized": false,
+  "tests": {
+    "target": {
+      "pass": 23,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1638,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCode": {
+      "pass": 23,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 23,
+      "fail": 0
+    }
+  },
+  "stage0PolicyParity": [
+    "pass",
+    "baseline definite mismatch",
+    "baseline uncertain",
+    "baseline unsupported",
+    "representation uncertain",
+    "baseline incomplete",
+    "candidate mismatch",
+    "candidate uncertain",
+    "candidate unsupported",
+    "malformed review rejection"
+  ],
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "priorSourceSnapshotsUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "priorStopJournalHashUnchanged": true,
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "limits": [
+    "offline synthetic mocks only",
+    "elapsed aggregate validation is not a real wall-clock deadline",
+    "no bounded transport or three-point secret guard attached",
+    "response hash and reviewer role are not upstream/reviewer authentication",
+    "same-byte valid inode replacement between opens is outside guarantee",
+    "reservation is not dispatch proof or global billing cap"
+  ],
+  "next": "separate live manifest with bounded transport and three-point secret guard, communication mocks and independent safety gate, then pricing/new-run preflight and first-pair evaluation"
+}

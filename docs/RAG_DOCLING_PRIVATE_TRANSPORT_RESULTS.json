@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-17",
+  "scope": "loopback_only_private_transport",
+  "tests": {
+    "transport": 23,
+    "existing_processor": 19,
+    "combined": 42,
+    "failures": 0,
+    "existing_docling": 49
+  },
+  "independent_review": {
+    "combined_tests": 42,
+    "unresolved_high_medium": 0
+  },
+  "synthetic_http_smoke": {
+    "status": 200,
+    "pages": 2,
+    "response_bytes": 8477,
+    "elapsed_seconds": 8.43,
+    "job_directory_removed": true,
+    "cache_control": "no-store"
+  },
+  "publicly_connected": false,
+  "cloudflare_connected": false,
+  "ipad_connected": false,
+  "paid_api_calls": 0,
+  "new_model_downloads": 0,
+  "deployed": false,
+  "automatic_schedule": "PAUSED",
+  "quality_improvement_proven": false,
+  "sha256": {
+    "services/docling-processor/private_http.py": "ffdf85d14df7aa807be9f4835ae22594a8de3249225c8412a61cf5017acfc8cd",
+    "services/docling-processor/test_private_http.py": "0fafd7823b031ef2c9c9e9ab729f38bb1201dc1fd05a7ce60302b3f8b50f417d"
+  }
+}

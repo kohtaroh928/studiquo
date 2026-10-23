@@ -805,6 +805,7 @@ private struct AppSettingsForm: View {
     @State private var showsTermsOfUse = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
+    @State private var showsRAGManagement = false
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
     init(extras: SettingsExtras = SettingsExtras()) {
@@ -961,6 +962,8 @@ private struct AppSettingsForm: View {
         extras.privacy
             Section {
                 Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                Button("資料検索の保存データと許可") { showsRAGManagement = true }
+                    .accessibilityIdentifier("settings-rag-data")
                 Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
                 Button("利用規約を見る") { showsTermsOfUse = true }
             } header: {
@@ -1004,7 +1007,8 @@ private struct AppSettingsForm: View {
             showsPrivacyPolicy: $showsPrivacyPolicy,
             showsTermsOfUse: $showsTermsOfUse,
             showsSubscriptionPlans: $showsSubscriptionPlans,
-            showsAccountDeletion: $showsAccountDeletion
+            showsAccountDeletion: $showsAccountDeletion,
+            showsRAGManagement: $showsRAGManagement
         )
     }
 }
@@ -1017,6 +1021,8 @@ private struct SettingsSheets: ViewModifier {
     @Binding var showsTermsOfUse: Bool
     @Binding var showsSubscriptionPlans: Bool
     @Binding var showsAccountDeletion: Bool
+    @Binding var showsRAGManagement: Bool
+    @Environment(\.modelContext) private var settingsModelContext
 
     func body(content: Content) -> some View {
         content
@@ -1040,6 +1046,16 @@ private struct SettingsSheets: ViewModifier {
             }
             .sheet(isPresented: $showsAccountDeletion) {
                 DeleteAccountView()
+            }
+            .sheet(isPresented: $showsRAGManagement) {
+                NavigationStack {
+                    RAGControlsView(store: AIChatStore.shared(for: settingsModelContext))
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("閉じる") { showsRAGManagement = false }
+                            }
+                        }
+                }
             }
     }
 }
@@ -1904,6 +1920,7 @@ private struct AIDataDisclosureGate: ViewModifier {
 private struct AIDataDisclosureView: View {
     let onAcknowledge: (AIAgeBand) -> Void
     let onDecline: () -> Void
+    var onDismiss: (() -> Void)? = nil
 
     private enum AgeChoice { case adult, teen, child }
     @State private var ageChoice: AgeChoice?
@@ -1969,6 +1986,11 @@ private struct AIDataDisclosureView: View {
             }
             .navigationTitle("はじめに")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let onDismiss {
+                    ToolbarItem(placement: .confirmationAction) { Button("閉じる", action: onDismiss) }
+                }
+            }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
                     Button("OpenAIへのAI送信を許可する") {
@@ -2132,6 +2154,7 @@ struct PrivacyPolicyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    Text("公開日：2026年10月7日").font(.caption).foregroundStyle(.secondary)
                     Text("studiquoは、利用者の情報をどのように取り扱うかを、このページで説明します。")
                         .foregroundStyle(.secondary)
 
@@ -2153,6 +2176,7 @@ struct PrivacyPolicyView: View {
                         bullet("OpenAI", "AIトーク・添削・翌日復習機能で、生成AIとして使用します。これらの機能を使うたびに、上記の内容がOpenAIに送信されます。送信する内容は、OpenAI側での学習・保存を行わない設定(store無効)で送り、送信前の文章は不適切な内容の確認のためOpenAIのモデレーション機能にも渡します。利用者の特定にはアカウントを元にしたハッシュ識別子のみを添えます。")
                         bullet("年齢の確認", "AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。初回送信前に年齢区分の確認を行い、13歳未満の方にはAI機能を提供しません。")
                         bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はOpenAIのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
+                        bullet("任意の資料検索（RAG）", "別途許可し、選択した保護されていないノート・PDF、または自動資料検索で許可した範囲のPDFの本文、OCR結果、タイトル、ページ番号をCloudflare Workers AIへ送信し、Embeddingと順位付けに使用します。本文・検索用データはD1・FTS・Vectorizeへ資料の検索データ削除またはアカウント削除まで保存します。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索された抜粋はOpenAIにも送信します。削除後も古い処理による再保存を防ぐため、利用者識別子から作ったハッシュや資料の識別子と削除済み状態の記録を保持します。許可の取消だけでは保存済みデータは削除されません。資料検索画面から削除できます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
@@ -3160,6 +3184,13 @@ struct ContentView: View {
                 openNotebookTab(notebook)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { notification in
+            guard let citation = notification.object as? RAGCitation,
+                  let (notebook, _) = RAGCitationNavigation.resolve(citation, notebooks: allNotebooks) else { return }
+            selectNotebookTab(notebook)
+        }
+        .task { await RAGDeletionQueue.flush() }
+        .modifier(RAGLibrarySyncModifier())
     }
 
     private func bodyWithNotificationRouting(_ content: some View) -> some View {
@@ -4339,12 +4370,7 @@ struct ContentView: View {
         folderNamesStorage = Array(Set(renamedPaths)).sorted().joined(separator: "\n")
 
         let created = folderCreatedAt
-        let renamedCreated = Dictionary(uniqueKeysWithValues: created.map { path, value in
-            let newPath = (path == oldRoot || path.hasPrefix(oldRoot + "/"))
-                ? replacingFolderPrefix(in: path, oldRoot: oldRoot, newRoot: newRoot)
-                : path
-            return (newPath, value)
-        })
+        let renamedCreated = FolderPathMetadata.renamingKeys(created, from: oldRoot, to: newRoot)
         if let data = try? JSONEncoder().encode(renamedCreated),
            let text = String(data: data, encoding: .utf8) {
             folderCreatedAtStorage = text
@@ -6985,6 +7011,7 @@ struct ContentView: View {
 
     private func moveToTrash(_ notebook: Notebook) {
         performLibraryRemoval {
+            RAGDeletionQueue.enqueueNotebook(notebook, state: "trashed")
             notebook.isTrashed = true
             notebook.trashedAt = .now
             closeNotebookTabs(notebook)
@@ -7000,6 +7027,7 @@ struct ContentView: View {
 
     private func permanentlyDelete(_ notebook: Notebook) {
         performLibraryRemoval {
+            RAGDeletionQueue.enqueueNotebook(notebook)
             closeNotebookTabs(notebook)
             modelContext.delete(notebook)
         }
@@ -7033,6 +7061,7 @@ struct ContentView: View {
                 notebook.updatedAt = .now
             }
         } else {
+            RAGDeletionQueue.enqueueNotebook(notebook, state: "locked")
             // Marked protected only once the content really is sealed. If the key
             // could not be read or made (the device is locked, the Keychain is
             // unavailable), the notebook stays as it was and the student is told.
@@ -7048,6 +7077,7 @@ struct ContentView: View {
 
     private func emptyTrash() {
         for notebook in allNotebooks where notebook.isTrashed {
+            RAGDeletionQueue.enqueueNotebook(notebook)
             closeNotebookTabs(notebook)
             modelContext.delete(notebook)
         }
@@ -8091,6 +8121,26 @@ extension ContentView {
                 )
             }
         )
+    }
+}
+
+
+/// Folder-path keyed metadata (e.g. creation dates) when a folder is renamed.
+enum FolderPathMetadata {
+    /// Renaming into a path that already has an entry makes two keys collide;
+    /// that must not trap. The entry that was already at the new path wins.
+    static func renamingKeys<V>(_ values: [String: V], from oldRoot: String, to newRoot: String) -> [String: V] {
+        func renamed(_ path: String) -> String {
+            guard path == oldRoot || path.hasPrefix(oldRoot + "/") else { return path }
+            return path == oldRoot ? newRoot : newRoot + String(path.dropFirst(oldRoot.count))
+        }
+        // Visit untouched keys first so they win over renamed ones.
+        let ordered = values.sorted { lhs, rhs in
+            let lhsMoved = renamed(lhs.key) != lhs.key
+            let rhsMoved = renamed(rhs.key) != rhs.key
+            return lhsMoved == rhsMoved ? lhs.key < rhs.key : !lhsMoved
+        }
+        return Dictionary(ordered.map { (renamed($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
     }
 }
 

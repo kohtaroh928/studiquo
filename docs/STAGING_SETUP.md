@@ -1,22 +1,22 @@
 # Studiquo ステージング環境の準備と確認
 
-最終更新: 2026-10-08  
+最終更新: 2026-10-09
 状態: **ステージング環境は作成済みで、一部の確認は完了している。** 3〜5章は作成時の手順(再作成や、別の環境を作るときの手引き)、6章は確認項目と実測の記録である。クラウド上のリソースの作成と秘密情報の設定は、運営者が行う。
 
-## 現在の状態(2026-10-08時点)
+## 現在の状態(認証検証は2026-10-08、RAG整備は2026-10-09時点)
 
-次は、読み取りだけで確認した内容である(`wrangler deployments list --env staging`、`wrangler d1 migrations list`)。
+認証の従来記録に加え、2026-10-09に承認済みRAG staging配信・合成100ページ検証を実施した。配信情報・flag・削除結果は読み取りで最終確認した。
 
 | 項目 | 状態 |
 | --- | --- |
-| Worker | `studiquo-mcp-staging` が存在する。最新デプロイは 2026-10-07 14:08(日本時間) |
+| Worker | `studiquo-mcp-staging` が存在する。RAG開発版を2026-10-09 21:53(日本時間)に配信。最終版 `3cb1bc6e-29cd-4906-9f00-d049e5a9bf85`、RAG／AI承認flagはfalse |
 | KV・D1 | 専用のKVと`studiquo-admin-staging`(D1)を使う。本番のIDは使わない(`wrangler.jsonc`の`env.staging`、コミット `8cfeb4e`) |
-| D1のmigration | `0006_rag.sql`まで適用済み。未適用は`0007_rag_context.sql`。**本番へ出すスキーマ(0005まで)とは一致しない**(本番は`0005`が未適用で、`0006`以降は出さない) |
+| D1のmigration | 2026-10-09にRAG検証用の`0007_rag_context.sql`まで適用済み。**本番へ出すスキーマ(0005まで)とは一致しない**(本番は`0005`が未適用で、`0006`以降は出さない) |
 | 確認済み | 6.2(応答時間の均一化)、6.3(通知メールとSlackアラート)、6.4(`ARGON2_WRITE`の2段階の予行)、6.5(退会)。いずれも 2026-10-07 |
 | 未確認 | 6.1のアプリ表示(結果の記録なし)。6.6の自己紹介(ステージング上。ローカルでは確認済み)。退会時のDurable Object内のデータ。`0005`の再実行・途中失敗 |
 | 後片付け | 未実施。Worker・KV・D1が残っている |
 
-**ステージングは、リリース候補より古い。** 最新デプロイの後に、次の変更が入っている。これらは、まだステージングで確認していない。
+**現在のステージングはRAG開発スナップショットであり、認証リリース候補の検証環境と同一ではない。** 以下はRAG更新前に残っていた認証・bioの確認項目で、今回のRAG試験でも確認していない。
 - `50ad5b9`: サインイン時のメール連携で、変わっていないKVの書き込みをやめる
 - `8082f27`: フレンドの自己紹介(bio)の保存と共有
 - `2b098c8`: テストのみ(ステージングへの影響なし)
@@ -28,6 +28,10 @@
 - ステージングを、本番と同じスキーマで確認できる形にするかを決める。
 
 ## 1. 目的と、先に知っておくこと
+
+RAG整備後の修正・再検証（2026-10-09）: [RAG_STAGING_FIX_REPORT.md](RAG_STAGING_FIX_REPORT.md)。localhostの私有ランタイムから実bindingで27/27確認、検証データ削除済み。公開staging Workerを更新したものではない。
+
+RAGの追加整備記録（2026-10-09）: 専用Vectorize `studiquo-rag-v1-staging`（1024次元・cosine）と4つのmetadata indexを作成し、0007を適用した。追加整備時は私有ランタイムで検証し、後続の承認により公開staging Workerも更新した。最終的にRAG/AI承認flagはfalseへ戻した。合成100ページの公開API試験と私有model計測の詳細は [RAG_100_PAGE_STAGING_REPORT.md](RAG_100_PAGE_STAGING_REPORT.md)を参照。これは以下の認証リリース検証とは別工程であり、[RAG_STAGING_VALIDATION_REPORT.md](RAG_STAGING_VALIDATION_REPORT.md)に記録する。
 
 認証まわりの変更(ログインの多段制限、Argon2idへの移行、新しい環境の通知、退会時の削除)のうち、ローカルでは確かめられないものを、本番に出す前に確認する。
 
@@ -112,7 +116,9 @@ npx wrangler deploy --env staging
 
 ### 6.1 アプリの表示(429・503・漏えいパスワードの拒否)
 
-アプリのエンドポイントを、シミュレータの設定として、ステージングに向ける。
+**Xcodeから向ける(推奨):** `xcodegen generate`のあと、Xcodeの上部のスキームを`studiquo-staging`にしてRunすると、そのRunの間だけ、接続先がステージングになる(起動引数`-mcpCloudEndpoint`。端末には保存されない)。`studiquo`スキームでRunすれば、本番に接続する。Debugビルドだけが、本番以外に接続できる(`WorkerEndpointPolicy`)ので、リリースビルドは、これまでどおり本番しか使えない。ステージングのURLが変わったら、`project.yml`の`studiquo-staging`スキームを書き換える。スキームは`xcodegen generate`で作られる(`studiquo.xcodeproj`はGit管理外)ので、更新を取り込んだ後に再生成する。
+
+アプリのエンドポイントを、シミュレータの設定として、ステージングに向ける(Xcodeを使わない場合)。
 
 ```bash
 xcrun simctl spawn booted defaults write com.yabuko.studiquo mcpCloudEndpoint "https://<STG>"
@@ -270,3 +276,5 @@ npx wrangler d1 delete studiquo-admin-staging
 - `wrangler dev`を、`--remote`付きで実行しない。この設定のままでは、`--remote`の開発用のプレビューが、本番のKVを使う。
 - ステージングでのメール送信は、Resendのテスト用宛先を使う。実在の人に、メールを送らない。
 - 本番へのデプロイは、この確認とは別の工程で、明示的な承認を得て行う。
+
+2026-10-09の出典修正版再検証: [RAG_CITATION_STAGING_RECHECK_REPORT.md](RAG_CITATION_STAGING_RECHECK_REPORT.md)。実環境76/76、終了時の無効化・削除確認済み。比較出典の適合性と実iPad確認は残る。

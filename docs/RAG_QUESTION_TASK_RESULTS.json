@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "syntheticOnly": true,
+  "externalCalls": 0,
+  "humanReview": "pending",
+  "method": "operation-set diagnostic only; repeated attributes and entity binding remain pending",
+  "rows": [
+    {
+      "id": "task-fees",
+      "requiredAtomicItems": 3,
+      "expectedOperations": [
+        "lookup",
+        "conditions"
+      ],
+      "foundOperations": [
+        "lookup",
+        "conditions"
+      ],
+      "missingOperations": [],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    {
+      "id": "task-delivery",
+      "requiredAtomicItems": 2,
+      "expectedOperations": [
+        "compare",
+        "recommend"
+      ],
+      "foundOperations": [
+        "compare",
+        "recommend"
+      ],
+      "missingOperations": [],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    {
+      "id": "task-calculation",
+      "requiredAtomicItems": 2,
+      "expectedOperations": [
+        "calculate",
+        "lookup"
+      ],
+      "foundOperations": [
+        "calculate",
+        "lookup"
+      ],
+      "missingOperations": [],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    {
+      "id": "task-exceptions",
+      "requiredAtomicItems": 3,
+      "expectedOperations": [
+        "lookup",
+        "conditions"
+      ],
+      "foundOperations": [
+        "conditions"
+      ],
+      "missingOperations": [
+        "lookup"
+      ],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    {
+      "id": "task-learning",
+      "requiredAtomicItems": 3,
+      "expectedOperations": [
+        "lookup",
+        "explain"
+      ],
+      "foundOperations": [
+        "explain"
+      ],
+      "missingOperations": [
+        "lookup"
+      ],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    {
+      "id": "task-conflicting_summary",
+      "requiredAtomicItems": 3,
+      "expectedOperations": [
+        "summarize",
+        "compare"
+      ],
+      "foundOperations": [
+        "summarize",
+        "compare"
+      ],
+      "missingOperations": [],
+      "extraOperations": [],
+      "atomicExtraction": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    }
+  ]
+}

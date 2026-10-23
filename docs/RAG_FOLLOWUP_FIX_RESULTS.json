@@ -1,0 +1,70 @@
+{
+  "change": "Bounded removal of more-detail request frame in importantText; canonical query, topic and factual conditions retained",
+  "initialAdditionalSet": {
+    "sha256": "9a7bbe19c770108b9f32173cdf61d3bb7aaa9b85f26a264ed0686806a0705db8",
+    "before": {
+      "questions": 22,
+      "positiveAndFollowup": 14,
+      "negative": 6,
+      "clarificationControls": 2,
+      "canonicalTop5Coverage": 14,
+      "expandedCandidateRecall": 14,
+      "lexicalEligibleCoverage": 13,
+      "negativeExcluded": 6,
+      "clarificationMatches": 2
+    },
+    "after": {
+      "questions": 22,
+      "positiveAndFollowup": 14,
+      "negative": 6,
+      "clarificationControls": 2,
+      "canonicalTop5Coverage": 14,
+      "expandedCandidateRecall": 14,
+      "lexicalEligibleCoverage": 14,
+      "negativeExcluded": 6,
+      "clarificationMatches": 2
+    },
+    "status": "Used for repair after initial evaluation; no longer unused holdout"
+  },
+  "finalAdditionalSet": {
+    "sha256": "839e5830f232ccec965572b802efd8d1b98d586776247901d3a5df42d6de6ba6",
+    "results": {
+      "questions": 8,
+      "positiveAndFollowup": 6,
+      "negative": 1,
+      "clarificationControls": 1,
+      "canonicalTop5Coverage": 4,
+      "expandedCandidateRecall": 5,
+      "lexicalEligibleCoverage": 5,
+      "negativeExcluded": 1,
+      "clarificationMatches": 1
+    },
+    "status": "Frozen before fix; no tuning or expected-page changes after evaluation; same source PDF, not independent domain evaluation"
+  },
+  "remainingIssue": {
+    "caseId": "final-extra-03",
+    "expectedKnownPage": 85,
+    "keywordSelectedPage": 97,
+    "cause": "Joined identifier in question vs separated letters/numbers in known page; stored terms differ",
+    "note": "Known-page recall failure; another related standard-specific page retrieved, generated answer not assessed"
+  },
+  "tests": {
+    "newRegression": 4,
+    "followupTargetsPassed": 10,
+    "allWorkerPassed": 771,
+    "allWorkerFailed": 0
+  },
+  "externalMaterialCalls": 0,
+  "deploy": false,
+  "migration": false,
+  "reembedding": false,
+  "iOSChanged": false,
+  "physicalIPad": "unavailable_not_executed",
+  "method": "Local BM25 / Query Plan / lexical eligibility / detail checks; no real vector, reranker, final Top5 or Gemini answer; uses all lexical eligible candidates for detail check",
+  "codeHashes": {
+    "chunking.js": "5ee80f66b460f7689b757cd9ac21d205706d7f7db2d046af18422ac713c3d227",
+    "relevance.js": "6cb3f2022a9db13a3b00224ed6574a081c509907750409d8d0be3b75bb910592",
+    "query.js": "375f1555d179fae33763a69a06d17b47b9367bf484266c733807eac928b00205",
+    "answerability.js": "8f35de1812e7aa3b8265476af5bbbd627d1ea189abc28a31ba4d7bae5b36bb65"
+  }
+}

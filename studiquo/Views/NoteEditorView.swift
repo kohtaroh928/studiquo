@@ -628,6 +628,14 @@ struct NoteEditorView: View {
                 Task { await applyBackgroundImage(from: data) }
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--rag-citation-test") {
+                Text("RAG page \(primaryPageIndex + 1)")
+                    .accessibilityIdentifier("rag-editor-selected-page")
+            }
+            #endif
+        }
     }
 
     private func editorWithReceivers(_ content: some View) -> some View {
@@ -635,6 +643,15 @@ struct NoteEditorView: View {
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { _ in
+            Task { @MainActor in
+                await Task.yield()
+                applyPendingRAGCitation()
+            }
+        }
+        .onAppear {
+            applyPendingRAGCitation()
         }
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenPageLink)) { notification in
             guard let target = notification.object as? Int,
@@ -644,6 +661,7 @@ struct NoteEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoPageActivated"))) { notification in
             guard let page = notification.object as? NotePage else { return }
             lastActivePage = page
+            RAGCitationNavigation.currentPage = page
             if page.notebook === secondaryNotebook { activePane = .secondary }
             else if page.notebook === notebook { activePane = .primary }
         }
@@ -3314,6 +3332,14 @@ struct NoteEditorView: View {
         activePane = .primary
     }
 
+    private func applyPendingRAGCitation() {
+        if let page = RAGCitationNavigation.consume(for: displayedPrimaryNotebook) {
+            primaryPageIndex = page
+        } else if let secondaryNotebook, let page = RAGCitationNavigation.consume(for: secondaryNotebook) {
+            secondaryPageIndex = page
+        }
+    }
+
     private func applyPaneTarget(_ target: PaneSwitchTarget, to pane: ActivePane) {
         dismissPhotoStudy(restorePreviousLayout: false)
         closeTemporaryChatMaterial(in: pane)
@@ -3325,14 +3351,14 @@ struct NoteEditorView: View {
                 primaryShowsWeb = false
                 primaryShowsAIChat = false
                 primaryChatTarget = nil
-                primaryPageIndex = 0
+                primaryPageIndex = RAGCitationNavigation.consume(for: targetNotebook) ?? 0
             } else {
                 secondaryNotebook = targetNotebook
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
                 secondaryChatTarget = nil
-                secondaryPageIndex = 0
+                secondaryPageIndex = RAGCitationNavigation.consume(for: targetNotebook) ?? 0
             }
         case .flashcardDeck(let deck):
             if pane == .primary {
@@ -3868,6 +3894,7 @@ struct NoteEditorView: View {
         recordPageRemoval(page, in: target)
         target.pages?.removeAll { $0.persistentModelID == pageID }
         page.notebook = nil
+        RAGDeletionQueue.enqueueNotebook(target, preservingCitations: false)
         modelContext.delete(page)
         for (order, remaining) in target.sortedPages.enumerated() { remaining.order = order }
         target.refreshLibraryMetadata()
@@ -3880,6 +3907,7 @@ struct NoteEditorView: View {
 
     private func trashPendingNotebook() {
         guard let target = notebookPendingTrash else { return }
+        RAGDeletionQueue.enqueueNotebook(target)
         target.isTrashed = true
         target.trashedAt = .now
         target.updatedAt = .now
@@ -3917,6 +3945,7 @@ struct NoteEditorView: View {
         target.addPage(newPage)
         target.refreshLibraryMetadata()
         target.updatedAt = .now
+        recordPageAddition(newPage, in: target)
         if target === secondaryNotebook {
             secondaryPageIndex = target.sortedPages.count - 1
             activePane = .secondary
@@ -3951,6 +3980,7 @@ struct NoteEditorView: View {
         }
         target.refreshLibraryMetadata()
         target.updatedAt = .now
+        recordPageAddition(newPage, in: target)
         try? modelContext.save()
         if target === secondaryNotebook {
             secondaryPageIndex = 0
@@ -3981,56 +4011,19 @@ struct NoteEditorView: View {
         notebookPendingNewPage = nil
     }
 
-    /// Makes a freshly added page undoable.
-    ///
-    /// The page is carried in a slot rather than captured directly: undo
-    /// deletes it, and redo has to insert a new one, so anything holding a
-    /// direct reference would be pointing at a deleted object the second time
-    /// around.
+    /// Makes a freshly added page undoable. See `NotePageHistory`.
     private func recordPageAddition(_ page: NotePage, in notebook: Notebook) {
-        let slot = PageSlot(page)
-        let snapshot = NotePageSnapshot(page)
-        let context = modelContext
-        NoteActionHistory.shared.record(
-            undo: { [weak notebook] in
-                guard let notebook, let page = slot.page else { return }
-                notebook.pages?.removeAll { $0 === page }
-                context.delete(page)
-                slot.page = nil
-                notebook.refreshLibraryMetadata()
-            },
-            redo: { [weak notebook] in
-                guard let notebook else { return }
-                let restored = snapshot.makePage(in: context, notebook: notebook)
-                notebook.addPage(restored)
-                slot.page = restored
-                notebook.refreshLibraryMetadata()
-            }
-        )
+        NotePageHistory.recordAddition(of: [page], in: notebook, context: modelContext) {
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
     }
 
     /// The mirror image, for a page about to be deleted. Call before removing
     /// it, while there is still something to snapshot.
     private func recordPageRemoval(_ page: NotePage, in notebook: Notebook) {
-        let slot = PageSlot(page)
-        let snapshot = NotePageSnapshot(page)
-        let context = modelContext
-        NoteActionHistory.shared.record(
-            undo: { [weak notebook] in
-                guard let notebook else { return }
-                let restored = snapshot.makePage(in: context, notebook: notebook)
-                notebook.addPage(restored)
-                slot.page = restored
-                notebook.refreshLibraryMetadata()
-            },
-            redo: { [weak notebook] in
-                guard let notebook, let page = slot.page else { return }
-                notebook.pages?.removeAll { $0 === page }
-                context.delete(page)
-                slot.page = nil
-                notebook.refreshLibraryMetadata()
-            }
-        )
+        NotePageHistory.recordRemoval(of: [page], in: notebook, context: modelContext) {
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
     }
 
     /// Makes a newly placed element — a shape, a photo, a text box, a tape —
@@ -6191,7 +6184,11 @@ private struct PageDeletionPicker: View {
 
     private func deleteSelected() {
         guard !selectedIDs.isEmpty, selectedIDs.count < notebook.sortedPages.count else { return }
+        RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
         let removed = notebook.sortedPages.filter { selectedIDs.contains(pageID($0)) }
+        NotePageHistory.recordRemoval(of: removed, in: notebook, context: modelContext) { [notebook] in
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
         notebook.pages?.removeAll { selectedIDs.contains(pageID($0)) }
         removed.forEach {
             $0.notebook = nil
@@ -9110,13 +9107,17 @@ private struct PageSidebar: View {
 
     private func duplicateBookmarkedPages() {
         let sources = notebook.sortedPages.filter(\.isBookmarked)
-        for source in sources { duplicate(source) }
+        recordDuplicates(sources.compactMap(makeDuplicate(of:)))
         currentPageIndex = max(0, notebook.sortedPages.count - sources.count)
     }
 
     private func deleteBookmarkedPages() {
         guard canDeleteBookmarkedPages else { return }
+        RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
         let removed = notebook.sortedPages.filter(\.isBookmarked)
+        NotePageHistory.recordRemoval(of: removed, in: notebook, context: modelContext) { [notebook] in
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
         notebook.pages?.removeAll(where: \.isBookmarked)
         removed.forEach {
             $0.notebook = nil
@@ -9158,14 +9159,18 @@ private struct PageSidebar: View {
 
     private func duplicateSelectedPages() {
         let pages = selectedPages
-        pages.forEach(duplicate)
+        recordDuplicates(pages.compactMap(makeDuplicate(of:)))
         selectedPageIDs.removeAll()
     }
 
     private func deleteSelectedPages() {
         guard canDeleteSelectedPages else { return }
+        RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
         let ids = selectedPageIDs
         let removed = notebook.sortedPages.filter { ids.contains(pageID($0)) }
+        NotePageHistory.recordRemoval(of: removed, in: notebook, context: modelContext) { [notebook] in
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
         notebook.pages?.removeAll { ids.contains(pageID($0)) }
         removed.forEach {
             $0.notebook = nil
@@ -9180,6 +9185,17 @@ private struct PageSidebar: View {
     }
 
     private func duplicate(_ source: NotePage) {
+        if let page = makeDuplicate(of: source) { recordDuplicates([page]) }
+    }
+
+    private func recordDuplicates(_ pages: [NotePage]) {
+        NotePageHistory.recordAddition(of: pages, in: notebook, context: modelContext) { [notebook] in
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
+    }
+
+    @discardableResult
+    private func makeDuplicate(of source: NotePage) -> NotePage? {
         let page = NotePage(order: notebook.sortedPages.count, backgroundImageData: source.backgroundImageData, pageWidth: source.pageWidth, pageHeight: source.pageHeight)
         page.drawingData = source.drawingData
         page.backgroundPDFData = source.backgroundPDFData
@@ -9206,17 +9222,25 @@ private struct PageSidebar: View {
         notebook.addPage(page)
         notebook.updatedAt = .now
         currentPageIndex = notebook.sortedPages.count - 1
+        return page
     }
 
     private func delete(_ page: NotePage) {
         guard notebook.sortedPages.count > 1, let index = notebook.pages?.firstIndex(where: { $0 === page }) else { return }
+        RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        NotePageHistory.recordRemoval(of: [page], in: notebook, context: modelContext) { [notebook] in
+            RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+        }
         notebook.pages?.remove(at: index)
+        page.notebook = nil
+        modelContext.delete(page)
         for (order, remaining) in notebook.sortedPages.enumerated() { remaining.order = order }
         notebook.updatedAt = .now
         currentPageIndex = min(currentPageIndex, notebook.sortedPages.count - 1)
     }
 
     private func movePages(from source: IndexSet, to destination: Int) {
+        RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
         let selectedPage = notebook.sortedPages.indices.contains(currentPageIndex)
             ? notebook.sortedPages[currentPageIndex]
             : nil
@@ -9233,8 +9257,14 @@ private struct PageSidebar: View {
         }
         let after = reordered.map { (PageSlot($0), $0.order) }
         NoteActionHistory.shared.record(
-            undo: { for (slot, order) in before { slot.page?.order = order } },
-            redo: { for (slot, order) in after { slot.page?.order = order } }
+            undo: {
+                RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+                for (slot, order) in before { slot.page?.order = order }
+            },
+            redo: {
+                RAGDeletionQueue.enqueueNotebook(notebook, preservingCitations: false)
+                for (slot, order) in after { slot.page?.order = order }
+            }
         )
     }
 }

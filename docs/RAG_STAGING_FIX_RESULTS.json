@@ -1,0 +1,1742 @@
+{
+  "workerTests": {
+    "pass": 785,
+    "fail": 0,
+    "skip": 0
+  },
+  "gemini": {
+    "method": "Real Gemini, synthetic ordinary chat questions after prompt/retry fix",
+    "planned": 3,
+    "attempted": 3,
+    "apiCalls": 3,
+    "rows": [
+      {
+        "id": "fallback-outage-repeat-1",
+        "category": "fallback",
+        "httpStatus": 200,
+        "status": "fallback",
+        "citations": [],
+        "elapsedMs": 2692,
+        "calls": [
+          {
+            "model": "gemini-3.5-flash",
+            "httpStatus": 200,
+            "elapsedMs": 2685,
+            "promptTokens": 370,
+            "outputTokens": 80,
+            "thinkingTokens": 271,
+            "totalTokens": 721,
+            "modelVersion": "gemini-3.5-flash",
+            "finishReasons": [
+              "STOP"
+            ]
+          }
+        ],
+        "citationDatabaseValid": true,
+        "checks": {
+          "transport": true,
+          "generationComplete": true,
+          "retrievalStatus": true,
+          "citationPages": true,
+          "citationIdentity": true,
+          "requiredFacts": true,
+          "forbiddenClaims": true
+        },
+        "automatedChecksPass": true,
+        "manualReview": {
+          "observed": "Direct 180-degree answer with no observed terminology error in these three responses",
+          "limits": "Three samples, not general mathematical correctness"
+        }
+      },
+      {
+        "id": "fallback-outage-repeat-2",
+        "category": "fallback",
+        "httpStatus": 200,
+        "status": "fallback",
+        "citations": [],
+        "elapsedMs": 2943,
+        "calls": [
+          {
+            "model": "gemini-3.5-flash",
+            "httpStatus": 200,
+            "elapsedMs": 2940,
+            "promptTokens": 370,
+            "outputTokens": 76,
+            "thinkingTokens": 395,
+            "totalTokens": 841,
+            "modelVersion": "gemini-3.5-flash",
+            "finishReasons": [
+              "STOP"
+            ]
+          }
+        ],
+        "citationDatabaseValid": true,
+        "checks": {
+          "transport": true,
+          "generationComplete": true,
+          "retrievalStatus": true,
+          "citationPages": true,
+          "citationIdentity": true,
+          "requiredFacts": true,
+          "forbiddenClaims": true
+        },
+        "automatedChecksPass": true,
+        "manualReview": {
+          "observed": "Direct 180-degree answer with no observed terminology error in these three responses",
+          "limits": "Three samples, not general mathematical correctness"
+        }
+      },
+      {
+        "id": "fallback-outage-repeat-3",
+        "category": "fallback",
+        "httpStatus": 200,
+        "status": "fallback",
+        "citations": [],
+        "elapsedMs": 3048,
+        "calls": [
+          {
+            "model": "gemini-3.5-flash",
+            "httpStatus": 200,
+            "elapsedMs": 3047,
+            "promptTokens": 370,
+            "outputTokens": 99,
+            "thinkingTokens": 422,
+            "totalTokens": 891,
+            "modelVersion": "gemini-3.5-flash",
+            "finishReasons": [
+              "STOP"
+            ]
+          }
+        ],
+        "citationDatabaseValid": true,
+        "checks": {
+          "transport": true,
+          "generationComplete": true,
+          "retrievalStatus": true,
+          "citationPages": true,
+          "citationIdentity": true,
+          "requiredFacts": true,
+          "forbiddenClaims": true
+        },
+        "automatedChecksPass": true,
+        "manualReview": {
+          "observed": "Direct 180-degree answer with no observed terminology error in these three responses",
+          "limits": "Three samples, not general mathematical correctness"
+        }
+      }
+    ]
+  },
+  "liveBindingFinal": {
+    "checks": 27,
+    "passed": 27,
+    "details": {
+      "run": "96b134371255",
+      "elapsedMs": 287363,
+      "results": [
+        {
+          "name": "invalid-token",
+          "ok": true,
+          "infrastructureOK": true
+        },
+        {
+          "name": "owner-index",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 396,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 117,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "result": {
+            "embedded": 2,
+            "skipped": 0,
+            "sourceId": "ev-96b134371255-notes"
+          }
+        },
+        {
+          "name": "other-index",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 111,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ]
+        },
+        {
+          "name": "idempotency",
+          "ok": true,
+          "infrastructureOK": true,
+          "result": {
+            "embedded": 0,
+            "skipped": 2,
+            "sourceId": "ev-96b134371255-notes"
+          }
+        },
+        {
+          "name": "indexed-rows",
+          "ok": true,
+          "infrastructureOK": true,
+          "vectorCount": 0
+        },
+        {
+          "name": "vector-query-ready",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 253,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 312,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey"
+              ],
+              "matches": 2,
+              "elapsedMs": 192
+            }
+          ]
+        },
+        {
+          "name": "library-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1228,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-96b134371255-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 550,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 299,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey"
+              ],
+              "matches": 1,
+              "elapsedMs": 253
+            }
+          ]
+        },
+        {
+          "name": "library-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "folder-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1014,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-96b134371255-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 170,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 274,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "folderId"
+              ],
+              "matches": 2,
+              "elapsedMs": 456
+            }
+          ]
+        },
+        {
+          "name": "folder-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "notebook-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 951,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-96b134371255-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 151,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 226,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 1,
+              "elapsedMs": 387
+            }
+          ]
+        },
+        {
+          "name": "notebook-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "page-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1141,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-96b134371255-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 258,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 204,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId",
+                "pageNumber"
+              ],
+              "matches": 1,
+              "elapsedMs": 564
+            }
+          ]
+        },
+        {
+          "name": "page-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "wrong-folder-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 333,
+          "status": "fallback",
+          "citations": [],
+          "contextPresent": false,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 135,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "folderId"
+              ],
+              "matches": 0,
+              "elapsedMs": 187
+            }
+          ]
+        },
+        {
+          "name": "incremental",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 382,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "result": {
+            "embedded": 1,
+            "skipped": 0,
+            "sourceId": "ev-96b134371255-notes"
+          }
+        },
+        {
+          "name": "chat-grounded-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "completed": true,
+          "citationScopeOK": true,
+          "citationDatabaseValid": true,
+          "citationCount": 1,
+          "httpStatus": 200,
+          "elapsedMs": 3529,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 247,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 188,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey"
+              ],
+              "matches": 2,
+              "elapsedMs": 254
+            }
+          ],
+          "streamBytes": 252
+        },
+        {
+          "name": "chat-grounded-quality",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "facts": true,
+          "expectedCitation": true,
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "chat-comparison-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "completed": true,
+          "citationScopeOK": true,
+          "citationDatabaseValid": true,
+          "citationCount": 2,
+          "httpStatus": 200,
+          "elapsedMs": 3394,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 233,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 420,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 733,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 249,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 2,
+              "elapsedMs": 193
+            },
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 2,
+              "elapsedMs": 233
+            },
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 2,
+              "elapsedMs": 197
+            }
+          ],
+          "streamBytes": 467
+        },
+        {
+          "name": "chat-comparison-quality",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "facts": true,
+          "expectedCitation": true,
+          "actualPages": [
+            1,
+            2
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "chat-identifier-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "completed": true,
+          "citationScopeOK": true,
+          "citationDatabaseValid": true,
+          "citationCount": 1,
+          "httpStatus": 200,
+          "elapsedMs": 3298,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 118,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 242,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 2,
+              "elapsedMs": 188
+            }
+          ],
+          "streamBytes": 281
+        },
+        {
+          "name": "chat-identifier-quality",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "facts": true,
+          "expectedCitation": true,
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "chat-no-hits-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "completed": true,
+          "citationScopeOK": true,
+          "citationDatabaseValid": true,
+          "citationCount": 0,
+          "httpStatus": 200,
+          "elapsedMs": 3284,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 141,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "folderId"
+              ],
+              "matches": 0,
+              "elapsedMs": 176
+            }
+          ],
+          "streamBytes": 171
+        },
+        {
+          "name": "chat-no-hits-quality",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "facts": true,
+          "expectedCitation": true,
+          "actualPages": [],
+          "extraPages": []
+        },
+        {
+          "name": "source-deletion",
+          "ok": true,
+          "infrastructureOK": true
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "http": 200,
+        "elapsedMs": 457,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534394550
+      },
+      {
+        "http": 200,
+        "elapsedMs": 614,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534400166
+      },
+      {
+        "http": 200,
+        "elapsedMs": 597,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534405765
+      },
+      {
+        "http": 200,
+        "elapsedMs": 462,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534411230
+      },
+      {
+        "http": 200,
+        "elapsedMs": 543,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534416774
+      },
+      {
+        "http": 200,
+        "elapsedMs": 569,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534422345
+      },
+      {
+        "http": 200,
+        "elapsedMs": 607,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534427955
+      },
+      {
+        "http": 200,
+        "elapsedMs": 432,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534433388
+      },
+      {
+        "http": 200,
+        "elapsedMs": 471,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534438860
+      },
+      {
+        "http": 200,
+        "elapsedMs": 511,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534444374
+      },
+      {
+        "http": 200,
+        "elapsedMs": 509,
+        "records": 2,
+        "vectorCount": 0,
+        "unexpectedMetadata": 0,
+        "checks": [],
+        "selfQuery": null,
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534449885
+      },
+      {
+        "http": 200,
+        "elapsedMs": 1543,
+        "records": 2,
+        "vectorCount": 1,
+        "unexpectedMetadata": 0,
+        "checks": [
+          {
+            "id": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947",
+            "dimensions": 1024,
+            "finite": true,
+            "owner": true,
+            "sourceCorrect": true,
+            "pageCorrect": true
+          }
+        ],
+        "selfQuery": {
+          "matches": 1,
+          "ownMatches": 1,
+          "selfPresent": true
+        },
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 1,
+          "processedUpToDatetime": "2026-10-09T08:26:27.317Z",
+          "processedUpToMutation": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534456431
+      },
+      {
+        "http": 200,
+        "elapsedMs": 764,
+        "records": 2,
+        "vectorCount": 1,
+        "unexpectedMetadata": 0,
+        "checks": [
+          {
+            "id": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947",
+            "dimensions": 1024,
+            "finite": true,
+            "owner": true,
+            "sourceCorrect": true,
+            "pageCorrect": true
+          }
+        ],
+        "selfQuery": {
+          "matches": 0,
+          "ownMatches": 0,
+          "selfPresent": false
+        },
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 0,
+          "processedUpToDatetime": "2026-10-09T08:24:32.875Z",
+          "processedUpToMutation": "1d200694-ca75-48ff-92f0-6438e2799f73"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534462197
+      },
+      {
+        "http": 200,
+        "elapsedMs": 1122,
+        "records": 2,
+        "vectorCount": 1,
+        "unexpectedMetadata": 0,
+        "checks": [
+          {
+            "id": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947",
+            "dimensions": 1024,
+            "finite": true,
+            "owner": true,
+            "sourceCorrect": true,
+            "pageCorrect": true
+          }
+        ],
+        "selfQuery": {
+          "matches": 2,
+          "ownMatches": 2,
+          "selfPresent": true
+        },
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 1,
+          "processedUpToDatetime": "2026-10-09T08:26:27.317Z",
+          "processedUpToMutation": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534468322
+      },
+      {
+        "http": 200,
+        "elapsedMs": 1174,
+        "records": 2,
+        "vectorCount": 2,
+        "unexpectedMetadata": 0,
+        "checks": [
+          {
+            "id": "d00530be61f8efaffab6e15bbb8a723ae4ad8faf85a8074017dfe42a9b813947",
+            "dimensions": 1024,
+            "finite": true,
+            "owner": true,
+            "sourceCorrect": true,
+            "pageCorrect": true
+          },
+          {
+            "id": "b9e1868a2a9ea4313b48ac6f00effbc79cc70ec895d8a4732bff07d280d82c6a",
+            "dimensions": 1024,
+            "finite": true,
+            "owner": true,
+            "sourceCorrect": true,
+            "pageCorrect": true
+          }
+        ],
+        "selfQuery": {
+          "matches": 2,
+          "ownMatches": 2,
+          "selfPresent": true
+        },
+        "info": {
+          "dimensions": 1024,
+          "vectorCount": 1,
+          "processedUpToDatetime": "2026-10-09T08:26:27.317Z",
+          "processedUpToMutation": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f"
+        },
+        "mutations": [
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "0ae97d2d-92bf-4bfb-8a4b-33f1bdfef61f",
+            "at": 1791534387580,
+            "elapsedMs": 1007
+          },
+          {
+            "operation": "upsert",
+            "count": 1,
+            "mutationId": "e3102640-e80d-4a91-b8d8-8ff646399c75",
+            "at": 1791534389149,
+            "elapsedMs": 764
+          }
+        ],
+        "observedAt": 1791534474498
+      }
+    ],
+    "bothVectorsVisibleAfterFirstUpsertMs": 86918,
+    "manualAnswerReview": {
+      "grounded": "紫色を回答、page1だけ",
+      "comparison": "紫色/緑色を回答、pages1+2",
+      "identifier": "37円を回答、page1だけ",
+      "noHits": "密度を不明と回答、出典なし"
+    },
+    "limits": [
+      "Two-page synthetic dataset only",
+      "Local Worker with real remote D1/Vectorize/AI; local KV and RateCounter",
+      "No public app.js gates or iPad E2E"
+    ]
+  },
+  "intermediateFailures": {
+    "oldRuntime": {
+      "run": "0993a55862b2",
+      "elapsedMs": 126818,
+      "results": [
+        {
+          "name": "invalid-token",
+          "ok": true,
+          "infrastructureOK": true
+        },
+        {
+          "name": "owner-index",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 360,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 877,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "result": {
+            "embedded": 2,
+            "skipped": 0,
+            "sourceId": "ev-0993a55862b2-notes"
+          }
+        },
+        {
+          "name": "other-index",
+          "ok": false,
+          "infrastructureOK": false,
+          "calls": []
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        }
+      ]
+    },
+    "missingLocalRateCounter": {
+      "run": "6d36ae9081e2",
+      "elapsedMs": 267044,
+      "results": [
+        {
+          "name": "invalid-token",
+          "ok": true,
+          "infrastructureOK": true
+        },
+        {
+          "name": "owner-index",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 481,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 136,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "result": {
+            "embedded": 2,
+            "skipped": 0,
+            "sourceId": "ev-6d36ae9081e2-notes"
+          }
+        },
+        {
+          "name": "other-index",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 160,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ]
+        },
+        {
+          "name": "idempotency",
+          "ok": true,
+          "infrastructureOK": true,
+          "result": {
+            "embedded": 0,
+            "skipped": 2,
+            "sourceId": "ev-6d36ae9081e2-notes"
+          }
+        },
+        {
+          "name": "indexed-rows",
+          "ok": true,
+          "infrastructureOK": true,
+          "vectorCount": 0
+        },
+        {
+          "name": "vector-query-ready",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 583,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 242,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey"
+              ],
+              "matches": 2,
+              "elapsedMs": 221
+            }
+          ]
+        },
+        {
+          "name": "library-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 971,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-6d36ae9081e2-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "83cdfb4133e37b318986c0fcf3c3170091cdfe96432b24a0544a623447b63e96"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 394,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 277,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey"
+              ],
+              "matches": 2,
+              "elapsedMs": 186
+            }
+          ]
+        },
+        {
+          "name": "library-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "folder-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1523,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-6d36ae9081e2-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "83cdfb4133e37b318986c0fcf3c3170091cdfe96432b24a0544a623447b63e96"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 460,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 353,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "folderId"
+              ],
+              "matches": 2,
+              "elapsedMs": 524
+            }
+          ]
+        },
+        {
+          "name": "folder-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "notebook-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1049,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-6d36ae9081e2-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "83cdfb4133e37b318986c0fcf3c3170091cdfe96432b24a0544a623447b63e96"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 135,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 332,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId"
+              ],
+              "matches": 2,
+              "elapsedMs": 405
+            }
+          ]
+        },
+        {
+          "name": "notebook-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "page-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 1571,
+          "status": "grounded",
+          "citations": [
+            {
+              "sourceId": "ev-6d36ae9081e2-notes",
+              "title": "Synthetic quality notebook",
+              "pageNumber": 1,
+              "chunkId": "83cdfb4133e37b318986c0fcf3c3170091cdfe96432b24a0544a623447b63e96"
+            }
+          ],
+          "contextPresent": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 138,
+              "ok": true,
+              "dimensions": 1024
+            },
+            {
+              "model": "@cf/baai/bge-reranker-base",
+              "elapsedMs": 825,
+              "ok": true
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "sourceId",
+                "pageNumber"
+              ],
+              "matches": 1,
+              "elapsedMs": 450
+            }
+          ]
+        },
+        {
+          "name": "page-precision",
+          "ok": true,
+          "qualityOK": true,
+          "infrastructureOK": true,
+          "expectedPages": [
+            1
+          ],
+          "actualPages": [
+            1
+          ],
+          "extraPages": []
+        },
+        {
+          "name": "wrong-folder-infrastructure",
+          "ok": true,
+          "infrastructureOK": true,
+          "elapsedMs": 279,
+          "status": "fallback",
+          "citations": [],
+          "contextPresent": false,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 93,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "vectorCalls": [
+            {
+              "operation": "query",
+              "ownerFilter": true,
+              "scopeKeys": [
+                "accountKey",
+                "folderId"
+              ],
+              "matches": 0,
+              "elapsedMs": 181
+            }
+          ]
+        },
+        {
+          "name": "incremental",
+          "ok": true,
+          "infrastructureOK": true,
+          "calls": [
+            {
+              "model": "@cf/baai/bge-m3",
+              "elapsedMs": 136,
+              "ok": true,
+              "dimensions": 1024
+            }
+          ],
+          "result": {
+            "embedded": 1,
+            "skipped": 0,
+            "sourceId": "ev-6d36ae9081e2-notes"
+          }
+        },
+        {
+          "name": "chat-grounded-infrastructure",
+          "ok": false,
+          "infrastructureOK": false,
+          "completed": false,
+          "citationScopeOK": false,
+          "citationDatabaseValid": true,
+          "citationCount": 0,
+          "httpStatus": 500,
+          "elapsedMs": 6,
+          "calls": [],
+          "vectorCalls": [],
+          "streamBytes": 30
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        }
+      ]
+    }
+  },
+  "finalD1Counts": [
+    [
+      {
+        "chunks": 0
+      }
+    ],
+    [
+      {
+        "fts": 0
+      }
+    ],
+    [
+      {
+        "pages": 0
+      }
+    ],
+    [
+      {
+        "sources": 0
+      }
+    ]
+  ],
+  "finalVectorizeCount": 0,
+  "localSecretsAndSessionStateRemoved": true
+}

@@ -1,0 +1,3304 @@
+{
+  "date": "2026-10-08T05:50:43.539Z",
+  "pages": 100,
+  "ocrPages": 20,
+  "chunks": 100,
+  "idempotent": true,
+  "calls": [
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 693
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 219
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 311
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 613
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 572
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 449
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 300
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 859
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 219
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 488
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 234
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 642
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 339
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 148
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 350
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 196
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 164
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 175
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 348
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 320
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 722
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.29,
+      "elapsedMs": 260
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 272
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 159
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 252
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 220
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 151
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 652
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 426
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 642
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 255
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 363
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 341
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 299
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 449
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 191
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 278
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.33,
+      "elapsedMs": 345
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 545
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 1201
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 154
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 754
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 521
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 158
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 170
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 220
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 249
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 148
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 226
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 162
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 472
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 210
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 194
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 425
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 778
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 217
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 259
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 654
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 274
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 541
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 213
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 429
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 195
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 553
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 473
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 200
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 266
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 253
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 183
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 335
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 521
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.29,
+      "elapsedMs": 194
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 325
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 161
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 360
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 199
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 319
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 338
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 194
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 189
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 867
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 501
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 521
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 181
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 535
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 332
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 205
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.32,
+      "elapsedMs": 314
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 229
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 381
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 430
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 216
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 714
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 200
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 143
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 319
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 204
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 805
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.3,
+      "elapsedMs": 317
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.31,
+      "elapsedMs": 203
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 275
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.27,
+      "elapsedMs": 965
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 459
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 326
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 267
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.17,
+      "elapsedMs": 299
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 264
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.53,
+      "elapsedMs": 334
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 231
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 1056
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 646
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.17,
+      "elapsedMs": 298
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 213
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 275
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 819
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.18,
+      "elapsedMs": 449
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 249
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 259
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 522
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 402
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 337
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.54,
+      "elapsedMs": 1329
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 402
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.54,
+      "elapsedMs": 634
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 812
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.79,
+      "elapsedMs": 347
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 250
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.08,
+      "elapsedMs": 437
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 392
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.53,
+      "elapsedMs": 395
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 360
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 335
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 275
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.44,
+      "elapsedMs": 326
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 219
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 473
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 250
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.42,
+      "elapsedMs": 425
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 882
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.44,
+      "elapsedMs": 274
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 231
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.34,
+      "elapsedMs": 511
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 327
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.08,
+      "elapsedMs": 187
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 212
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.36,
+      "elapsedMs": 315
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 849
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.35,
+      "elapsedMs": 564
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 195
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.09,
+      "elapsedMs": 554
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 389
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 482
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 490
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 563
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 186
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 215
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 350
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.97,
+      "elapsedMs": 327
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 281
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 475
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 493
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.77,
+      "elapsedMs": 375
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 324
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.62,
+      "elapsedMs": 417
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 266
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 439
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 718
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 0.86,
+      "elapsedMs": 287
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 367
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 415
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 179
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 177
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 283
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 931
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 560
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 258
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 626
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 519
+    }
+  ],
+  "results": [
+    {
+      "id": "holdout-def-1",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        1
+      ],
+      "stages": {
+        "vector": [
+          1,
+          90,
+          3,
+          4,
+          2
+        ],
+        "keyword": [
+          1,
+          3,
+          90,
+          54,
+          5
+        ],
+        "rrf": [
+          1,
+          90,
+          3
+        ],
+        "final": [
+          1,
+          90,
+          3
+        ]
+      },
+      "elapsedMs": 1272,
+      "candidatePages": [
+        1,
+        90,
+        3
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-2",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        6
+      ],
+      "stages": {
+        "vector": [
+          6,
+          10,
+          8,
+          31,
+          7
+        ],
+        "keyword": [
+          6,
+          8,
+          26,
+          55,
+          39
+        ],
+        "rrf": [
+          6
+        ],
+        "final": [
+          6
+        ]
+      },
+      "elapsedMs": 801,
+      "candidatePages": [
+        6
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-3",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        11
+      ],
+      "stages": {
+        "vector": [
+          11,
+          12,
+          15,
+          13,
+          14
+        ],
+        "keyword": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "rrf": [
+          11,
+          12
+        ],
+        "final": [
+          11,
+          12
+        ]
+      },
+      "elapsedMs": 580,
+      "candidatePages": [
+        11,
+        12
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-4",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        16
+      ],
+      "stages": {
+        "vector": [
+          16,
+          19,
+          20,
+          18,
+          17
+        ],
+        "keyword": [
+          16,
+          18,
+          20,
+          17,
+          19
+        ],
+        "rrf": [
+          16,
+          18,
+          20,
+          19,
+          17
+        ],
+        "final": [
+          16,
+          18,
+          20,
+          19,
+          21
+        ]
+      },
+      "elapsedMs": 614,
+      "candidatePages": [
+        16,
+        18,
+        20,
+        19,
+        17,
+        21
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-5",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        21
+      ],
+      "stages": {
+        "vector": [
+          21,
+          24,
+          16,
+          20,
+          26
+        ],
+        "keyword": [
+          21,
+          43,
+          24,
+          51,
+          16
+        ],
+        "rrf": [
+          21
+        ],
+        "final": [
+          21
+        ]
+      },
+      "elapsedMs": 1302,
+      "candidatePages": [
+        21
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-6",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        26
+      ],
+      "stages": {
+        "vector": [
+          26,
+          30,
+          29,
+          27,
+          28
+        ],
+        "keyword": [
+          26,
+          31,
+          7,
+          30,
+          11
+        ],
+        "rrf": [
+          26,
+          30
+        ],
+        "final": [
+          26,
+          30
+        ]
+      },
+      "elapsedMs": 959,
+      "candidatePages": [
+        26,
+        30
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-7",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        31
+      ],
+      "stages": {
+        "vector": [
+          31,
+          35,
+          32,
+          33,
+          10
+        ],
+        "keyword": [
+          31,
+          33,
+          38,
+          7,
+          26
+        ],
+        "rrf": [
+          31
+        ],
+        "final": [
+          31
+        ]
+      },
+      "elapsedMs": 500,
+      "candidatePages": [
+        31
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-8",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        36
+      ],
+      "stages": {
+        "vector": [
+          36,
+          38,
+          39,
+          37,
+          40
+        ],
+        "keyword": [
+          36,
+          38,
+          37,
+          39,
+          40
+        ],
+        "rrf": [
+          36,
+          38
+        ],
+        "final": [
+          36,
+          38
+        ]
+      },
+      "elapsedMs": 1283,
+      "candidatePages": [
+        36,
+        38
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-9",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        41
+      ],
+      "stages": {
+        "vector": [
+          41,
+          42,
+          45,
+          44,
+          6
+        ],
+        "keyword": [
+          41,
+          42,
+          12,
+          43,
+          45
+        ],
+        "rrf": [
+          41
+        ],
+        "final": [
+          41
+        ]
+      },
+      "elapsedMs": 524,
+      "candidatePages": [
+        41
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-10",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        46
+      ],
+      "stages": {
+        "vector": [
+          46,
+          47,
+          48,
+          49,
+          50
+        ],
+        "keyword": [
+          46,
+          48,
+          49,
+          12,
+          47
+        ],
+        "rrf": [
+          46
+        ],
+        "final": [
+          46
+        ]
+      },
+      "elapsedMs": 937,
+      "candidatePages": [
+        46
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-11",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        51
+      ],
+      "stages": {
+        "vector": [
+          51,
+          53,
+          55,
+          52,
+          58
+        ],
+        "keyword": [
+          51,
+          53,
+          55,
+          54,
+          52
+        ],
+        "rrf": [
+          51,
+          53,
+          55,
+          52,
+          54
+        ],
+        "final": [
+          51,
+          53,
+          55,
+          52,
+          54
+        ]
+      },
+      "elapsedMs": 1680,
+      "candidatePages": [
+        51,
+        53,
+        55,
+        52,
+        54,
+        58
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-12",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        56
+      ],
+      "stages": {
+        "vector": [
+          58,
+          56,
+          57,
+          59,
+          60
+        ],
+        "keyword": [
+          56,
+          58,
+          60,
+          64,
+          59
+        ],
+        "rrf": [
+          58,
+          56,
+          60,
+          59,
+          54
+        ],
+        "final": [
+          58,
+          56,
+          60,
+          54,
+          59
+        ]
+      },
+      "elapsedMs": 1049,
+      "candidatePages": [
+        58,
+        56,
+        60,
+        59,
+        54,
+        73
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-13",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        61
+      ],
+      "stages": {
+        "vector": [
+          63,
+          62,
+          64,
+          61,
+          65
+        ],
+        "keyword": [
+          64,
+          29,
+          61,
+          76,
+          63
+        ],
+        "rrf": [
+          64,
+          63,
+          61,
+          62,
+          29
+        ],
+        "final": [
+          64,
+          63,
+          62,
+          61,
+          29
+        ]
+      },
+      "elapsedMs": 1175,
+      "candidatePages": [
+        64,
+        63,
+        61,
+        62,
+        29,
+        76,
+        65,
+        59,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-14",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        66
+      ],
+      "stages": {
+        "vector": [
+          66,
+          67,
+          69,
+          70,
+          68
+        ],
+        "keyword": [
+          66,
+          69,
+          67,
+          68,
+          70
+        ],
+        "rrf": [
+          66
+        ],
+        "final": [
+          66
+        ]
+      },
+      "elapsedMs": 701,
+      "candidatePages": [
+        66
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-15",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        71
+      ],
+      "stages": {
+        "vector": [
+          72,
+          71,
+          75,
+          73,
+          74
+        ],
+        "keyword": [
+          71,
+          64,
+          98,
+          72,
+          73
+        ],
+        "rrf": [
+          71,
+          72,
+          75,
+          73,
+          74
+        ],
+        "final": [
+          71,
+          72,
+          75,
+          73,
+          74
+        ]
+      },
+      "elapsedMs": 799,
+      "candidatePages": [
+        71,
+        72,
+        75,
+        73,
+        74,
+        64
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-16",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        76
+      ],
+      "stages": {
+        "vector": [
+          76,
+          80,
+          77,
+          78,
+          63
+        ],
+        "keyword": [
+          76,
+          80,
+          79,
+          78,
+          77
+        ],
+        "rrf": [
+          76,
+          80,
+          77
+        ],
+        "final": [
+          76,
+          80,
+          77
+        ]
+      },
+      "elapsedMs": 706,
+      "candidatePages": [
+        76,
+        80,
+        77
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-17",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        81
+      ],
+      "stages": {
+        "vector": [
+          81,
+          82,
+          83,
+          85,
+          84
+        ],
+        "keyword": [
+          81,
+          85,
+          82,
+          84,
+          83
+        ],
+        "rrf": [
+          81,
+          82,
+          85,
+          83,
+          84
+        ],
+        "final": [
+          81,
+          82,
+          85,
+          83,
+          84
+        ]
+      },
+      "elapsedMs": 614,
+      "candidatePages": [
+        81,
+        82,
+        85,
+        83,
+        84
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-18",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        86
+      ],
+      "stages": {
+        "vector": [
+          90,
+          86,
+          87,
+          88,
+          89
+        ],
+        "keyword": [
+          86,
+          90,
+          40,
+          87,
+          91
+        ],
+        "rrf": [
+          90,
+          86,
+          87
+        ],
+        "final": [
+          90,
+          86,
+          87
+        ]
+      },
+      "elapsedMs": 709,
+      "candidatePages": [
+        90,
+        86,
+        87
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-19",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        91
+      ],
+      "stages": {
+        "vector": [
+          93,
+          91,
+          94,
+          95,
+          92
+        ],
+        "keyword": [
+          81,
+          42,
+          15,
+          95,
+          91
+        ],
+        "rrf": [
+          93,
+          91,
+          95,
+          94,
+          81
+        ],
+        "final": [
+          93,
+          91,
+          95,
+          94,
+          81
+        ]
+      },
+      "elapsedMs": 689,
+      "candidatePages": [
+        93,
+        91,
+        95,
+        94,
+        81
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-def-20",
+      "kind": "holdout_paraphrase",
+      "expectedPages": [
+        96
+      ],
+      "stages": {
+        "vector": [
+          98,
+          96,
+          97,
+          100,
+          99
+        ],
+        "keyword": [
+          96,
+          98,
+          97,
+          99,
+          100
+        ],
+        "rrf": [
+          96,
+          98,
+          97,
+          99,
+          100
+        ],
+        "final": [
+          96,
+          98,
+          97,
+          99,
+          100
+        ]
+      },
+      "elapsedMs": 1172,
+      "candidatePages": [
+        96,
+        98,
+        97,
+        99,
+        100
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-ocr-25",
+      "kind": "holdout_ocr",
+      "expectedPages": [
+        25
+      ],
+      "stages": {
+        "vector": [
+          25,
+          23,
+          22,
+          21,
+          24
+        ],
+        "keyword": [
+          25,
+          23,
+          21,
+          22,
+          19
+        ],
+        "rrf": [
+          25,
+          23,
+          22,
+          21
+        ],
+        "final": [
+          25,
+          23,
+          22,
+          21
+        ]
+      },
+      "elapsedMs": 757,
+      "candidatePages": [
+        25,
+        23,
+        22,
+        21
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-ocr-30",
+      "kind": "holdout_ocr",
+      "expectedPages": [
+        30
+      ],
+      "stages": {
+        "vector": [
+          30,
+          26,
+          10,
+          40,
+          38
+        ],
+        "keyword": [
+          30,
+          26,
+          11,
+          55,
+          65
+        ],
+        "rrf": [
+          30
+        ],
+        "final": [
+          30
+        ]
+      },
+      "elapsedMs": 527,
+      "candidatePages": [
+        30
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-ocr-55",
+      "kind": "holdout_ocr",
+      "expectedPages": [
+        55
+      ],
+      "stages": {
+        "vector": [
+          55,
+          53,
+          51,
+          52,
+          54
+        ],
+        "keyword": [
+          55,
+          53,
+          51,
+          80,
+          68
+        ],
+        "rrf": [
+          55,
+          53,
+          51,
+          52
+        ],
+        "final": [
+          55,
+          53,
+          51,
+          52
+        ]
+      },
+      "elapsedMs": 541,
+      "candidatePages": [
+        55,
+        53,
+        51,
+        52
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-ocr-90",
+      "kind": "holdout_ocr",
+      "expectedPages": [
+        90
+      ],
+      "stages": {
+        "vector": [
+          90,
+          86,
+          87,
+          89,
+          88
+        ],
+        "keyword": [
+          90,
+          86,
+          20,
+          3,
+          1
+        ],
+        "rrf": [
+          90,
+          86,
+          89,
+          87
+        ],
+        "final": [
+          90,
+          86,
+          89,
+          87
+        ]
+      },
+      "elapsedMs": 1426,
+      "candidatePages": [
+        90,
+        86,
+        89,
+        87
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-ocr-100",
+      "kind": "holdout_ocr",
+      "expectedPages": [
+        100
+      ],
+      "stages": {
+        "vector": [
+          100,
+          98,
+          96,
+          97,
+          99
+        ],
+        "keyword": [
+          100,
+          96,
+          98,
+          97,
+          99
+        ],
+        "rrf": [
+          100
+        ],
+        "final": [
+          100
+        ]
+      },
+      "elapsedMs": 759,
+      "candidatePages": [
+        100
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-compare-1-5",
+      "kind": "holdout_comparison",
+      "expectedPages": [
+        1,
+        21
+      ],
+      "stages": {
+        "vector": [
+          1,
+          5,
+          3,
+          2,
+          4
+        ],
+        "keyword": [
+          21,
+          23,
+          3,
+          25,
+          22
+        ],
+        "rrf": [
+          1,
+          21,
+          23,
+          3,
+          25
+        ],
+        "final": [
+          1,
+          21,
+          23,
+          25,
+          3
+        ]
+      },
+      "elapsedMs": 1091,
+      "candidatePages": [
+        1,
+        21,
+        23,
+        3,
+        25,
+        22,
+        5,
+        24,
+        2,
+        4,
+        31,
+        34
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 2
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-compare-2-11",
+      "kind": "holdout_comparison",
+      "expectedPages": [
+        6,
+        51
+      ],
+      "stages": {
+        "vector": [
+          6,
+          8,
+          7,
+          10,
+          9
+        ],
+        "keyword": [
+          51,
+          6,
+          53,
+          55,
+          52
+        ],
+        "rrf": [
+          6,
+          51,
+          8,
+          53,
+          55
+        ],
+        "final": [
+          6,
+          51,
+          8,
+          53,
+          55
+        ]
+      },
+      "elapsedMs": 711,
+      "candidatePages": [
+        6,
+        51,
+        8,
+        53,
+        55,
+        10,
+        7,
+        52,
+        9,
+        54,
+        71
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 2
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-compare-3-16",
+      "kind": "holdout_comparison",
+      "expectedPages": [
+        11,
+        76
+      ],
+      "stages": {
+        "vector": [
+          11,
+          12,
+          15,
+          13,
+          14
+        ],
+        "keyword": [
+          76,
+          79,
+          11,
+          77,
+          80
+        ],
+        "rrf": [
+          11,
+          76,
+          12,
+          13,
+          15
+        ],
+        "final": [
+          11,
+          76,
+          12,
+          13,
+          15
+        ]
+      },
+      "elapsedMs": 902,
+      "candidatePages": [
+        11,
+        76,
+        12,
+        13,
+        15,
+        79,
+        80,
+        77,
+        14
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 2
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-compare-7-6",
+      "kind": "holdout_comparison",
+      "expectedPages": [
+        31,
+        26
+      ],
+      "stages": {
+        "vector": [
+          31,
+          33,
+          35,
+          32,
+          34
+        ],
+        "keyword": [
+          31,
+          33,
+          35,
+          32,
+          34
+        ],
+        "rrf": [
+          31,
+          33,
+          35,
+          32,
+          34
+        ],
+        "final": [
+          31,
+          33,
+          35,
+          32,
+          34
+        ]
+      },
+      "elapsedMs": 753,
+      "candidatePages": [
+        31,
+        33,
+        35,
+        32,
+        34,
+        26,
+        28
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-compare-19-20",
+      "kind": "holdout_comparison",
+      "expectedPages": [
+        91,
+        96
+      ],
+      "stages": {
+        "vector": [
+          98,
+          96,
+          93,
+          97,
+          99
+        ],
+        "keyword": [
+          96,
+          98,
+          97,
+          99,
+          100
+        ],
+        "rrf": [
+          91,
+          96,
+          99,
+          98,
+          97
+        ],
+        "final": [
+          91,
+          96,
+          98,
+          99,
+          93
+        ]
+      },
+      "elapsedMs": 1026,
+      "candidatePages": [
+        91,
+        96,
+        99,
+        98,
+        97,
+        93,
+        100,
+        95,
+        94,
+        92
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true,
+        "needsClarification": false,
+        "coverageGroupCount": 2
+      },
+      "status": "grounded",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-1",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          92,
+          8,
+          10,
+          9,
+          7
+        ],
+        "keyword": [
+          92,
+          81,
+          57,
+          22,
+          72
+        ],
+        "rrf": [
+          92,
+          7,
+          17,
+          42,
+          27
+        ],
+        "final": []
+      },
+      "elapsedMs": 379,
+      "candidatePages": [
+        92,
+        7,
+        17,
+        42,
+        27,
+        62,
+        8,
+        81,
+        57,
+        10,
+        9,
+        22,
+        72,
+        49,
+        52
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-2",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          57,
+          58,
+          24,
+          9,
+          21
+        ],
+        "keyword": [
+          63,
+          48
+        ],
+        "rrf": [
+          57,
+          63,
+          58,
+          48,
+          24
+        ],
+        "final": []
+      },
+      "elapsedMs": 426,
+      "candidatePages": [
+        57,
+        63,
+        58,
+        48,
+        24,
+        9,
+        21,
+        43,
+        6,
+        41,
+        7,
+        72,
+        10,
+        59,
+        53
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-3",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          27,
+          32,
+          29,
+          34,
+          87
+        ],
+        "keyword": [
+          59,
+          94,
+          24,
+          69,
+          74
+        ],
+        "rrf": [
+          24,
+          29,
+          34,
+          59,
+          9
+        ],
+        "final": []
+      },
+      "elapsedMs": 190,
+      "candidatePages": [
+        24,
+        29,
+        34,
+        59,
+        9,
+        89,
+        14,
+        27,
+        94,
+        32,
+        69,
+        74,
+        87,
+        19,
+        52
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-4",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          59,
+          35,
+          60,
+          75,
+          32
+        ],
+        "keyword": [
+          59,
+          60
+        ],
+        "rrf": [
+          59,
+          60,
+          35,
+          75,
+          32
+        ],
+        "final": []
+      },
+      "elapsedMs": 188,
+      "candidatePages": [
+        59,
+        60,
+        35,
+        75,
+        32,
+        74,
+        31,
+        72,
+        57,
+        20,
+        52,
+        33,
+        2,
+        5,
+        22
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-5",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          81,
+          82,
+          85,
+          24,
+          84
+        ],
+        "keyword": [],
+        "rrf": [
+          81,
+          82,
+          85,
+          24,
+          84
+        ],
+        "final": []
+      },
+      "elapsedMs": 294,
+      "candidatePages": [
+        81,
+        82,
+        85,
+        24,
+        84,
+        62,
+        44,
+        83,
+        59,
+        39,
+        72,
+        5,
+        60,
+        29,
+        9
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-6",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          10,
+          8,
+          7,
+          45,
+          42
+        ],
+        "keyword": [
+          62,
+          67,
+          63,
+          61,
+          29
+        ],
+        "rrf": [
+          62,
+          10,
+          8,
+          67,
+          7
+        ],
+        "final": []
+      },
+      "elapsedMs": 943,
+      "candidatePages": [
+        62,
+        10,
+        8,
+        67,
+        7,
+        63,
+        61,
+        45,
+        29,
+        42,
+        9,
+        5,
+        64,
+        65,
+        83
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-7",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          72,
+          77,
+          52,
+          62,
+          54
+        ],
+        "keyword": [
+          62,
+          77,
+          76,
+          64,
+          98
+        ],
+        "rrf": [
+          77,
+          62,
+          72,
+          57,
+          52
+        ],
+        "final": []
+      },
+      "elapsedMs": 573,
+      "candidatePages": [
+        77,
+        62,
+        72,
+        57,
+        52,
+        64,
+        58,
+        67,
+        2,
+        66,
+        76,
+        54,
+        98,
+        92,
+        32
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-8",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          10,
+          6,
+          41,
+          43,
+          36
+        ],
+        "keyword": [
+          71,
+          39,
+          75,
+          38
+        ],
+        "rrf": [
+          38,
+          71,
+          10,
+          39,
+          6
+        ],
+        "final": []
+      },
+      "elapsedMs": 268,
+      "candidatePages": [
+        38,
+        71,
+        10,
+        39,
+        6,
+        75,
+        41,
+        43,
+        36,
+        42,
+        33,
+        8,
+        45,
+        31,
+        50
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-9",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          33,
+          34,
+          10,
+          9,
+          5
+        ],
+        "keyword": [
+          64,
+          39
+        ],
+        "rrf": [
+          39,
+          33,
+          64,
+          34,
+          10
+        ],
+        "final": []
+      },
+      "elapsedMs": 638,
+      "candidatePages": [
+        39,
+        33,
+        64,
+        34,
+        10,
+        9,
+        5,
+        8,
+        35,
+        7,
+        29,
+        30,
+        31,
+        36,
+        20
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    },
+    {
+      "id": "holdout-negative-10",
+      "kind": "holdout_negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          18,
+          16,
+          17,
+          24,
+          92
+        ],
+        "keyword": [
+          92
+        ],
+        "rrf": [
+          92,
+          18,
+          16,
+          17,
+          24
+        ],
+        "final": []
+      },
+      "elapsedMs": 530,
+      "candidatePages": [
+        92,
+        18,
+        16,
+        17,
+        24,
+        21,
+        90,
+        87,
+        86,
+        88,
+        20,
+        89,
+        23,
+        78,
+        4
+      ],
+      "rerankReceived": false,
+      "plan": {
+        "ambiguous": false,
+        "multi": false,
+        "needsClarification": false,
+        "coverageGroupCount": 0
+      },
+      "status": "insufficient",
+      "citationValid": true
+    }
+  ]
+}

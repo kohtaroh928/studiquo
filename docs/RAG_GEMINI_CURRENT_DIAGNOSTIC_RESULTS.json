@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "availabilityProbe": {
+    "requestedModel": "gemini-3.6-flash",
+    "httpStatus": 200,
+    "outcome": "available",
+    "elapsedMs": 1832,
+    "modelVersion": "gemini-3.6-flash",
+    "usage": {
+      "prompt": 7,
+      "output": 1,
+      "thoughts": 93,
+      "total": 101
+    },
+    "error": null
+  },
+  "selectionPilot": {
+    "schemaVersion": 1,
+    "model": "gemini-3.6-flash",
+    "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+    "method": "Direct Gemini selection-only shadow. Fixed synthetic authorized candidates; not Cloudflare retrieval or final answer evaluation. Single sequential pass, max20 calls, no retry, 5sec per request; stop on HTTP401/403/429/5xx. Model3.6, temperature1, minimal thinking. Labels never sent. No product integration.",
+    "summary": {
+      "plannedCases": 4,
+      "attempts": 1,
+      "notAttempted": 3,
+      "stoppedEarly": true,
+      "validProposals": 0,
+      "fallbacks": 1,
+      "validButMissingRequired": 0,
+      "validRequiredFacts": 0,
+      "validTotalRequiredFacts": 0,
+      "allRequiredFacts": 2,
+      "allTotalRequiredFacts": 2,
+      "baselineReferences": 5,
+      "shadowReferences": 5,
+      "medianMs": 2289,
+      "minMs": 2289,
+      "maxMs": 2289,
+      "usageObservedCalls": 0,
+      "usageTotals": {
+        "prompt": 0,
+        "output": 0,
+        "thoughts": 0,
+        "total": 0,
+        "cached": 0
+      },
+      "estimatedCostUSD": null,
+      "costNote": "Runner did not compute cost. No usage for failed selection request; billing is unknown. Current3.6 price verified separately for successful availability probe."
+    },
+    "cases": [
+      {
+        "id": "biology-comparison",
+        "split": "dev",
+        "status": "fallback",
+        "reason": "provider_failure",
+        "elapsedMs": 2289,
+        "provider": {
+          "requestedModel": "gemini-3.6-flash",
+          "httpStatus": 503,
+          "finishReason": null,
+          "modelVersion": null,
+          "usage": null
+        },
+        "productionEligible": false,
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 3,
+          "offIntentFacts": 0
+        },
+        "shadow": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3",
+            "r4",
+            "r5"
+          ],
+          "pages": [
+            3,
+            5,
+            1,
+            2,
+            4
+          ],
+          "referenceCount": 5,
+          "distinctSources": 1,
+          "textCharacters": 1925,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 3,
+          "offIntentFacts": 0
+        }
+      }
+    ]
+  },
+  "cost": {
+    "observedUsagePaidEquivalentUSD": 0.00035775,
+    "appliesTo": "successful availability probe only",
+    "inputUSDPerMillion": 0.75,
+    "outputIncludingThinkingUSDPerMillion": 3.75,
+    "pricingAsOf": "2026-10-10",
+    "pricingSource": "https://ai.google.dev/gemini-api/docs/pricing",
+    "actualInvoiceKnown": false,
+    "failedSelectionRequestCostKnown": false,
+    "note": "Paid standard equivalent, not invoice; API account billing tier not inspected. Timeout/error may be billable."
+  },
+  "limitations": [
+    "Two requests total: one availability probe, one selection request; the remaining three planned selection cases were not sent.",
+    "No final answer, Cloudflare retrieval or real user material evaluation. No product behavior changes.",
+    "Successful short probe does not establish why the preceding failures occurred or prove sustained service availability."
+  ]
+}

@@ -1,0 +1,446 @@
+{
+  "date": "2026-10-13",
+  "syntheticOnly": true,
+  "blindHoldout": false,
+  "queryRephrasedAfterLocalFeedback": true,
+  "originalQueryHash": "93fc51b58e07908573799af63f765cdcc227c5b65fef0f8501cdd0ffa2a9fde0",
+  "productionPolicyChanged": false,
+  "runs": [
+    {
+      "run": "01",
+      "completed": 6,
+      "dispatches": 6,
+      "rows": [
+        {
+          "id": "learning-print-batch-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 5372,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2768,
+                "output": 344,
+                "reasoning": 209,
+                "total": 3112
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "c5623c141c5ac5919cd3dc22ecc76a663adc52eb16a76e892214688629c7ad12",
+          "referenceHash": "dd99e06aba42706bfa9649f897651d8bd097e8c399139ab6f00ba4a2e36a1464",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 5383
+        },
+        {
+          "id": "learning-print-batch-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 3791,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2612,
+                "output": 286,
+                "reasoning": 203,
+                "total": 2898
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "c5623c141c5ac5919cd3dc22ecc76a663adc52eb16a76e892214688629c7ad12",
+          "referenceHash": "dd99e06aba42706bfa9649f897651d8bd097e8c399139ab6f00ba4a2e36a1464",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 3796
+        },
+        {
+          "id": "learning-heat-symbolic-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 4603,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2820,
+                "output": 350,
+                "reasoning": 212,
+                "total": 3170
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "d59ba522ce660a3b169e5ec7ca082eb65fddd7081d956908811b29b3521653af",
+          "referenceHash": "e5de03eecdb5b232f2620e55b3e9e5920224c2ad4aa1bf7c45c636d39806b472",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 4606
+        },
+        {
+          "id": "learning-heat-symbolic-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 3437,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2664,
+                "output": 270,
+                "reasoning": 142,
+                "total": 2934
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "d59ba522ce660a3b169e5ec7ca082eb65fddd7081d956908811b29b3521653af",
+          "referenceHash": "e5de03eecdb5b232f2620e55b3e9e5920224c2ad4aa1bf7c45c636d39806b472",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 3442
+        },
+        {
+          "id": "learning-studio-injection-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 2294,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2824,
+                "output": 133,
+                "reasoning": 64,
+                "total": 2957
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "38314a73fa0d327407edcaec7f7c8f624700f8d5c669ae591c0490e33f3ad4e3",
+          "referenceHash": "f8cb5c766ee89e07d6658df4914f475f898a6dfb3d38477d03f1b73412dacf9b",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 2297
+        },
+        {
+          "id": "learning-studio-injection-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 2939,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2668,
+                "output": 176,
+                "reasoning": 98,
+                "total": 2844
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "38314a73fa0d327407edcaec7f7c8f624700f8d5c669ae591c0490e33f3ad4e3",
+          "referenceHash": "f8cb5c766ee89e07d6658df4914f475f898a6dfb3d38477d03f1b73412dacf9b",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 2941
+        }
+      ]
+    },
+    {
+      "run": "02",
+      "completed": 6,
+      "dispatches": 6,
+      "rows": [
+        {
+          "id": "learning-print-batch-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 2354,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2759,
+                "output": 207,
+                "reasoning": 101,
+                "total": 2966
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "c5623c141c5ac5919cd3dc22ecc76a663adc52eb16a76e892214688629c7ad12",
+          "referenceHash": "b01215eba948498d0de89b7ac44a61f4684f882a51c2b04107df8fc484debd08",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 2368
+        },
+        {
+          "id": "learning-print-batch-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 3775,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2603,
+                "output": 202,
+                "reasoning": 113,
+                "total": 2805
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "c5623c141c5ac5919cd3dc22ecc76a663adc52eb16a76e892214688629c7ad12",
+          "referenceHash": "b01215eba948498d0de89b7ac44a61f4684f882a51c2b04107df8fc484debd08",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 3787
+        },
+        {
+          "id": "learning-heat-symbolic-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 3945,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2816,
+                "output": 302,
+                "reasoning": 167,
+                "total": 3118
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "d59ba522ce660a3b169e5ec7ca082eb65fddd7081d956908811b29b3521653af",
+          "referenceHash": "9d9ba8715e55333386ae7090b27e82075bd513120ccaefdc30b2164625c43507",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 3950
+        },
+        {
+          "id": "learning-heat-symbolic-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 3459,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2660,
+                "output": 313,
+                "reasoning": 189,
+                "total": 2973
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "d59ba522ce660a3b169e5ec7ca082eb65fddd7081d956908811b29b3521653af",
+          "referenceHash": "9d9ba8715e55333386ae7090b27e82075bd513120ccaefdc30b2164625c43507",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 3466
+        },
+        {
+          "id": "learning-studio-injection-v4",
+          "style": "explain",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 1876,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2829,
+                "output": 126,
+                "reasoning": 51,
+                "total": 2955
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "38314a73fa0d327407edcaec7f7c8f624700f8d5c669ae591c0490e33f3ad4e3",
+          "referenceHash": "23368cd3b9fec9507c7592f886c9c6d8dbac87f244016c1299f7514298b56a41",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 1885
+        },
+        {
+          "id": "learning-studio-injection-v4",
+          "style": "source_only",
+          "checks": {
+            "transport": true,
+            "generationComplete": true,
+            "retrievalStatus": true,
+            "citationPages": true,
+            "citationIdentity": true,
+            "requiredFacts": null,
+            "forbiddenClaims": null
+          },
+          "calls": [
+            {
+              "httpStatus": 200,
+              "elapsedMs": 2137,
+              "requestedModel": "gpt-6-luna",
+              "returnedModel": "gpt-6-luna",
+              "completionStatus": "completed",
+              "usage": {
+                "input": 2673,
+                "output": 130,
+                "reasoning": 53,
+                "total": 2803
+              },
+              "error": null
+            }
+          ],
+          "inputHash": "38314a73fa0d327407edcaec7f7c8f624700f8d5c669ae591c0490e33f3ad4e3",
+          "referenceHash": "23368cd3b9fec9507c7592f886c9c6d8dbac87f244016c1299f7514298b56a41",
+          "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+          "elapsedMs": 2145
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input": 32696,
+    "output": 2839,
+    "reasoning": 1602,
+    "total": 35535
+  },
+  "latencyMs": {
+    "min": 1876,
+    "max": 5372,
+    "mean": 3331.8333333333335
+  },
+  "estimatedUSD": 0.004689100000000001,
+  "billingConfirmed": false,
+  "tests": {
+    "target": 31,
+    "allWorker": 1190,
+    "independent": 31
+  },
+  "genericAccuracy": null,
+  "findings": {
+    "heatConditionPresent": 1,
+    "heatAnswers": 4,
+    "originalQueryFalseInsufficientUnfixed": true,
+    "printFirstExplainUnlabeledTaxFormula": true
+  },
+  "review": "Codex + independent AI reviewer; 8 target rubric matches and 4 answers with unresolved issues; not generic accuracy"
+}

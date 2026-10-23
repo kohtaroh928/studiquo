@@ -1,0 +1,433 @@
+{
+  "version": 1,
+  "taxonomy": "task-plan-v2-20261015",
+  "date": "2026-10-15",
+  "syntheticOnly": true,
+  "split": "separate-development",
+  "humanReview": "pending",
+  "independentSpanReview": "pending",
+  "modelEvaluated": false,
+  "sourceDraftHash": "da62542b60cc32a348faad176a71bc11266829e9220d1d5659561cc026d2bf43",
+  "annotationPolicy": "representative exact annotations, not exhaustive equivalent spans; semantic alternatives require independent review",
+  "cases": [
+    {
+      "id": "paired-values_by_subject",
+      "question": "展示室Pの定員と展示室Qの定員は、それぞれ何人ですか。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 5,
+            "end": 7,
+            "text": "定員"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "展示室P"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 21,
+              "end": 23,
+              "text": "何人"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 13,
+            "end": 15,
+            "text": "定員"
+          },
+          "subjects": [
+            {
+              "start": 8,
+              "end": 12,
+              "text": "展示室Q"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 21,
+              "end": 23,
+              "text": "何人"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-compare_same_attribute",
+      "question": "展示室Pと展示室Qの定員を比較してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "compare"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 10,
+            "end": 12,
+            "text": "定員"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "展示室P"
+            },
+            {
+              "start": 5,
+              "end": 9,
+              "text": "展示室Q"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 13,
+              "end": 15,
+              "text": "比較"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-different_attributes",
+      "question": "温室Rの開館時刻と入館料を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 4,
+            "end": 8,
+            "text": "開館時刻"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "温室R"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 13,
+              "end": 20,
+              "text": "教えてください"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 9,
+            "end": 12,
+            "text": "入館料"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "温室R"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 13,
+              "end": 20,
+              "text": "教えてください"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-method_not_execution",
+      "question": "施設どうしの入館料を比較する方法を説明してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "explain"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 6,
+            "end": 16,
+            "text": "入館料を比較する方法"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 2,
+              "text": "施設"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 17,
+              "end": 19,
+              "text": "説明"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-conditioned_values",
+      "question": "通常時と長期休業中の返却期限を、それぞれ教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 10,
+            "end": 14,
+            "text": "返却期限"
+          },
+          "subjects": [],
+          "conditions": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "通常時"
+            }
+          ],
+          "requestSpans": [
+            {
+              "start": 20,
+              "end": 27,
+              "text": "教えてください"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 10,
+            "end": 14,
+            "text": "返却期限"
+          },
+          "subjects": [],
+          "conditions": [
+            {
+              "start": 4,
+              "end": 9,
+              "text": "長期休業中"
+            }
+          ],
+          "requestSpans": [
+            {
+              "start": 20,
+              "end": 27,
+              "text": "教えてください"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-conditions_and_exception",
+      "question": "営業時間が変更される条件と、臨時休館の例外を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "conditions"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 5,
+            "end": 12,
+            "text": "変更される条件"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "営業時間"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 22,
+              "end": 29,
+              "text": "教えてください"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "conditions"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 19,
+            "end": 21,
+            "text": "例外"
+          },
+          "subjects": [
+            {
+              "start": 14,
+              "end": 18,
+              "text": "臨時休館"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 22,
+              "end": 29,
+              "text": "教えてください"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-joint_summary",
+      "question": "案内Jと案内Kの利用規則をまとめて要約してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "summarize"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 8,
+            "end": 12,
+            "text": "利用規則"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "案内J"
+            },
+            {
+              "start": 4,
+              "end": 7,
+              "text": "案内K"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 17,
+              "end": 19,
+              "text": "要約"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-two_comparison_attributes",
+      "question": "案内Jと案内Kの利用規則について、相違点と共通点を比較してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "compare"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 17,
+            "end": 20,
+            "text": "相違点"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "案内J"
+            },
+            {
+              "start": 4,
+              "end": 7,
+              "text": "案内K"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 25,
+              "end": 27,
+              "text": "比較"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "compare"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 21,
+            "end": 24,
+            "text": "共通点"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 3,
+              "text": "案内J"
+            },
+            {
+              "start": 4,
+              "end": 7,
+              "text": "案内K"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 25,
+              "end": 27,
+              "text": "比較"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

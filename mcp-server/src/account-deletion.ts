@@ -1,3 +1,4 @@
+import { deleteAccountRAG } from "./rag/index.ts";
 import { sha256Hex } from "./auth.ts";
 import { queueRevenueCatDeletion } from "./privacy-retention.ts";
 import { roomMembershipKey } from "./document-room-store.ts";
@@ -260,6 +261,8 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
   const activeAliases = await markAliases(env, canonicalSub, identityKeys, { status: "deleting", of: canonicalSub });
   await deleteKeys(env, ownedSessionKeys);
+  // Independent of RAG_ENABLED: disabling retrieval must never disable erasure.
+  for (const identity of identityKeys) await deleteAccountRAG(env, identity);
 
   const accountKeys = [];
   for (const identity of identities) {

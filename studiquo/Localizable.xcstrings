@@ -1,6 +1,227 @@
 {
   "sourceLanguage" : "ja",
   "strings" : {
+    "状況確認を停止" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop checking status"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状況確認を停止"
+          }
+        }
+      }
+    },
+    "この資料は大きいため、検索への反映を確認できませんでした。登録済みデータは保持されています。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This document is too large to verify search availability. Its registered data has been retained."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この資料は大きいため、検索への反映を確認できませんでした。登録済みデータは保持されています。"
+          }
+        }
+      }
+    },
+    "登録状況を確認してください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the registration status."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録状況を確認してください。"
+          }
+        }
+      }
+    },
+    "登録中です。本文の読み取りと送信を行っています。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registering: reading and uploading the document text."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録中です。本文の読み取りと送信を行っています。"
+          }
+        }
+      }
+    },
+    "検索への反映待ちです。まだ資料が検索で見つからない場合があります。時間を置いて再確認できます。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for search availability. The document may not appear in search yet. You can check again later."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索への反映待ちです。まだ資料が検索で見つからない場合があります。時間を置いて再確認できます。"
+          }
+        }
+      }
+    },
+    "検索可能です。検索への反映を確認しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available for search. Search availability has been confirmed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索可能です。検索への反映を確認しました。"
+          }
+        }
+      }
+    },
+    "処理に失敗しました。登録中の失敗は更新を、状況確認の失敗は再確認をお試しください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The operation failed. Retry the update if registration failed, or check again if the status check failed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "処理に失敗しました。登録中の失敗は更新を、状況確認の失敗は再確認をお試しください。"
+          }
+        }
+      }
+    },
+    "この資料は未登録、または検索データが削除されています。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This document has not been registered, or its search data has been deleted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この資料は未登録、または検索データが削除されています。"
+          }
+        }
+      }
+    },
+    "検索できる本文がありません。資料の文字認識を確認してください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No searchable text was found. Check the document’s text recognition."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索できる本文がありません。資料の文字認識を確認してください。"
+          }
+        }
+      }
+    },
+    "アカウントが変更されたため処理を中止しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The operation stopped because the account changed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アカウントが変更されたため処理を中止しました。"
+          }
+        }
+      }
+    },
+    "登録状況を再確認" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check registration status again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録状況を再確認"
+          }
+        }
+      }
+    },
+    "%d / %dページを送信しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploaded %d of %d pages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d / %dページを送信しました。"
+          }
+        }
+      }
+    },
+    "%dページは文字認識や数式の確認が必要です。出典の原本で確認してください。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text recognition or formulas need review on %d pages. Check the original source."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%dページは文字認識や数式の確認が必要です。出典の原本で確認してください。"
+          }
+        }
+      }
+    },
     " ・ 逆向き" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -76,6 +297,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · %lldページ" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Page %lld"
           }
         }
       }
@@ -2273,6 +2505,17 @@
       "comment" : "A message displayed when the user is being prompted to delete their local data.",
       "isCommentAutoGenerated" : true
     },
+    "この範囲で検索する" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search within this scope"
+          }
+        }
+      }
+    },
     "この解説を文書として残しますか？" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2936,7 +3179,6 @@
       }
     },
     "ノート" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3788,6 +4030,17 @@
         }
       }
     },
+    "ページ %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page %lld"
+          }
+        }
+      }
+    },
     "ページがありません" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3829,6 +4082,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paste onto Page"
+          }
+        }
+      }
+    },
+    "ページのテキストが送信上限を超えています。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page text exceeds the upload limit."
           }
         }
       }
@@ -4231,7 +4495,6 @@
       }
     },
     "ライブラリ" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4944,6 +5207,17 @@
       "comment" : "The title of the text editor in the report issue sheet.",
       "isCommentAutoGenerated" : true
     },
+    "何についての質問か、具体的に教えてください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please specify what your question is about."
+          }
+        }
+      }
+    },
     "何を手伝いましょうか？" : {
       "localizations" : {
         "en" : {
@@ -5173,6 +5447,28 @@
         }
       }
     },
+    "保存済みの検索データを削除" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete stored search data"
+          }
+        }
+      }
+    },
+    "保護されたノートは検索用に送信できません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protected notebooks cannot be sent for document search."
+          }
+        }
+      }
+    },
     "保護を解除" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5388,6 +5684,9 @@
         }
       }
     },
+    "公開日：2026年10月7日" : {
+
+    },
     "共同編集を開始" : {
       "comment" : "A button label that says \"Start Collaborative Editing\".",
       "isCommentAutoGenerated" : true
@@ -5511,6 +5810,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "写真を背景に設定"
+          }
+        }
+      }
+    },
+    "出典" : {
+      "comment" : "A label for the source of a document.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sources"
           }
         }
       }
@@ -5698,6 +6009,17 @@
         }
       }
     },
+    "削除を予約しました。通信回復後に再試行します。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletion queued. It will be retried when you are online."
+          }
+        }
+      }
+    },
     "創価大学" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5828,6 +6150,17 @@
     "却下済み" : {
 
     },
+    "参考資料を取得しました。回答と出典を確認してください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference material was found. Check the answer and its sources."
+          }
+        }
+      }
+    },
     "友達がまだいません。「友達」画面から追加してください。" : {
 
     },
@@ -5846,6 +6179,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "取り込み中 %1$@/%2$@"
+          }
+        }
+      }
+    },
+    "取得した抜粋で必要な情報を確認できませんでした。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The retrieved excerpts did not provide the information needed."
           }
         }
       }
@@ -8046,6 +8390,17 @@
       "comment" : "A contact form for users to submit questions or requests about the privacy policy.",
       "isCommentAutoGenerated" : true
     },
+    "本文を送信して検索用データを更新" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send document text to update search data"
+          }
+        }
+      }
+    },
     "本人確認のため、%@にコードを送りました。コードを入力してください。" : {
       "comment" : "A label at the top of the passkey enrollment view that instructs the user to enter a 6-digit code that was sent to their email address. The argument is the email address of the user.",
       "isCommentAutoGenerated" : true
@@ -8274,6 +8629,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "検索、またはURLを入力"
+          }
+        }
+      }
+    },
+    "検索データを削除しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search data deleted."
+          }
+        }
+      }
+    },
+    "検索データを更新しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search data updated."
+          }
+        }
+      }
+    },
+    "検索データを更新しました。%dページは文字認識や数式の確認が必要です。出典の原本で確認してください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search data updated. %d pages need review for text recognition or formulas. Check the original cited pages."
+          }
+        }
+      }
+    },
+    "検索範囲" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search scope"
+          }
+        }
+      }
+    },
+    "検索範囲を設定しました。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search scope updated."
           }
         }
       }
@@ -8635,6 +9045,10 @@
     },
     "現在のプラン" : {
       "comment" : "A heading that describes the user's current subscription plan.",
+      "isCommentAutoGenerated" : true
+    },
+    "現在のページ" : {
+      "comment" : "A label for the current page in a notebook.",
       "isCommentAutoGenerated" : true
     },
     "現在のページを削除" : {
@@ -9266,6 +9680,17 @@
         }
       }
     },
+    "範囲" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scope"
+          }
+        }
+      }
+    },
     "紫" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9758,6 +10183,18 @@
       "comment" : "A description of the error that occurs when the user",
       "isCommentAutoGenerated" : true
     },
+    "許可を取り消しても保存済みの検索データは残ります。下の削除操作で資料ごとに削除できます。" : {
+      "comment" : "A description of the search data that can be deleted.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revoking permission does not remove stored search data. Use the delete action below to remove it for each document."
+          }
+        }
+      }
+    },
     "許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がOpenAIへ送信されます。許可はいつでも取り消せます。" : {
       "comment" : "The footer of the section for privacy settings.",
       "isCommentAutoGenerated" : true
@@ -9944,6 +10381,107 @@
         }
       }
     },
+    "資料を選択" : {
+      "comment" : "A placeholder text for a picker that lets the user select a note.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a document"
+          }
+        }
+      }
+    },
+    "資料検索" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document search"
+          }
+        }
+      }
+    },
+    "資料検索のクラウド送信" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud processing for document search"
+          }
+        }
+      }
+    },
+    "資料検索の保存・AI処理を許可する" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow storage and AI processing for document search"
+          }
+        }
+      }
+    },
+    "資料検索の保存データと許可" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document search storage and permission"
+          }
+        }
+      }
+    },
+    "資料検索は現在利用できません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document search is currently unavailable."
+          }
+        }
+      }
+    },
+    "資料検索を使用" : {
+      "comment" : "A button label that opens a search for the current",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use document search"
+          }
+        }
+      }
+    },
+    "資料検索を利用できないため、通常のAI回答です。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Material search is unavailable. This is a regular AI answer."
+          }
+        }
+      }
+    },
+    "質問の一部についてのみ参考資料が見つかりました。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference material was found for only part of your question."
+          }
+        }
+      }
+    },
     "購入はApple IDに設定したお支払い方法で行われます。サブスクリプションは解約するまで自動更新され、Apple IDの設定からいつでも管理できます。" : {
       "comment" : "A description of how users can manage their subscription plans.",
       "isCommentAutoGenerated" : true
@@ -10066,6 +10604,17 @@
     },
     "通報の内容は運営側の確認用に記録されます。相手には通知されません。" : {
 
+    },
+    "通常のAIチャットに戻す" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return to regular AI chat"
+          }
+        }
+      }
     },
     "通知" : {
       "localizations" : {
@@ -10327,6 +10876,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選択"
+          }
+        }
+      }
+    },
+    "選択したノート・PDFの本文、文字認識した本文、タイトル、ページ番号をCloudflareへ送信します。CloudflareのAIで検索用データを作成し、質問との関連度を評価します。本文と検索用データは資料の検索データ削除またはアカウント削除まで保存されます。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索で見つかった抜粋は回答のためGoogle Geminiへ送信します。保護されたノートは対象外です。" : {
+      "comment" : "A description of the data that is sent to Cloudflare for search purposes.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The text, recognized text, title, and page numbers of selected notebooks and PDFs are sent to Cloudflare. Cloudflare AI creates search data and evaluates relevance to your question. Text and search data are stored until you delete the document’s search data or your account. Search questions are also sent to Cloudflare; an ambiguous question may use your previous question as well. Retrieved excerpts are sent to Google Gemini to generate an answer. Protected notebooks are excluded."
+          }
+        }
+      }
+    },
+    "選択した資料の検索データ" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search data for the selected document"
           }
         }
       }

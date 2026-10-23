@@ -61,6 +61,8 @@ struct AIChatPanel: View {
     /// Identifies this on-screen instance to the store's "is anyone looking"
     /// tracking. One per instance, so two panels cannot cancel each other.
     @State private var surfaceID = UUID()
+    @State private var ragAvailable = false
+    @State private var showsRAG = false
     /// The age band picked on the consent card (nothing preselected).
     @State private var consentAge: AIAgeBand?
     @State private var consentUnder13 = false
@@ -86,6 +88,22 @@ struct AIChatPanel: View {
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop
         )
+        .safeAreaInset(edge: .top) {
+            if ragAvailable {
+                HStack {
+                    Button("資料検索", systemImage: "doc.text.magnifyingglass") { showsRAG = true }
+                    Spacer()
+                    if store.ragScope != nil { Text("資料検索を使用").font(.caption) }
+                }.padding(.horizontal)
+            }
+        }
+        .sheet(isPresented: $showsRAG) {
+            NavigationStack {
+                RAGControlsView(store: store)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { showsRAG = false } } }
+            }
+        }
+        .task { ragAvailable = await RAGIndexingService().isEnabled() }
         .overlay {
             if store.pendingConsentSend != nil {
                 consentCard
@@ -1212,6 +1230,8 @@ struct AIChatBubble: View {
                         }
                     }
                 }
+            RAGCitationLinks(citations: message.ragCitations)
+            RAGRetrievalStatusNotice(status: message.ragStatus)
         } else {
             HStack(alignment: .top, spacing: 8) {
                 Spacer(minLength: 40)

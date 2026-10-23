@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-16",
+  "scope": "offline_subject_role_response_binding_and_paired_high_design",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-task-planner-response.mjs": "59293ecd9c6ce9774103319be274d78e225d5a6b067e53beaa452c0b6047b802",
+    "mcp-server/src/rag-subject-role-response.test.js": "785f60adc2ec76a3381147aa2ebf34e4a424098f2c5365121d97a3b2b5c97cc0",
+    "docs/RAG_SUBJECT_ROLE_PAIRED_DESIGN.md": "d2b003f6d85f4f39e32bc680124342c890f0465fe5164b88a12f3d1d3fdea775",
+    "docs/RAG_SUBJECT_ROLE_PAIRED_TEST_MATRIX.md": "b1a2ff607409aefc4eeea5e18f7432f2852489ab2f6063d8a52633a62a5723c1"
+  },
+  "tests": {
+    "targetPassed": 8,
+    "workerPassed": 1556,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-subject-role-response-all.log"
+  },
+  "independentCodeReview": "passed_8",
+  "independentPlannerDesignReview": "passed_after_submitted_packet_arm_binding_fix",
+  "independentSecurityDesignReview": "passed_final_packet_binding",
+  "unresolvedHighMedium": 0,
+  "plannedRegressionCases": 21,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "paidRunnerImplemented": false,
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "modelQualityImprovement": "not_evaluated",
+  "requestBindingAttestsUpstreamExecution": false,
+  "plannedPairs": 12,
+  "plannedDispatches": 24,
+  "plannedStageRequests": [
+    2,
+    6,
+    8,
+    8
+  ],
+  "plannedReservedMicroUSD": 196608,
+  "reservationIsBillingCap": false,
+  "baselineDefiniteSemanticMismatchAllowedForComparison": true,
+  "technicalFailureOrCandidateMismatchStops": true,
+  "frozenCandidateSourceAndStopJournalHashesUnchanged": true,
+  "next": "paired_24job_manifest_journal_replay_then_neutral_packet_and_review_gate_offline"
+}

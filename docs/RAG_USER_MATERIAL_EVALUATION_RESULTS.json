@@ -1,0 +1,68 @@
+{
+  "input": {
+    "pageCount": 114,
+    "bytes": 5768451,
+    "sha256": "4342ca1d19f6a5c6a0b425a3703b6d9d35c4ded668944565fa55312dd946eb69",
+    "nativeTextPages": 114,
+    "classification": "Digital slide PDF with native text; not a confirmed physical paper scan"
+  },
+  "localMac": {
+    "productionOCRTotalMs": 14309,
+    "productionOCRMedianPageMs": 120.0,
+    "pagesProcessed": 114,
+    "ocrFailures": 0,
+    "emptyRawOCRPages": 0,
+    "nativePreservedPages": 114,
+    "reviewFlagPages": 99,
+    "supplementedPages": 4,
+    "supplementedLines": 6,
+    "rejectedLines": 580,
+    "repeatMergedTextIdenticalPages": 114,
+    "headingAgreement": {
+      "sampleCount": 6,
+      "matches": 6,
+      "method": "Native heading vs raw OCR; whitespace/NFKC comparison, not character accuracy"
+    },
+    "chunking": {
+      "chunkCount": 114,
+      "pageBoundaryChecks": 114,
+      "allChunksWithinPage": true,
+      "maximumApproximateTokens": 265,
+      "shortPageChunks": 114
+    },
+    "keyword": {
+      "queryCount": 6,
+      "scopeChecks": 24,
+      "top5Matches": 24,
+      "top20Matches": 24,
+      "method": "production chunker + production scoped BM25 SQL on local SQLite FTS5; heading queries from native text, not independent natural-language questions"
+    }
+  },
+  "physicalIPad": {
+    "status": "not_started_device_unavailable",
+    "privatePDFHarnessBuild": "passed",
+    "physicalPDFTestCount": 0,
+    "offline": "not_tested",
+    "cancellation": "not_tested",
+    "citationNavigation": "not_tested"
+  },
+  "remoteCalls": 0,
+  "sourceUnchanged": true,
+  "tests": {
+    "mathEvaluationMetrics": {
+      "passed": 12,
+      "failed": 0
+    },
+    "privateIOSHarness": "test build passed; execution pending"
+  },
+  "limitations": [
+    "No true physical scan coverage",
+    "No CER/WER or whole-document mathematical accuracy",
+    "No hybrid/vector/reranker/Gemini evaluation",
+    "No Cloudflare upload, source hash embedding idempotency or deletion evaluation",
+    "One source only; scoped lookup is not a multi-user or cross-folder isolation test",
+    "Short slides did not exercise multi-chunk overlap",
+    "OCR timings exclude render/native extraction/network",
+    "No physical iPad memory or execution measurements"
+  ]
+}

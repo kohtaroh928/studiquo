@@ -191,8 +191,8 @@ Workerはこの同期経路に参加しない。CloudKit障害とWorker障害は
 
 1. iOSの`WorkerAIProvider`が会話、画像、採点対象などをWorkerへ送る。
 2. WorkerがセッションとRevenueCat由来のプランを解決する。
-3. `RATE_COUNTER`と設定値で日次利用量を検証する。
-4. Workerが許可されたAI provider/modelへ要求を中継する。
+3. `RATE_COUNTER`でアカウント単位の分・5時間・日・月のクレジットと全体上限を検証する。
+4. Workerが許可されたOpenAI modelへResponses APIで要求を中継する。RAG使用時は各送信直前に資料を再認可する。
 5. チャットはSSE、採点・復習は構造化結果としてiOSへ返す。
 
 既定経路ではAIの秘密鍵はWorkerだけが持つ。
@@ -302,3 +302,30 @@ iOSのProduct ID、Entitlement ID、Workerのプラン対応は複数箇所で�
 - `docs/cloudkit-verification.md`: CloudKit設定と確認事項
 - `docs/ai-math-rendering.md`: AI数式表示の設計と公開順序
 - `mcp-server/README.md`: WorkerとMCPの利用・運用概要
+
+## ホームPDFの自動索引（ローカル実装、未公開）
+
+利用者が対象範囲と将来追加資料の扱いを明示的に許可すると、RAGLibrarySyncServiceがアプリ前景で保護されていないPDFを登録する。RAGControlClientはWorkerの同意・資格・世代API、RAGLibrarySyncStateはaccount/接続先別の本文を含まない再開情報を担当する。AIProvider→WorkerAIProvider→Workerの構成を維持し、回答生成はOpenAI Responses APIへ接続する。Notebook.ragDocumentIDは安定した資料ID、サーバー発行sourceIdは登録世代のIDで、両者の対応表から引用ページを開く。
+
+質問時は登録済みの現在のホーム資料sourceId一覧をWorkerへ渡す。accountKeyの必須制約に追加してD1の検索・候補hydrate・neighborを絞る。VectorizeのaccountKey prefilterは維持し、資料集合の絞り込みはD1側でも実施するため候補数が減る場合がある。共有ACLと端末間の即時失効は未実装。両RAG feature flagの初期値はfalseのまま。詳細はRAG_IPAD_AUTOMATIC_LIBRARY_REPORT.md。
+
+### RAGのOpenAI基盤接続（2026-10-13、ローカル）
+
+AIProvider → WorkerAIProvider → Worker → OpenAI Responses APIへ接続する。Standard既定はLuna、PlusはTerra/Solも、ProはAstraも選択可能。Retrievalは引き続きWorkers AI embedding/reranker・D1 FTS・Vectorizeを利用する。OpenAI呼出し前と各retry前に取得資料を再認可し、構造化出典を別SSEイベントで返す。新しいAI/RAG同意と年齢確認が必要。最新mainの全変更を取り込む作業ではなく、RAGと直接関連する基盤を限定反映した。公開・実回答品質は未確認。詳細はHYBRID_RAG.mdと今回の統合報告を参照。
+
+ローカル統合検証はWorker1,184件、iOSユニット1,624件、RAG UI3件成功。実OpenAI回答・実Cloudflare統合・実iPadは未確認。最新mainの本番課金基盤全体の統合は別工程。
+
+
+## 構造chunkの保存・出典接続（2026-10-17、ローカル検証）
+
+Doclingの本文chunkと保護要素を受け取るoptional structure入力、strict検証、D1 metadata_json保存、metadataを保持した移動・更新・削除、認可済み検索結果の出典投影を実装。既存pagesは互換、新形式は再分割しない。新形式のpage/context hashにmetadataをbindし、本文同一ならvector再利用、更新前proofは新IDで失効する。Python private exporterは全資料preflight後に最大5page/240KiBのbatchを生成し、送信しない。詳細と制約は [RAG_STRUCTURED_INGESTION.md](RAG_STRUCTURED_INGESTION.md)。DB migration0009は追加ファイルのみでremote未適用、deploy/iPad自動接続/座標ジャンプUIは未実施。図/未知/要OCR/要確認/空page/過大要素を含む資料は初版で全export拒否。tableセル本体はlocalのみ、検索はMarkdown。出典bboxは元要素全体、文字範囲は保存chunk全体で切り詰め後のexcerptを指さない。自動実行PAUSED維持。
+
+
+## iPadの構造索引・出典接続（2026-10-17、ローカル実装）
+
+原PDFのbytes hashでprepared Docling packageを検証し、新Notebookへ取り込む経路を実装。packageはNotebookのoptional属性に保持し、既存ロック暗号化に含める。編集時は失効し、manual/managed索引は現在の内容を使用する。Worker capabilityを確認し、構造batchを再分割せず送信する。出典metadataは会話保存と安全な補助表示へ接続し、source/page認可を維持する。精密bboxジャンプと原PDFの自動サーバー解析は未接続。iOS関連98成功・最終関連36成功（重複）、Worker1723成功。実機・iCloud移行・実資料精度の証明ではない。詳細: [RAG_IPAD_STRUCTURED_INTEGRATION.md](RAG_IPAD_STRUCTURED_INTEGRATION.md)。公開操作なし、自動スケジュールPAUSED。
+
+
+## Doclingのprivate Container実行境界（2026-10-17、未配備）
+
+独立services/docling-workerにprivate RPC/default flag false、単発jobの期限・取消・非本文状態・destroy後返却を実装。Container専用Python入口、ready前版/model検証、有限no-follow orphan cleanup、offline/nonroot Docker recipeとsample configを追加。既存MCP/iPadは未接続。JS28・Python関連60/既存49成功、型生成/bundleと合成2pageの実Nodefetch→Docling接続を確認（VMlifecycleはmock）。Docker不在でLinux build/実Cloudflare起動・隔離・停止は未検証。原PDF別同意/認可/admission・削除/予算・運用監視と依存監査を満たす前に有効化しない。DO stateはopaque ID/status/deadline/cleanup回数のみで本文なし、tombstone retentionは未設計。storage障害でpoison/alarm保存できない場合は運用停止確認が必要。詳細 [RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md](RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md)。公開操作・追加購入なし、自動スケジュールPAUSED。

@@ -21,3 +21,10 @@ docs/DEVELOPMENT_WORKFLOW.mdを正本とし、このファイルには重複し�
 上の「残タスク・未解決の問題の管理」は、Claudeだけが従う運用で、他のエージェントの
 共通ルールではないため、AGENTS.mdではなくここに置いています。
 -->
+
+
+## RAG開発の引き継ぎ
+
+RAGを引き継ぐ場合は、最初に`docs/RAG_CLAUDE_HANDOFF.md`を読む。再開用promptは`docs/RAG_RESUME_PROMPT.md`。RAG実装はGitHubのcodex/rag-wipへ保存済みだが、その後のローカル未コミット成果は別に確認する。mainには未統合。作業の区切り/交代前には同じ引き継ぎ資料を更新する。Codexと同じworktreeで同時編集しない。
+
+友人のプロンプト並行担当は`docs/RAG_COLLABORATION.md`と`collaboration/rag-prompt/START_PROMPT.md`を使い、自分のclone/branchと担当HANDOFFで作業する。統合担当用の再開promptを流用しない。

@@ -1,0 +1,483 @@
+{
+  "version": 1,
+  "date": "2026-10-16",
+  "syntheticOnly": true,
+  "split": "separate-development-role-preservation",
+  "questionFileHash": "8c4cf2e469624fed70222297bc56d8e838f0aa515c92c923dc6e9e25b12032e8",
+  "humanReview": "pending",
+  "modelEvaluated": false,
+  "annotationPolicy": "representative original spans; equivalent semantic labels and valid alternate occurrences require independent review; annotation equality is not semantic accuracy",
+  "cases": [
+    {
+      "id": "role-concept-conditions",
+      "question": "会員登録の成立条件と、代理申請の例外を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "conditions"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 5,
+            "end": 9,
+            "text": "成立条件"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "会員登録"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 19,
+              "end": 22,
+              "text": "教えて"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "conditions"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 16,
+            "end": 18,
+            "text": "例外"
+          },
+          "subjects": [
+            {
+              "start": 11,
+              "end": 15,
+              "text": "代理申請"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 19,
+              "end": 22,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-qualified-concept",
+      "question": "対象は施設利用補助です。年度途中の申請について、適用条件を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "conditions"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 24,
+            "end": 28,
+            "text": "適用条件"
+          },
+          "subjects": [
+            {
+              "start": 3,
+              "end": 9,
+              "text": "施設利用補助"
+            }
+          ],
+          "conditions": [
+            {
+              "start": 12,
+              "end": 19,
+              "text": "年度途中の申請"
+            }
+          ],
+          "requestSpans": [
+            {
+              "start": 29,
+              "end": 32,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-explain-across-units",
+      "question": "対象は温度計Rです。校正手順を説明してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "explain"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 10,
+            "end": 14,
+            "text": "校正手順"
+          },
+          "subjects": [
+            {
+              "start": 3,
+              "end": 7,
+              "text": "温度計R"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 15,
+              "end": 17,
+              "text": "説明"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-separate-attributes",
+      "question": "収納庫Jと計測器Kを調べています。収納庫Jの容積と計測器Kの質量を、それぞれ教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 22,
+            "end": 24,
+            "text": "容積"
+          },
+          "subjects": [
+            {
+              "start": 0,
+              "end": 4,
+              "text": "収納庫J"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 38,
+              "end": 41,
+              "text": "教えて"
+            }
+          ]
+        },
+        {
+          "id": "r2",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 30,
+            "end": 32,
+            "text": "質量"
+          },
+          "subjects": [
+            {
+              "start": 5,
+              "end": 9,
+              "text": "計測器K"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 38,
+              "end": 41,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-compare-with-condition",
+      "question": "評価対象は保存媒体Lと保存媒体Mです。高温環境での読取速度を比較してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "compare"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 25,
+            "end": 29,
+            "text": "読取速度"
+          },
+          "subjects": [
+            {
+              "start": 5,
+              "end": 10,
+              "text": "保存媒体L"
+            },
+            {
+              "start": 11,
+              "end": 16,
+              "text": "保存媒体M"
+            }
+          ],
+          "conditions": [
+            {
+              "start": 19,
+              "end": 23,
+              "text": "高温環境"
+            }
+          ],
+          "requestSpans": [
+            {
+              "start": 30,
+              "end": 32,
+              "text": "比較"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-calculate-with-operands",
+      "question": "対象は装置Nです。入力は12、出力は3です。変換比を計算してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "calculate"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 22,
+            "end": 25,
+            "text": "変換比"
+          },
+          "subjects": [
+            {
+              "start": 3,
+              "end": 6,
+              "text": "装置N"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 26,
+              "end": 28,
+              "text": "計算"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-recommend-with-distractors",
+      "question": "昨日は受付で筆記用具を借りました。候補は収納棚Pと収納棚Qです。設置場所が狭い場合の選択を勧めてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "recommend"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 42,
+            "end": 44,
+            "text": "選択"
+          },
+          "subjects": [
+            {
+              "start": 20,
+              "end": 24,
+              "text": "収納棚P"
+            },
+            {
+              "start": 25,
+              "end": 29,
+              "text": "収納棚Q"
+            }
+          ],
+          "conditions": [
+            {
+              "start": 32,
+              "end": 41,
+              "text": "設置場所が狭い場合"
+            }
+          ],
+          "requestSpans": [
+            {
+              "start": 45,
+              "end": 48,
+              "text": "勧めて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-joint-summary",
+      "question": "対象は手順書Dと手順書Eです。連絡手順をまとめて要約してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "summarize"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 15,
+            "end": 19,
+            "text": "連絡手順"
+          },
+          "subjects": [
+            {
+              "start": 3,
+              "end": 7,
+              "text": "手順書D"
+            },
+            {
+              "start": 8,
+              "end": 12,
+              "text": "手順書E"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 24,
+              "end": 26,
+              "text": "要約"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-unnamed-target",
+      "question": "所要時間を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 0,
+            "end": 4,
+            "text": "所要時間"
+          },
+          "subjects": [],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 5,
+              "end": 8,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-explicitly-unnamed",
+      "question": "固有の対象名はありません。所要時間だけを教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 13,
+            "end": 17,
+            "text": "所要時間"
+          },
+          "subjects": [],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 20,
+              "end": 23,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-operation-word-in-name",
+      "question": "対象は「比較室S」です。所在地を教えてください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "value"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 12,
+            "end": 15,
+            "text": "所在地"
+          },
+          "subjects": [
+            {
+              "start": 4,
+              "end": 8,
+              "text": "比較室S"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 16,
+              "end": 19,
+              "text": "教えて"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "role-background-not-target",
+      "question": "講義では方位磁針と地図を例にしました。質問の対象は水準器Tだけです。読み取り誤差を説明してください。",
+      "requirements": [
+        {
+          "id": "r1",
+          "allowedOperations": [
+            "explain"
+          ],
+          "interpretation": "declared",
+          "attribute": {
+            "start": 34,
+            "end": 40,
+            "text": "読み取り誤差"
+          },
+          "subjects": [
+            {
+              "start": 25,
+              "end": 29,
+              "text": "水準器T"
+            }
+          ],
+          "conditions": [],
+          "requestSpans": [
+            {
+              "start": 41,
+              "end": 43,
+              "text": "説明"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

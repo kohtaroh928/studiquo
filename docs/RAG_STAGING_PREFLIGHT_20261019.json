@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "dateJST": "2026-10-19",
+  "readOnly": true,
+  "workerName": "studiquo-mcp-staging",
+  "deployment": {
+    "id": "d24dbe37-bda9-4abe-9356-9499208be1bc",
+    "createdOn": "2026-10-18T05:42:42.254571Z",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "versions": [
+      {
+        "version_id": "660d8caa-f695-4dd0-bddb-4a4aad50995b",
+        "percentage": 100
+      }
+    ]
+  },
+  "version": {
+    "id": "660d8caa-f695-4dd0-bddb-4a4aad50995b",
+    "number": 83,
+    "createdOn": "2026-10-18T05:42:40.972099Z",
+    "runtime": {
+      "migration_tag": "v5-mcp-inbox",
+      "compatibility_date": "2026-08-27",
+      "compatibility_flags": [
+        "nodejs_compat"
+      ],
+      "usage_model": "standard"
+    }
+  },
+  "database": {
+    "name": "studiquo-admin-staging",
+    "id": "697ba80f-9a11-4b0b-b204-687737c8c245",
+    "appliedMigrationNames": [
+      "0001_admin_dashboard.sql",
+      "0002_issue_reports_and_app_errors.sql",
+      "0003_announcements.sql",
+      "0004_announcement_push.sql",
+      "0005_privacy_retention.sql",
+      "0006_legacy_standard_accounts.sql",
+      "0006_rag.sql",
+      "0007_moderation.sql",
+      "0007_rag_context.sql"
+    ],
+    "localUnapplied": [
+      "0008_rag_control.sql",
+      "0009_rag_metadata.sql",
+      "0010_rag_raw_pdf_consent.sql",
+      "0011_rag_pdf_intakes.sql",
+      "0012_rag_pdf_jobs.sql",
+      "0013_rag_pdf_job_recovery.sql"
+    ],
+    "remoteHistoryNotInBaseline": [
+      "0006_legacy_standard_accounts.sql",
+      "0007_moderation.sql"
+    ],
+    "schemaQueryRowsWritten": 0,
+    "historyQueryRowsWritten": 0
+  },
+  "runtimeBindings": {
+    "observedFlags": {
+      "AI_PROVIDER_APPROVED": "false"
+    },
+    "missingExpectedBindings": [
+      "AI",
+      "RAG_VECTORIZE",
+      "RATE_LIMIT_RAG_INDEX",
+      "RATE_LIMIT_RAG_SEARCH",
+      "RATE_LIMIT_RAG_PDF",
+      "DOCLING_PROCESSOR"
+    ]
+  },
+  "containers": {
+    "status": "ok",
+    "count": 0,
+    "ragApplications": []
+  },
+  "plan": {
+    "source": "Cloudflare dashboard Workers plans current-plan indicator",
+    "current": "Workers Paid",
+    "monthlyBaseUSD": 5,
+    "plusUsage": true,
+    "changed": false
+  },
+  "pricingReference": "https://developers.cloudflare.com/containers/platform/pricing/",
+  "containerCandidate": {
+    "type": "standard-1",
+    "vCPU": 0.5,
+    "memoryGiB": 4,
+    "diskGB": 8,
+    "maxInstances": 1
+  },
+  "limits": {
+    "billingCycleRemainingAllowanceChecked": false,
+    "accountSpecificContainerQuotaChecked": false,
+    "physicalBackupCreated": false,
+    "remoteSourceComparedToBaseline": false
+  },
+  "remoteMutationsPerformed": false
+}

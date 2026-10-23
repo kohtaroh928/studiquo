@@ -1,0 +1,225 @@
+{
+  "date": "2026-10-12",
+  "syntheticOnly": true,
+  "requestedModel": "gemini-3.5-flash",
+  "returnedModels": [
+    "gemini-3.6-flash"
+  ],
+  "planned": 6,
+  "dispatches": 6,
+  "completed": 5,
+  "completedPairs": 2,
+  "stopped": true,
+  "usageOfCompletedCalls": {
+    "prompt": 8736,
+    "output": 1066,
+    "thoughts": 4962,
+    "total": 14764
+  },
+  "failedCallUsage": "unknown",
+  "actualBilledCost": "not_verified",
+  "rows": [
+    {
+      "id": "learning-circuit",
+      "style": "source_only",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 9080,
+      "completed": true,
+      "inputHash": "506fdaefdab852711ae43aaaa29f31d1d684a12946f65f52abb5e7b6074f697c",
+      "referenceHash": "b086245ed879cd1651b89165ad77f83fb9152fd5b68b5aecc85be053446a7d74",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-circuit",
+      "style": "explain",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 9939,
+      "completed": true,
+      "inputHash": "506fdaefdab852711ae43aaaa29f31d1d684a12946f65f52abb5e7b6074f697c",
+      "referenceHash": "b086245ed879cd1651b89165ad77f83fb9152fd5b68b5aecc85be053446a7d74",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-average-transfer",
+      "style": "source_only",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 7262,
+      "completed": true,
+      "inputHash": "5f1b3f20c49d9a84d21bf6e4df28f883720aae7940816a8e3534066df0bcd2df",
+      "referenceHash": "342677a88ca821242edbb2dd6d6cfd342dd0e5f646c23c0a07426f5f2ee6f76f",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-average-transfer",
+      "style": "explain",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 7875,
+      "completed": true,
+      "inputHash": "5f1b3f20c49d9a84d21bf6e4df28f883720aae7940816a8e3534066df0bcd2df",
+      "referenceHash": "342677a88ca821242edbb2dd6d6cfd342dd0e5f646c23c0a07426f5f2ee6f76f",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-reservation-transfer",
+      "style": "source_only",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 5627,
+      "completed": true,
+      "inputHash": "09f6ccc3dc383544ed88a59ff6e1b8377e5202b9418cd4a1b53fa04a69af26e0",
+      "referenceHash": "b83c95a28b1b0507fcd31048d0605140861c05d92a4a234bcb405a900d150eec",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-reservation-transfer",
+      "style": "explain",
+      "httpStatus": 500,
+      "status": null,
+      "elapsedMs": 5426,
+      "completed": false,
+      "inputHash": "09f6ccc3dc383544ed88a59ff6e1b8377e5202b9418cd4a1b53fa04a69af26e0",
+      "referenceHash": "b83c95a28b1b0507fcd31048d0605140861c05d92a4a234bcb405a900d150eec",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [],
+      "semanticAutomatedChecks": "not_configured",
+      "teacherReview": "pending"
+    }
+  ],
+  "calls": [
+    {
+      "httpStatus": 200,
+      "elapsedMs": 9071,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1755,
+        "output": 215,
+        "thoughts": 1254,
+        "total": 3224
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 200,
+      "elapsedMs": 9932,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1801,
+        "output": 331,
+        "thoughts": 1240,
+        "total": 3372
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 200,
+      "elapsedMs": 7257,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1715,
+        "output": 186,
+        "thoughts": 881,
+        "total": 2782
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 200,
+      "elapsedMs": 7867,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1761,
+        "output": 267,
+        "thoughts": 1007,
+        "total": 3035
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 200,
+      "elapsedMs": 5623,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1704,
+        "output": 67,
+        "thoughts": 580,
+        "total": 2351
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 503,
+      "elapsedMs": 5422,
+      "model": "gemini-3.5-flash",
+      "modelVersion": null,
+      "usage": null,
+      "finishReasons": [],
+      "error": "upstream_http"
+    }
+  ],
+  "review": {
+    "reviewer": "Codex plus independent AI Code Reviewer; not teacher",
+    "sourceOnly": "3 generated responses keep document facts without added background",
+    "explainAverage": "correct 8 cm calculation and labeled background/example",
+    "explainCircuit": "label scope insufficient for external definitions; unnecessary substitution remains",
+    "explainReservation": "not generated; no quality score"
+  },
+  "v3Fix": "background label must precede all external definitions; live confirmation pending",
+  "limitations": [
+    "local synthetic retrieval; no real Cloudflare search",
+    "one trial per condition",
+    "not blind holdout",
+    "request order source_only then explain",
+    "no controlled thinking setting; production default",
+    "6min bounds external dispatch; local postprocessing not a strict overall deadline",
+    "artifact written at completion; forced termination loses intermediate answers"
+  ]
+}

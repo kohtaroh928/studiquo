@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-15",
+  "scope": "unit_v4_bounded_live_design_only",
+  "sourceHashes": {
+    "docs/RAG_UNIT_PLANNER_LIVE_DESIGN.md": "07786f82947ceb6b09fa5286350339ce71e074499ea174dad1f8ed31d2f4ba24",
+    "docs/RAG_UNIT_PLANNER_LIVE_TEST_MATRIX.md": "2a633da8dfb85765f6d931a0c54755c99e53a931da6db8b511c1726c6b01b428"
+  },
+  "risk": "High",
+  "independentPlannerReview": "passed_after_live_all_prior_artifacts_fix",
+  "independentSecurityReview": "passed_after_five_conditions_added",
+  "unresolvedHighMedium": 0,
+  "plannedRegressionCases": 24,
+  "testsRunThisStep": 0,
+  "lastWorkerPassed": 1476,
+  "lastWorkerLog": "/private/tmp/studiquo-unit-planner-io-all.log",
+  "checks": [
+    "markdown_links_exist",
+    "matrix_ids_1_to_24",
+    "git_diff_check",
+    "frozen_v3_source_hashes_unchanged"
+  ],
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "runtimeCodeChanges": 0,
+  "modelQuality": "not_evaluated",
+  "releaseAccepted": false,
+  "plannedDispatches": 8,
+  "plannedStages": [
+    1,
+    3,
+    4
+  ],
+  "plannedReservedMicroUSD": 65536,
+  "reservationIsActualBillingCap": false,
+  "stageArtifactBytes": 2097152,
+  "maxStageArtifacts": 3,
+  "next": "implement_v4_journal_replay_then_private_review_artifact_gate_offline"
+}
