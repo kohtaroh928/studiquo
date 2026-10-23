@@ -16,7 +16,7 @@ final class SettingsFormSharedTests: XCTestCase {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
-        app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture"]
+        app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture", "-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launch()
         XCTAssertTrue(app.buttons["home-tab-more"].waitForExistence(timeout: 20), "ホーム下部に「その他」タブがありません。")
     }
@@ -227,6 +227,8 @@ final class SettingsFormSharedTests: XCTestCase {
         let moreTab = app.buttons["home-tab-more"]
         leaveCategory("app")
         XCTAssertEqual(moreTab.label, "More", "タブ名が「More」になっていません。")
+        // The screen the category was pushed over follows the language too.
+        XCTAssertTrue(app.navigationBars["More"].waitForExistence(timeout: 10), "押し込み画面の下の「その他」タイトルが「More」になっていません。")
     }
 
     // MARK: 4. Account deletion is a single row, at the very end
