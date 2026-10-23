@@ -832,6 +832,15 @@ final class FriendRequestsInteractionTests: XCTestCase {
         app.launchArguments = ["--friend-requests-ui-test"]
         app.launch()
 
+        // 縦向きなど狭い画面では、サイドバーは初期状態で閉じている(開くボタンが出る)。
+        // ログイン前提のエラーが出ることがあるので、先に閉じる。
+        if app.alerts["エラー"].waitForExistence(timeout: 3) { app.alerts["エラー"].buttons["OK"].tap() }
+        // 通常幅ではシステムの「サイドバーを表示」、狭い幅ではアプリ独自の「friends-sidebar-toggle」。
+        let sidebarToggle = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label == %@", "friends-sidebar-toggle", "サイドバーを表示"
+        )).firstMatch
+        if sidebarToggle.waitForExistence(timeout: 5) { sidebarToggle.tap() }
+
         let button = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "申請・招待")).firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["フレンド申請"].exists)
