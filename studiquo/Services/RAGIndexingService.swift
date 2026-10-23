@@ -394,7 +394,10 @@ enum RAGDeletionQueue {
         }
         enqueue(notebook.retireRAGSource(preservingCitations: preservingCitations))
     }
-    static func enqueue(_ sourceId: String, account: String? = accountPartition(), endpoint: URL? = WorkerAIProvider().baseURL) {
+    static func enqueue(_ sourceId: String) {
+        enqueue(sourceId, account: accountPartition(), endpoint: WorkerAIProvider().baseURL)
+    }
+    static func enqueue(_ sourceId: String, account: String?, endpoint: URL?) {
         // Preserve unidentifiable work without guessing where it belongs.
         let storageKey = key(account: account, endpoint: endpoint) ?? "ragPendingSourceDeletions-unassigned"
         var ids = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
@@ -402,7 +405,10 @@ enum RAGDeletionQueue {
         UserDefaults.standard.set(ids, forKey: storageKey)
         Task { await flush() }
     }
-    static func hasUnresolvedLegacyDeletions(account: String? = accountPartition()) -> Bool {
+    static func hasUnresolvedLegacyDeletions() -> Bool {
+        hasUnresolvedLegacyDeletions(account: accountPartition())
+    }
+    static func hasUnresolvedLegacyDeletions(account: String?) -> Bool {
         let legacy = account.map { UserDefaults.standard.stringArray(forKey: "ragPendingSourceDeletions-" + $0) ?? [] } ?? []
         return !legacy.isEmpty || !(UserDefaults.standard.stringArray(forKey: "ragPendingSourceDeletions-unassigned") ?? []).isEmpty
     }
