@@ -52,7 +52,7 @@ final class RAGClientTests: XCTestCase {
             notebook.addPage(page)
         }
         var uploads: [[String: Any]] = []
-        let service = RAGIndexingService { request in
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in
             if request.httpMethod == "GET" { return self.response(request, json: "{\"enabled\":true}") }
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-RAG-Consent"), "rag-openai-v1")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-AI-Consent"), "openai-v1")
@@ -81,7 +81,7 @@ final class RAGClientTests: XCTestCase {
         page.recognizedText = "Synthetic erased ink cache"
         notebook.addPage(page)
         var uploadedText: String?
-        let service = RAGIndexingService { request in
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in
             if request.httpMethod == "GET" { return self.response(request, json: "{\"enabled\":true}") }
             let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             uploadedText = (body["pages"] as! [[String: Any]]).first?["text"] as? String
@@ -101,7 +101,7 @@ final class RAGClientTests: XCTestCase {
         notebook.isLocked = true
         notebook.encryptedContent = nil
         var requests = 0
-        let service = RAGIndexingService { request in requests += 1; return self.response(request) }
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in requests += 1; return self.response(request) }
         do { try await service.index(notebook); XCTFail("Must reject locked notebooks") }
         catch { XCTAssertEqual(requests, 0) }
     }
@@ -109,14 +109,14 @@ final class RAGClientTests: XCTestCase {
         let notebook = Notebook(title: "Protected synthetic fixture")
         notebook.lockedPDFData = Data([0])
         var requests = 0
-        let service = RAGIndexingService { request in requests += 1; return self.response(request) }
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in requests += 1; return self.response(request) }
         do { try await service.index(notebook); XCTFail("Must reject password protected PDFs") }
         catch { XCTAssertEqual(requests, 0) }
     }
 
     func testDisabledDoesNotUpload() async {
         var uploads = 0
-        let service = RAGIndexingService { request in
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in
             if request.httpMethod != "GET" { uploads += 1 }
             return self.response(request, json: "{\"enabled\":false}")
         }
@@ -175,11 +175,60 @@ final class RAGClientTests: XCTestCase {
         RAGConsent.revoke()
         AIDataDisclosure.revoke()
         var sent: URLRequest?
-        let service = RAGIndexingService { request in sent = request; return self.response(request) }
-        try await service.delete(sourceId: "synthetic-source")
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in sent = request; return self.response(request) }
+        try await service.delete(sourceId: "synthetic-source", account: "test-account", endpoint: WorkerAIProvider().baseURL)
         XCTAssertEqual(sent?.httpMethod, "DELETE")
         XCTAssertTrue(sent?.url?.path.hasSuffix("api/rag/source") == true)
         XCTAssertTrue(sent?.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true)
+    }
+    func testDeletionQueueKeysSeparateAccountsAndEndpoints() {
+        let first = URL(string: "https://first.example")!
+        let second = URL(string: "https://second.example")!
+        XCTAssertNotEqual(RAGDeletionQueue.key(account: "a", endpoint: first), RAGDeletionQueue.key(account: "a", endpoint: second))
+        XCTAssertNotEqual(RAGDeletionQueue.key(account: "a", endpoint: first), RAGDeletionQueue.key(account: "b", endpoint: first))
+        XCTAssertNil(RAGDeletionQueue.key(account: nil, endpoint: first))
+        XCTAssertNil(RAGDeletionQueue.key(account: "a", endpoint: nil))
+    }
+    func testLegacyDeletionRemainsIsolatedAndBlocksManualSearch() {
+        let account = "test-" + UUID().uuidString
+        let legacyKey = "ragPendingSourceDeletions-" + account
+        UserDefaults.standard.set(["synthetic-source"], forKey: legacyKey)
+        defer { UserDefaults.standard.removeObject(forKey: legacyKey) }
+        XCTAssertTrue(RAGDeletionQueue.hasUnresolvedLegacyDeletions(account: account))
+        XCTAssertEqual(UserDefaults.standard.stringArray(forKey: legacyKey), ["synthetic-source"])
+        let endpoint = URL(string: "https://first.example")!
+        XCTAssertNil(UserDefaults.standard.stringArray(forKey: RAGDeletionQueue.key(account: account, endpoint: endpoint)!))
+    }
+    func testDeleteRejectsAccountChangeAfterSending() async {
+        var account = "a"
+        let endpoint = WorkerAIProvider().baseURL
+        let service = RAGIndexingService(accountPartition: { account }) { request in
+            account = "b"
+            return self.response(request)
+        }
+        do {
+            try await service.delete(sourceId: "synthetic-source", account: "a", endpoint: endpoint)
+            XCTFail("A changed account must not acknowledge the deletion")
+        } catch { XCTAssertEqual(account, "b") }
+    }
+    func testIndexStopsAfterEndpointChangesDuringFirstBatch() async {
+        let previous = UserDefaults.standard.object(forKey: "mcpCloudEndpoint")
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: "mcpCloudEndpoint") }
+            else { UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint") }
+        }
+        UserDefaults.standard.set("https://first.example", forKey: "mcpCloudEndpoint")
+        let notebook = Notebook(title: "Synthetic fixture")
+        for index in 0..<6 { notebook.addPage(NotePage(order: index)) }
+        var uploads = 0
+        let service = RAGIndexingService(accountPartition: { "test-account" }) { request in
+            if request.httpMethod == "GET" { return self.response(request, json: "{\"enabled\":true}") }
+            uploads += 1
+            UserDefaults.standard.set("https://second.example", forKey: "mcpCloudEndpoint")
+            return self.response(request)
+        }
+        do { try await service.index(notebook); XCTFail("Must stop when endpoint changes") }
+        catch { XCTAssertEqual(uploads, 1) }
     }
     func testRetrievalStatusDecodesAllKnownStatesAndRejectsUnknownOrLegacyEvents() {
         for status in RAGRetrievalStatus.allCases {

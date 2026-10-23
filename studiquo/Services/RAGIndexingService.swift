@@ -165,8 +165,7 @@ final class RAGIndexingService {
     }
     @discardableResult
     func index(_ notebook: Notebook, onProgress: ((Int, Int) -> Void)? = nil) async throws -> IndexResult {
-        let indexingAccount = accountPartition()
-        let indexingEndpoint = WorkerAIProvider().baseURL
+        guard let indexingAccount = accountPartition(), let indexingEndpoint = WorkerAIProvider().baseURL else { throw IndexError.accountChanged }
         let indexingFingerprint = RAGLibrarySyncService.fingerprint(notebook)
         guard !notebook.isLocked, notebook.lockedPDFData == nil, notebook.encryptedContent == nil, !notebook.isTrashed else { throw IndexError.locked }
         guard RAGConsent.isGranted else { throw WorkerAIProvider.ProviderError.consentRequired }
@@ -217,7 +216,7 @@ final class RAGIndexingService {
         var uploaded = 0
         for batch in Self.batches(pages) {
             try Task.checkCancellation()
-            guard accountPartition() == indexingAccount,
+            guard accountPartition() == indexingAccount, WorkerAIProvider().baseURL == indexingEndpoint,
                   notebook.ragID == sourceId, !notebook.isLocked, notebook.lockedPDFData == nil, notebook.encryptedContent == nil, !notebook.isTrashed, RAGConsent.isGranted else { throw IndexError.locked }
             var request = try WorkerAIProvider().request(path: "api/rag/index", body: [
                 "sourceId": sourceId, "title": notebook.title,
@@ -229,13 +228,13 @@ final class RAGIndexingService {
             guard (request.httpBody?.count ?? 0) <= 512_000 else { throw IndexError.oversized }
             request.setValue(RAGConsent.version, forHTTPHeaderField: "X-Studiquo-RAG-Consent")
             _ = try await send(request)
-            uploaded += batch.count
-            onProgress?(uploaded, pages.count)
-            guard accountPartition() == indexingAccount else { throw IndexError.locked }
             if notebook.isLocked || notebook.lockedPDFData != nil || notebook.encryptedContent != nil || notebook.isTrashed || !RAGConsent.isGranted {
-                RAGDeletionQueue.enqueue(sourceId)
+                RAGDeletionQueue.enqueue(sourceId, account: indexingAccount, endpoint: indexingEndpoint)
                 throw IndexError.locked
             }
+            guard accountPartition() == indexingAccount, WorkerAIProvider().baseURL == indexingEndpoint else { throw IndexError.accountChanged }
+            uploaded += batch.count
+            onProgress?(uploaded, pages.count)
         }
         return IndexResult(reviewPageNumbers: reviewPages, supplementedPages: supplementedPages, sourceId: sourceId, sourceHash: hash)
     }
@@ -266,8 +265,8 @@ final class RAGIndexingService {
                 onProgress?(uploaded, document.pages.count)
             }
         } catch {
-            if accountPartition() == account && WorkerAIProvider().baseURL == endpoint && (notebook.isLocked || notebook.isTrashed || !RAGConsent.isGranted || RAGLibrarySyncService.fingerprint(notebook) != fingerprint) {
-                RAGDeletionQueue.enqueue(sourceId)
+            if notebook.isLocked || notebook.lockedPDFData != nil || notebook.encryptedContent != nil || notebook.isTrashed || !RAGConsent.isGranted || RAGLibrarySyncService.fingerprint(notebook) != fingerprint {
+                RAGDeletionQueue.enqueue(sourceId, account: account, endpoint: endpoint)
             }
             throw error
         }
@@ -338,10 +337,13 @@ final class RAGIndexingService {
         }
         return .waiting
     }
-    func delete(sourceId: String) async throws {
+    func delete(sourceId: String, account: String?, endpoint: URL?) async throws {
+        guard let account, let endpoint, accountPartition() == account, WorkerAIProvider().baseURL == endpoint else { throw IndexError.accountChanged }
         var request = try WorkerAIProvider().request(path: "api/rag/source", body: ["sourceId": sourceId], requiresAIConsent: false)
         request.httpMethod = "DELETE"
+        guard accountPartition() == account, WorkerAIProvider().baseURL == endpoint else { throw IndexError.accountChanged }
         _ = try await send(request)
+        guard accountPartition() == account, WorkerAIProvider().baseURL == endpoint else { throw IndexError.accountChanged }
     }
     private func send(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await transport(request)
@@ -378,9 +380,12 @@ enum RAGDeletionQueue {
         guard let canonical else { return nil }
         return SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    private static var key: String? {
-        accountPartition().map { "ragPendingSourceDeletions-" + $0 }
+    static func key(account: String?, endpoint: URL?) -> String? {
+        guard let account, let endpoint else { return nil }
+        let digest = SHA256.hash(data: Data(endpoint.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "ragPendingSourceDeletions-v2-" + account + "-" + digest
     }
+    static func currentKey() -> String? { key(account: accountPartition(), endpoint: WorkerAIProvider().baseURL) }
     static func enqueueNotebook(_ notebook: Notebook, preservingCitations: Bool = true, state: String = "deleted") {
         _ = RAGLibrarySyncService.shared.canSearch // Refresh the account/endpoint before choosing the lifecycle route.
         if RAGLibrarySyncService.shared.isManaged {
@@ -389,32 +394,43 @@ enum RAGDeletionQueue {
         }
         enqueue(notebook.retireRAGSource(preservingCitations: preservingCitations))
     }
-    static func enqueue(_ sourceId: String) {
-        guard let key else { return }
-        var ids = UserDefaults.standard.stringArray(forKey: key) ?? []
+    static func enqueue(_ sourceId: String, account: String? = accountPartition(), endpoint: URL? = WorkerAIProvider().baseURL) {
+        // Preserve unidentifiable work without guessing where it belongs.
+        let storageKey = key(account: account, endpoint: endpoint) ?? "ragPendingSourceDeletions-unassigned"
+        var ids = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
         if !ids.contains(sourceId) { ids.append(sourceId) }
-        UserDefaults.standard.set(ids, forKey: key)
+        UserDefaults.standard.set(ids, forKey: storageKey)
         Task { await flush() }
     }
+    static func hasUnresolvedLegacyDeletions(account: String? = accountPartition()) -> Bool {
+        let legacy = account.map { UserDefaults.standard.stringArray(forKey: "ragPendingSourceDeletions-" + $0) ?? [] } ?? []
+        return !legacy.isEmpty || !(UserDefaults.standard.stringArray(forKey: "ragPendingSourceDeletions-unassigned") ?? []).isEmpty
+    }
     static func safeScope(_ scope: RAGSearchScope?) async -> RAGSearchScope? {
-        guard let scope else { return nil }
+        guard let scope, let account = accountPartition(), let key = currentKey() else { return nil }
         await flush()
-        guard let key, (UserDefaults.standard.stringArray(forKey: key) ?? []).isEmpty else { return nil }
+        guard accountPartition() == account, currentKey() == key,
+              (UserDefaults.standard.stringArray(forKey: key) ?? []).isEmpty,
+              !hasUnresolvedLegacyDeletions(account: account) else { return nil }
         return scope
     }
     static func flush() async {
-        guard let key else { return }
+        let account = accountPartition()
+        let endpoint = WorkerAIProvider().baseURL
+        guard let key = key(account: account, endpoint: endpoint) else { return }
         let ids = UserDefaults.standard.stringArray(forKey: key) ?? []
         for id in ids {
-            guard Self.key == key else { return }
+            guard currentKey() == key else { return }
             do {
-                try await RAGIndexingService().delete(sourceId: id)
+                try await RAGIndexingService().delete(sourceId: id, account: account, endpoint: endpoint)
+                guard currentKey() == key else { return }
                 var remaining = UserDefaults.standard.stringArray(forKey: key) ?? []
                 remaining.removeAll { $0 == id }
                 UserDefaults.standard.set(remaining, forKey: key)
             } catch { /* Keep for the next foreground retry. */ }
         }
     }
+
 }
 
 @MainActor
