@@ -50,6 +50,9 @@ jobs:
           ')
           test -n "$udid" || { echo "利用できるiPadシミュレータがありません" >&2; exit 1; }
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      # 署名なし(CODE_SIGNING_ALLOWED=NO)だとシミュレータのアプリにentitlementsが付かず、
+      # キーチェーンが-34018で失敗する。チームなしのad-hoc署名で付ける。
+      # 文言のテストは日本語がソース言語なので、ランナーの言語に関わらず日本語で動かす。
       - name: テスト
         run: |
           xcodebuild test \
@@ -57,4 +60,5 @@ jobs:
             -scheme studiquo \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -only-testing:studiquoTests \
-            CODE_SIGNING_ALLOWED=NO
+            -testLanguage ja -testRegion JP \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
