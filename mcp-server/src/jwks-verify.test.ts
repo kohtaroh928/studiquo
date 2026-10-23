@@ -31,7 +31,7 @@ function environment() {
   });
 }
 
-async function makeKey(kid: string) {
+async function makeKey(kid = "kid-1") {
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = await exportJWK(publicKey);
   Object.assign(jwk, { kid, alg: "RS256", use: "sig" });
@@ -219,7 +219,7 @@ function rotatingVerifier() {
 }
 
 test("a token signed with a key newer than the cached set triggers one refresh instead of failing until the cache expires", async () => {
-  const env = makeEnv();
+  const env = environment();
   const oldKey = await makeKey("kid-old");
   const newKey = await makeKey("kid-new");
   await env.STUDIQUO_DATA.put("rot:jwks", JSON.stringify({ keys: [oldKey.jwk] }));
@@ -237,7 +237,7 @@ test("a token signed with a key newer than the cached set triggers one refresh i
 });
 
 test("an unknown key id refreshes at most once per cooldown, so garbage tokens cannot make the Worker hammer the provider", async () => {
-  const env = makeEnv();
+  const env = environment();
   const known = await makeKey("kid-known");
   const stranger = await makeKey("kid-stranger");
   await env.STUDIQUO_DATA.put("rot:jwks", JSON.stringify({ keys: [known.jwk] }));
@@ -256,7 +256,7 @@ test("an unknown key id refreshes at most once per cooldown, so garbage tokens c
 });
 
 test("the provider's key endpoint is fetched with a timeout", async () => {
-  const env = makeEnv();
+  const env = environment();
   const { jwk } = await makeKey();
   const originalFetch = globalThis.fetch;
   let signal: AbortSignal | null | undefined;
