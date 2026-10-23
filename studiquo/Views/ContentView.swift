@@ -2350,6 +2350,10 @@ struct ContentView: View {
     @State private var showsMCPCloudSettings = false
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
+    /// Calls the student started from the MCP settings sheet that are still
+    /// waiting on the server. The automatic pull on return to the app is not
+    /// counted, so it never dims the screen.
+    @State private var mcpUserRequestsInFlight = 0
     @State private var mcpPairKind: MCPConnectionKind = .claude
     @State private var mcpIssuedCode: MCPPairingCode?
     @State private var mcpCodeExpiresAt: Date?
@@ -2886,13 +2890,7 @@ struct ContentView: View {
         // used to give no feedback at all while in flight — tapping it just
         // looked like nothing happened until the preview eventually opened,
         // or silently did nothing at all if it failed.
-        .overlay {
-            if isDownloadingFriendAttachment {
-                ProgressView("読み込み中…")
-                    .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
-            }
-        }
+        .blockingLoading(isDownloadingFriendAttachment, source: "attachment")
         .fullScreenCover(item: $previewURL) { wrapped in
             NavigationStack {
                 DocumentPreview(url: wrapped.url)
@@ -2970,13 +2968,12 @@ struct ContentView: View {
             }
             Section {
                 Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
-                    Task { await syncMCPCloud() }
+                    Task { await waitingOnMCPServer { await syncMCPCloud() } }
                 }
                 Button("受信した資料を確認", systemImage: "tray.and.arrow.down") {
-                    Task { await pullMCPInbox() }
+                    Task { await waitingOnMCPServer { await pullMCPInbox() } }
                 }
                 .disabled(isMCPCloudSyncing || mcpCloudEndpoint.isEmpty || mcpCloudToken.count < 32)
-                if isMCPCloudSyncing { ProgressView() }
                 if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
             } footer: {
                 Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。")
@@ -2985,7 +2982,7 @@ struct ContentView: View {
                 Picker("接続するAIアプリ", selection: $mcpPairKind) {
                     ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
                 }
-                Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                Button("コードを発行") { Task { await waitingOnMCPServer { await issueMCPPairingCode() } } }
                 if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         if context.date < expiresAt {
@@ -3021,7 +3018,7 @@ struct ContentView: View {
                         }
                         Spacer()
                         Button("解除", role: .destructive) {
-                            Task { await disconnectMCP(connection) }
+                            Task { await waitingOnMCPServer { await disconnectMCP(connection) } }
                         }
                     }
                 }
@@ -3073,6 +3070,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showsMCPCloudSettings) {
             mcpCloudSettingsSheet
+                .blockingLoading(mcpUserRequestsInFlight > 0, source: "mcp", presentationRoot: true)
         }
         .sheet(item: $studyNotebook) { notebook in
             StudySessionView(notebook: notebook)
@@ -6698,6 +6696,13 @@ struct ContentView: View {
         default: break
         }
         showsMCPCloudSettings = false
+    }
+
+    @MainActor
+    private func waitingOnMCPServer(_ operation: () async -> Void) async {
+        mcpUserRequestsInFlight += 1
+        defer { mcpUserRequestsInFlight -= 1 }
+        await operation()
     }
 
     @MainActor
