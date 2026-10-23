@@ -1063,7 +1063,14 @@ private struct MoreHomeView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @AppStorage("friendShareStudyTime") private var shareStudyTime = true
     @AppStorage("profileName") private var profileName = ""
+    // Read so this view is rebuilt when the language changes: a navigation
+    // title that is already on screen does not follow `\.locale` by itself.
+    @AppStorage("appLanguage") private var appLanguage = "system"
     @State private var confirmsLogout = false
+
+    private var screenTitle: Text {
+        appLanguage == "system" ? Text("home.more.title") : Text(verbatim: L(String.LocalizationValue("home.more.title")))
+    }
 
     private var versionText: String {
         let info = Bundle.main.infoDictionary
@@ -1083,7 +1090,7 @@ private struct MoreHomeView: View {
             privacy: AnyView(friendSection),
             app: AnyView(supportSection)
         ))
-        .navigationTitle(Text("home.more.title"))
+        .navigationTitle(screenTitle)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showsAnnouncements) {
             AnnouncementsView(store: announcementStore)
