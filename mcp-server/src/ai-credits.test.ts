@@ -205,3 +205,70 @@ test("budgets set through AI_LIMITS are the ones enforced", async () => {
   const limits = mergeLimits(JSON.stringify({ plans: { standard: { week: 3 } } }));
   assert.deepEqual(await spendUntilStopped({ RATE_COUNTER: counters() }, { plan: "standard", limits }), { ok: 3, window: "week" });
 });
+
+
+test("additional input reserves only the difference once, including concurrent retries", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env);
+  const [a, b, c] = await Promise.all([result.reserve!(12001), result.reserve!(18001), result.reserve!(12001)]);
+  assert.ok(a.ok && b.ok && c.ok);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
+  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 3);
+  await Promise.all([result.refund!(), result.refund!()]);
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});
+
+test("additional reservations refuse each exhausted window and roll back partial takes", async () => {
+  for (const [name, limit, expected] of [["ai:cr:5h2:acct", 10, "fiveHours"], ["ai:cr:wk:acct", 30, "week"], ["ai:global:standard", 5, "global"]] as const) {
+    const env = { RATE_COUNTER: counters() };
+    const result = await call(env, { plan: "standard", globalLimit: 5 });
+    env.RATE_COUNTER.used.set(name, limit);
+    assert.equal((await result.reserve!(12001)).window, expected);
+    assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
+    for (const other of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:standard"]) if (other !== name) assert.equal(env.RATE_COUNTER.used.get(other), 1);
+    await result.refund!();
+  }
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env, { plan: "standard" });
+  assert.equal((await result.reserve!(66001)).window, "input");
+  await result.refund!();
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});
+
+test("exceptions during initial and additional takes return already acquired windows", async () => {
+  for (const additional of [false, true]) {
+    const env = { RATE_COUNTER: counters() };
+    const result = additional ? await call(env) : null;
+    const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+    env.RATE_COUNTER.getByName = (name: string) => name.startsWith("ai:cr:wk:") ? { ...real(name), async take() { throw new Error("counter unavailable"); } } : real(name);
+    await assert.rejects(additional ? result!.reserve!(12001) : call(env), /counter unavailable/);
+    if (result) await result.refund!();
+    assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+  }
+});
+
+
+test("refund failures are counted without identifying the account or exposing errors", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env, { accountKey: "private-account" });
+  const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  env.RATE_COUNTER.getByName = (name: string) => name.startsWith("ai:cr:wk:")
+    ? { ...real(name), async give() { throw new Error("private error"); } } : real(name);
+  const original = console.error, logs: string[] = [];
+  console.error = (...args: unknown[]) => { logs.push(args.join(" ")); };
+  try { await result.refund!(); } finally { console.error = original; }
+  assert.deepEqual(logs.map(line => JSON.parse(line)), [{ event: "ai_credit_refund_failed", failed: 1 }]);
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:pro"), 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:wk:private-account"), 1);
+});
+
+test("smaller references on retry retain the highest previously reserved cost", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env);
+  assert.equal((await result.reserve!(18001)).ok, true);
+  assert.equal((await result.reserve!(1)).ok, true);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct"), 1);
+  for (const name of ["ai:cr:5h2:acct", "ai:cr:wk:acct", "ai:global:pro"]) assert.equal(env.RATE_COUNTER.used.get(name), 3);
+  await result.refund!();
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});

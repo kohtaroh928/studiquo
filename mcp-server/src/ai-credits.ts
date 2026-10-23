@@ -122,49 +122,72 @@ export interface CreditRequest {
 }
 
 /** `ok: true` carries `refund`; `ok: false` carries the `window` that refused. (One shape, not a union: the test program is not strict, and does not narrow a union.) */
-export interface CreditResult { ok: boolean; window?: string; refund?: () => Promise<void> }
+export interface CreditResult { ok: boolean; window?: string; refund?: () => Promise<void>; reserve?: (inputChars: number) => Promise<CreditResult> }
 
 export async function consumeCredits(env: Env, { accountKey, plan, kind, model, inputChars = 0, globalLimit, limits = DEFAULT_AI_LIMITS }: CreditRequest): Promise<CreditResult> {
   const budget = planBudget(plan, limits);
-  const cost = creditCost(kind, model, inputChars, limits);
+  const initialCost = creditCost(kind, model, inputChars, limits);
   const taken: { name: string; amount: number; windowEndsAt: number }[] = [];
-  // Every give is attempted even if one fails, and each goes back to the exact
-  // window it was taken from. Safe to call once; a second call does nothing.
+  // Retries retain the highest amount already reserved; the minute is taken once.
+  let reservedCost = 0;
   let refunded = false;
-  const refund = async () => {
+  // Serialize adjustments and refunds for this request. Each counter still enforces
+  // its own limit atomically across separate requests.
+  let pending: Promise<unknown> = Promise.resolve();
+  const serial = <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = pending.then(operation);
+    pending = next.catch(() => {});
+    return next;
+  };
+  const give = async (items: typeof taken) => {
+    const results = await Promise.allSettled(items.map(({ name, amount, windowEndsAt }) =>
+      Promise.resolve().then(() => env.RATE_COUNTER.getByName(name).give(amount, windowEndsAt))));
+    const failed = results.filter(result => result.status === "rejected").length;
+    if (failed) console.error(JSON.stringify({ event: "ai_credit_refund_failed", failed }));
+  };
+  const refund = () => serial(async () => {
     if (refunded) return;
     refunded = true;
-    await Promise.allSettled(taken.map(({ name, amount, windowEndsAt }) =>
-      env.RATE_COUNTER.getByName(name).give(amount, windowEndsAt)));
-  };
+    await give(taken);
+  });
 
   if (budget.perMinute <= 0) return { ok: false, window: "minute" };
-  // A call dearer than a whole 5-hour (or weekly) allowance could never pass,
-  // however long the account waited: say so instead of "try again later".
-  if (cost > Math.min(budget.fiveHours, budget.week)) return { ok: false, window: "input" };
-
-  // The account's own windows first, so an account that is over its own
-  // limits never takes from everyone's.
-  for (const window of windowsFor(accountKey)) {
-    const amount = window.perCall ? 1 : cost;
-    const result = await env.RATE_COUNTER.getByName(window.name).take(budget[window.limitKey], window.seconds, amount);
-    if (!result.ok) {
-      await refund();
-      return { ok: false, window: window.id };
+  const takeTo = async (cost: number, initial: boolean): Promise<CreditResult> => {
+    if (refunded) throw new Error("Cannot reserve refunded credits");
+    if (cost > Math.min(budget.fiveHours, budget.week)) return { ok: false, window: "input" };
+    const delta = Math.max(0, cost - reservedCost);
+    if (!initial && delta === 0) return { ok: true };
+    const batch: typeof taken = [];
+    try {
+      for (const window of windowsFor(accountKey)) {
+        if (window.perCall && !initial) continue;
+        const amount = window.perCall ? 1 : delta;
+        const result = await env.RATE_COUNTER.getByName(window.name).take(budget[window.limitKey], window.seconds, amount);
+        if (!result.ok) {
+          await give(batch);
+          return { ok: false, window: window.id };
+        }
+        batch.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt as number });
+      }
+      const globalName = `ai:global:${plan}`;
+      const globalTake = await env.RATE_COUNTER.getByName(globalName).take(globalLimit, 86_400, delta);
+      if (!globalTake.ok) {
+        await give(batch);
+        console.error(JSON.stringify({ message: "AI global ceiling reached", plan, limit: globalLimit }));
+        return { ok: false, window: "global" };
+      }
+      batch.push({ name: globalName, amount: delta, windowEndsAt: globalTake.windowEndsAt as number });
+      taken.push(...batch);
+      reservedCost = Math.max(reservedCost, cost);
+      return { ok: true };
+    } catch (error) {
+      await give(batch);
+      throw error;
     }
-    taken.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt as number });
-  }
-
-  const globalName = `ai:global:${plan}`;
-  const globalTake = await env.RATE_COUNTER.getByName(globalName).take(globalLimit, 86_400, cost);
-  if (!globalTake.ok) {
-    await refund();
-    // Type only — which plan's ceiling was reached, not who reached it.
-    console.error(JSON.stringify({ message: "AI global ceiling reached", plan, limit: globalLimit }));
-    return { ok: false, window: "global" };
-  }
-  taken.push({ name: globalName, amount: cost, windowEndsAt: globalTake.windowEndsAt as number });
-  return { ok: true, refund };
+  };
+  const first = await takeTo(initialCost, true);
+  if (!first.ok) return first;
+  return { ok: true, refund, reserve: chars => serial(() => takeTo(creditCost(kind, model, chars, limits), false)) };
 }
 
 /**
