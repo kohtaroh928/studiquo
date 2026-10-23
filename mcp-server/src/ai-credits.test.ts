@@ -272,3 +272,37 @@ test("smaller references on retry retain the highest previously reserved cost", 
   await result.refund!();
   assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
 });
+
+
+// Pending contract: the existing counter API has no operation IDs, so a lost
+// response cannot be distinguished from an operation that never happened.
+test.todo("a take written before its response is lost must not leak a reservation", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  env.RATE_COUNTER.getByName = (name: string) => {
+    const counter = real(name);
+    return name.startsWith("ai:cr:wk:") ? { ...counter, async take(limit: number, seconds: string, amount: number) {
+      await counter.take(limit, seconds, amount);
+      throw new Error("response lost after write");
+    } } : counter;
+  };
+  await assert.rejects(call(env), /response lost/);
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});
+
+test.todo("a temporary give failure during partial refusal must remain recoverable", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  let failed = false;
+  env.RATE_COUNTER.getByName = (name: string) => {
+    const counter = real(name);
+    if (name.startsWith("ai:cr:wk:")) return { ...counter, async take() { return { ok: false }; } };
+    if (name.startsWith("ai:cr:5h2:")) return { ...counter, async give(amount: number) {
+      if (!failed) { failed = true; throw new Error("temporary"); }
+      await counter.give(amount);
+    } };
+    return counter;
+  };
+  assert.equal((await call(env)).window, "week");
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});
