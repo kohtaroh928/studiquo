@@ -333,6 +333,10 @@ final class FriendStore: ObservableObject {
     /// double-tap fires the operation twice before the first response ever
     /// comes back.
     @Published var pendingRequestActions: Set<String> = []
+    /// Reports (通報) waiting on the server; the chat screens dim and refuse
+    /// touches while this is above zero (`blockingLoading`).
+    @Published private(set) var reportsInFlight = 0
+    var isReporting: Bool { reportsInFlight > 0 }
     /// Persisted alongside `messages` — without this, an app relaunch
     /// silently cleared every unread badge back to zero even though the
     /// underlying messages (which genuinely hadn't been read yet) were
@@ -1400,6 +1404,8 @@ final class FriendStore: ObservableObject {
 
     func reportGroupMessage(_ message: FriendChatService.Message, roomID: String, reason: String) async {
         guard !message.isMine, message.isCanceled != true else { return }
+        reportsInFlight += 1
+        defer { reportsInFlight -= 1 }
         do {
             _ = try await client.report(roomID: roomID, messageID: message.id, reason: reason)
             errorMessage = ""
@@ -1887,6 +1893,8 @@ final class FriendStore: ObservableObject {
         guard let roomID = friends.first(where: { $0.id == message.friendID })?.roomID,
               let serverID = message.serverID else { return }
         Task {
+            reportsInFlight += 1
+            defer { reportsInFlight -= 1 }
             do {
                 _ = try await client.report(roomID: roomID, messageID: serverID, reason: reason)
             } catch {
@@ -3725,6 +3733,7 @@ struct GroupChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
+        .blockingLoading(store.isReporting)
         .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { for url in urls { if let item = await saveFileAttachment(from: url) { attachments.append(item) } } }
@@ -4359,6 +4368,7 @@ struct FriendChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
+        .blockingLoading(store.isReporting)
         .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, isPaneSwitchDrop(value) else { return false }
