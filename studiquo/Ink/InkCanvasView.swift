@@ -1864,7 +1864,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             let erased = looksLikeScratchOut
                 ? Self.scratchOutErasedStrokes(drawing.strokes, scribble: rawStroke, contentScale: onScreenScale)
                 : nil
-            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: erased == nil ? 0 : max(1, drawing.strokes.count - erased!.count))
             if let erased {
                 drawing.strokes = erased
                 rebuildCommittedLayers()

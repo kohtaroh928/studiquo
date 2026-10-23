@@ -130,12 +130,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         guard host.view.bounds.size != viewportSize else { return }
         host.view.frame = CGRect(origin: .zero, size: viewportSize)
         scrollView.contentSize = viewportSize
-        GestureDiagnostics.zoomViewLayout(
-            bounds: viewportSize,
-            hostFrame: host.view.frame,
-            contentSize: scrollView.contentSize,
-            zoom: scrollView.zoomScale
-        )
     }
 
     func makeCoordinator() -> Coordinator {
@@ -178,12 +172,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
             onZoomChange(scale)
-            GestureDiagnostics.zoomViewLayout(
-                bounds: scrollView.bounds.size,
-                hostFrame: view?.frame ?? .zero,
-                contentSize: scrollView.contentSize,
-                zoom: scale
-            )
         }
 
     }
