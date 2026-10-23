@@ -2886,6 +2886,10 @@ async function markDeleting(env: any, key: string) {
   await env.STUDIQUO_DATA.put(`account-deletion:${sha256Hex(key)}`, JSON.stringify({ status: "deleting", generation: 1 }));
 }
 
+async function markDeletedFinished(env: any, key: string) {
+  await env.STUDIQUO_DATA.put(`account-deletion:${sha256Hex(key)}`, JSON.stringify({ status: "deleted", generation: 1 }));
+}
+
 test("a password sign-in for an account being deleted says so, not that it needs a passkey", async () => {
   const env = await withPasskeyAccount();
   await markDeleting(env, "email:person@example.com");
@@ -2900,6 +2904,35 @@ test("a password sign-in for an account being deleted says so, not that it needs
     assert.equal(body.code, "account_deleting");
     assert.equal(body.token, undefined);
     assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${sha256Hex("email:person@example.com")}`), null, "no recovery was started");
+  } finally { mail.mock.restore(); }
+});
+
+test("a wrong password for an account being deleted is still refused as a wrong password, so nothing about the deletion is learned", async () => {
+  const env = await withPasskeyAccount();
+  await markDeleting(env, "email:person@example.com");
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "not-the-password-at-all", randomValue: "l".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal(response.status, 401);
+    assert.notEqual((await response.json()).code, "account_deleting");
+  } finally { mail.mock.restore(); }
+});
+
+test("an account whose deletion has finished signs in again as a new account", async () => {
+  const env = environment();
+  await createLocalAccount(env, "again@example.com", "correct-horse-battery");
+  await markDeletedFinished(env, "email:again@example.com");
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/local/login", { method: "POST", body: { email: "again@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.notEqual(response.status, 409, "a finished deletion is not 'being deleted'");
+    assert.notEqual((await response.json()).code, "account_deleting");
   } finally { mail.mock.restore(); }
 });
 

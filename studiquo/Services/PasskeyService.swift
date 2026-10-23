@@ -279,9 +279,10 @@ enum PasskeyError: LocalizedError {
         case .invalidResponse: "パスキーの応答を読み取れませんでした。"
         case .notVerified: "パスキーを確認できませんでした。"
         // The server answered and refused: a connection that failed throws a
-        // URLError instead. Saying "could not connect" hid the real cause, for
-        // instance a passkey left on the device from an account since deleted.
-        case .serverRejected: "サーバーがパスキーを受け付けませんでした。アカウントを削除した場合、以前のパスキーは使えません。"
+        // URLError instead, so "could not connect" was the wrong thing to say.
+        // The reason is not known here (an expired challenge, a passkey the
+        // server no longer has, ...), so none is claimed.
+        case .serverRejected: "サーバーがパスキーを受け付けませんでした。もう一度お試しください。続く場合は、別の方法でログインしてください。"
         }
     }
 }

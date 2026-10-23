@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
 import { forgetSettledAlerts } from "./ops-alerts.ts";
-import { processPendingDeletions, runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
+import { processPendingDeletions, redactedDetail, runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
 import { partialEnv, type Untyped } from "./test-env.ts";
@@ -179,4 +179,12 @@ test("a deletion that keeps failing says why in the log, without naming the job"
   assert.equal(entry.error, "Error");
   assert.match(entry.detail, /Too many subrequests/);
   assert.equal(logged.join("").includes("secret@example.com"), false);
+});
+
+test("a logged failure reason blanks addresses and hashes, and stays short", () => {
+  assert.equal(redactedDetail("KV GET failed for account:local:secret@example.com"), "KV GET failed for account:local:[address]");
+  const hash = "a".repeat(64);
+  assert.equal(redactedDetail(`could not read account-deletion:${hash}`), "could not read account-deletion:[hash]");
+  assert.equal(redactedDetail("Too many subrequests."), "Too many subrequests.");
+  assert.equal(redactedDetail("x".repeat(500)).length, 120);
 });
