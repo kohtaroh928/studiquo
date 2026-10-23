@@ -1172,7 +1172,6 @@ struct CalendarHomeView: View {
                             Task { await syncUniversityCalendar() }
                         }
                         .disabled(isUniversitySyncing || universityCalendarURL.isEmpty)
-                        if isUniversitySyncing { ProgressView() }
                         if !universityStatus.isEmpty {
                             Text(universityStatus).foregroundStyle(.secondary)
                         }
@@ -1198,7 +1197,6 @@ struct CalendarHomeView: View {
                             Task { await syncGoogleCalendar() }
                         }
                         .disabled(isGoogleSyncing)
-                        if isGoogleSyncing { ProgressView() }
                         if !googleStatus.isEmpty {
                             Text(googleStatus).foregroundStyle(.secondary)
                         }
@@ -1256,6 +1254,9 @@ struct CalendarHomeView: View {
                     }
                 }
             }
+            // A calendar sync waits on the school's server or Google: refuse
+            // touches until it answers.
+            .blockingLoading(isUniversitySyncing || isGoogleSyncing, source: "calendar", presentationRoot: true)
         }
     }
 
