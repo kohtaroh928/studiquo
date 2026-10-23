@@ -21,6 +21,19 @@ export async function accessActor(request: Request, env: Env): Promise<string | 
   return actor;
 }
 
+// One remote key set per team domain for the life of the isolate: a new one
+// starts with an empty cache, so building it per request made every request
+// (including ones carrying a forged token) fetch Access's keys again.
+const remoteKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+function remoteKeys(issuer: string) {
+  let keys = remoteKeySets.get(issuer);
+  if (!keys) {
+    keys = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
+    remoteKeySets.set(issuer, keys);
+  }
+  return keys;
+}
+
 async function verifyActor(request: Request, env: Env): Promise<string | null> {
   if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
   const cookie = (request.headers.get("cookie") ?? "")
@@ -29,7 +42,7 @@ async function verifyActor(request: Request, env: Env): Promise<string | null> {
   if (!token) return null;
   try {
     const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
-    const jwks = env.ACCESS_JWKS ?? createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
+    const jwks = env.ACCESS_JWKS ?? remoteKeys(issuer);
     const { payload } = await jwtVerify(token, jwks, { issuer, audience: env.ACCESS_AUD });
     return String(payload.email ?? payload.common_name ?? payload.sub ?? "unknown");
   } catch {

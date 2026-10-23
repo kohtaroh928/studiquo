@@ -25,12 +25,14 @@
 
 Critical/High等はnpm/GitHub advisoryの評価であり、Studiquoで攻撃が成立することを確認した評価ではない。同じ脆弱性が親パッケージへ波及して件数に含まれるため、7パッケージ＝7種類の脆弱性という意味ではない。
 
-| パッケージ | npmの重要度 | 依存範囲 | 現時点の判定 |
+| パッケージ | npmの重要度 | 依存範囲 | 現時点の判定(2026-10-23 再確認) |
 |---|---|---|---|
-| proxy-addr 2.0.7 | Critical | MCP SDK→Express | ローカルbundle検査ではWorkers出力に含まれない。特定の信頼プロキシ設定が悪用の条件で、Studiquoでの攻撃可能性は未確認 |
-| fast-uri 3.1.6 | High | MCP SDK→Ajv | Workers出力に含まれる。入力が脆弱なURI操作へ到達するか追加確認が必要 |
-| ip-address 10.5.0 | Moderate | MCP SDK→express-rate-limit | 今回のWorkers出力に含まれない。別の使用経路も含め確認が必要 |
-| miniflare・sharp・undici・wrangler | High | 開発専用 | ローカル開発・検査用依存の指摘。本番へ配布する依存と分けて対応を検討する |
+| proxy-addr | Critical(2.0.7 のとき) | MCP SDK→Express | ロックファイルは 2.0.8(修正版)に更新済み。Workers出力には含まれない |
+| fast-uri | High(3.1.6 のとき) | MCP SDK→Ajv | ロックファイルは 3.1.8(修正版)に更新済み。Workers出力には含まれるが、攻撃者がURIを渡す経路は見つかっていない |
+| ip-address | Moderate(10.5.0 のとき) | MCP SDK→express-rate-limit | ロックファイルは 10.7.4(修正版)に更新済み。Workers出力には含まれない |
+| undici・sharp(miniflare経由) | High | 開発専用 | `mcp-server/package.json` の `overrides` で undici 7.29.1・sharp 0.35.5 に固定して解消。本番へ配布する依存ではない |
+
+`npm audit`(`mcp-server`)は、本番依存・開発依存とも指摘0件(2026-10-23)。上の表の古い版番号は、最初の検査時点の値として残している。
 
 根拠:
 
@@ -38,7 +40,7 @@ Critical/High等はnpm/GitHub advisoryの評価であり、Studiquoで攻撃が�
 - [fast-uriのauthority injection](https://github.com/advisories/GHSA-qw65-cvwx-89v3): 修正版3.1.7。別のURI関連advisoryもあり、まとめて安全な修正版を選定する。
 - [ip-addressの分類不備](https://github.com/advisories/GHSA-rpw4-54j3-4h4q): 複数advisoryがある。最新の安全な修正版と依存側の互換性を確認する。
 
-脆弱性の修正はこの検査導入と分けて行う。自動fixやmajor更新、deployは実施していない。bundle判定は検査用esbuild設定の出力に対するもので、実際の公開済みWorkerを取得・検証した結果ではない。
+脆弱性の修正はこの検査導入と分けて行った。major更新とdeployは実施していない。bundle判定は検査用esbuild設定の出力に対するもので、実際の公開済みWorkerを取得・検証した結果ではない。
 
 ## コード・秘密情報の指摘の分類
 

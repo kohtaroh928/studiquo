@@ -2681,6 +2681,7 @@ private struct CollabSheet: View {
 
     @State private var isStarting = false
     @State private var isSyncing = false
+    @State private var isInviting = false
     @State private var participants: [DocumentCollabService.Participant] = []
     @State private var inviteNotice = ""
     @State private var selectedFriendCode = ""
@@ -2706,6 +2707,9 @@ private struct CollabSheet: View {
                 Button("OK") {}
             } message: { Text(errorMessage ?? "") }
         }
+        // Starting, inviting and syncing wait on the server: refuse touches
+        // until it answers.
+        .blockingLoading(isStarting || isSyncing || isInviting, source: "collab", presentationRoot: true)
         .presentationDetents([.medium, .large])
         .task {
             if document.collabRoomID != nil { await refreshParticipants() }
@@ -2723,7 +2727,7 @@ private struct CollabSheet: View {
             Button {
                 Task { await startCollaboration() }
             } label: {
-                if isStarting { ProgressView() } else { Text("共同編集を開始") }
+                Text("共同編集を開始")
             }
             .buttonStyle(.themePrimary)
             .disabled(isStarting)
@@ -2773,7 +2777,7 @@ private struct CollabSheet: View {
                 Button {
                     Task { await syncPendingChanges(roomID: roomID) }
                 } label: {
-                    if isSyncing { ProgressView() } else { Label("変更を同期", systemImage: "arrow.triangle.2.circlepath") }
+                    Label("変更を同期", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(isSyncing)
                 if let statusMessage {
@@ -2827,6 +2831,8 @@ private struct CollabSheet: View {
 
     private func invite(roomID: String) async {
         guard !selectedFriendCode.isEmpty else { return }
+        isInviting = true
+        defer { isInviting = false }
         do {
             _ = try await DocumentCollabService.invite(roomID: roomID, code: selectedFriendCode, role: selectedRole)
             selectedFriendCode = ""

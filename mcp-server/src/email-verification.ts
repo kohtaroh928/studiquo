@@ -65,8 +65,8 @@ export async function sendVerificationCode(env: Env, email: string) {
     }),
   });
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`Failed to send verification email: HTTP ${response.status} ${detail}`);
+    // The status only: the provider's reply can echo the recipient's address.
+    throw new Error(`Failed to send verification email: HTTP ${response.status}`);
   }
   return { sent: true };
 }

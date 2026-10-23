@@ -241,3 +241,127 @@ test("turning the banner off for one category does not quiet the others", async 
   assert.equal(aps!.sound, "default");
   assert.equal(aps!["interruption-level"], undefined);
 });
+
+// ---- Failure paths: what is kept, what is dropped, and that nothing throws ----
+
+const quietly = async <T>(run: () => Promise<T>) => {
+  const real = console.error;
+  console.error = () => {};
+  try { return await run(); } finally { console.error = real; }
+};
+
+test("an APNs 400 naming a bad token drops the device; a 400 for another reason, 429 or 500 keeps it", async () => {
+  for (const [status, reason, dropped] of [
+    [400, "BadDeviceToken", true], [400, "DeviceTokenNotForTopic", true],
+    [400, "PayloadTooLarge", false], [429, "TooManyRequests", false], [500, "InternalServerError", false],
+  ] as const) {
+    const { env, values } = await fixture();
+    seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
+    const [result] = await quietly<Untyped[]>(() => sendPush(env, "user-a", notification, {
+      fetchImpl: async () => Response.json({ reason }, { status }),
+    }));
+    assert.deepEqual([result.delivered, result.status, result.reason], [false, status, reason]);
+    assert.equal(values.has("chat:devices:user-a"), !dropped, `${status} ${reason}`);
+  }
+});
+
+test("an APNs error with no readable body is a failed delivery with no reason, and keeps the device", async () => {
+  for (const body of ["<html>bad gateway</html>", "", "null", "[]"]) {
+    const { env, values } = await fixture();
+    seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
+    const [result] = await quietly<Untyped[]>(() => sendPush(env, "user-a", notification, {
+      fetchImpl: async () => new Response(body, { status: 502 }),
+    }));
+    assert.deepEqual([result.delivered, result.status, result.reason], [false, 502, null], JSON.stringify(body));
+    assert.equal(values.has("chat:devices:user-a"), true);
+  }
+});
+
+test("a 410 without a reason still drops the device", async () => {
+  const { env, values } = await fixture();
+  seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
+  await quietly(() => sendPush(env, "user-a", notification, { fetchImpl: async () => new Response("", { status: 410 }) }));
+  assert.equal(values.has("chat:devices:user-a"), false);
+});
+
+test("a network failure for one device doesn't throw and doesn't stop the others", async () => {
+  const { env, values } = await fixture();
+  seedDevices(values, [
+    { token: sandboxToken, environment: "sandbox", updatedAt: 1 },
+    { token: productionToken, environment: "production", updatedAt: 2 },
+  ]);
+  const results = await quietly(() => sendPush(env, "user-a", notification, {
+    fetchImpl: async (url: unknown) => {
+      if (String(url).includes(sandboxToken)) throw new Error("connection reset");
+      return new Response(null, { status: 200 });
+    },
+  }));
+  assert.equal(results.find(item => item.token === sandboxToken)!.delivered, false);
+  assert.equal(results.find(item => item.token === productionToken)!.delivered, true);
+  assert.equal(values.has("chat:devices:user-a"), true, "a network failure doesn't remove a device");
+});
+
+test("a notification too large for APNs is not sent to anyone, and every device is reported undelivered", async () => {
+  const { env, values } = await fixture();
+  seedDevices(values, [
+    { token: sandboxToken, environment: "sandbox", updatedAt: 1 },
+    { token: productionToken, environment: "production", updatedAt: 2 },
+  ]);
+  let calls = 0;
+  const results = await quietly(() => sendPush(env, "user-a", { ...notification, body: "あ".repeat(2_000) }, {
+    fetchImpl: async () => { calls++; return new Response(null, { status: 200 }); },
+  }));
+  assert.equal(calls, 0);
+  assert.deepEqual(results.map(item => item.delivered), [false, false]);
+});
+
+test("a device whose environment has no signing key is reported as missing configuration and nothing is sent for it", async () => {
+  const { env, values } = await fixture();
+  const sandboxOnly = partialEnv({ ...env, APNS_AUTH_KEY: undefined, APNS_KEY_ID: undefined, APNS_SANDBOX_AUTH_KEY: env.APNS_AUTH_KEY, APNS_SANDBOX_KEY_ID: "SANDBOXKEY1" });
+  seedDevices(values, [
+    { token: sandboxToken, environment: "sandbox", updatedAt: 1 },
+    { token: productionToken, environment: "production", updatedAt: 2 },
+  ]);
+  const urls: string[] = [];
+  const results = await quietly(() => sendPush(sandboxOnly, "user-a", notification, {
+    fetchImpl: async (url: unknown) => { urls.push(String(url)); return new Response(null, { status: 200 }); },
+  }));
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /sandbox/);
+  assert.deepEqual(results.find(item => item.token === productionToken), { token: productionToken, delivered: false, reason: "MissingConfiguration" });
+  assert.equal(results.find(item => item.token === sandboxToken)!.delivered, true);
+});
+
+test("nothing is sent, and nothing throws, without a team id or topic, with no devices, or with the push switch off", async () => {
+  const sentTo = async (changes: Record<string, unknown>, devices: unknown[] = [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]) => {
+    const { env, values } = await fixture();
+    seedDevices(values, devices);
+    let calls = 0;
+    const result = await quietly(() => sendPush(partialEnv({ ...env, ...changes }), "user-a", notification, {
+      fetchImpl: async () => { calls++; return new Response(null, { status: 200 }); },
+    }));
+    return { calls, result };
+  };
+  assert.deepEqual(await sentTo({ APNS_TEAM_ID: undefined }), { calls: 0, result: [] });
+  assert.deepEqual(await sentTo({ APNS_TOPIC: undefined }), { calls: 0, result: [] });
+  assert.deepEqual(await sentTo({}, []), { calls: 0, result: [] });
+  assert.deepEqual(await sentTo({ DISABLED_FEATURES: "push" }), { calls: 0, result: [] });
+});
+
+test("the payload keeps the app's own data but never lets it set aps, and ignores data that isn't an object", async () => {
+  const bodies: Untyped[] = [];
+  const send = async (data: unknown) => {
+    const { env, values } = await fixture();
+    seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
+    await sendPush(env, "user-a", { ...notification, data: data as Record<string, unknown> }, {
+      fetchImpl: async (_url: unknown, init?: Untyped) => { bodies.push(JSON.parse(init.body)); return new Response(null, { status: 200 }); },
+    });
+  };
+  await send({ roomID: "room-1", aps: { alert: "forged", "content-available": 1 } });
+  await send(["not", "an", "object"]);
+  await send(null);
+  assert.equal(bodies[0].roomID, "room-1");
+  assert.equal(bodies[0].aps.alert.title, "New message", "the app's own aps is dropped");
+  assert.equal(bodies[0].aps["content-available"], undefined);
+  for (const body of bodies.slice(1)) assert.deepEqual(Object.keys(body), ["aps"]);
+});
