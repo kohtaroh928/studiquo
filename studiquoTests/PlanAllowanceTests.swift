@@ -2,33 +2,40 @@ import XCTest
 @testable import studiquo
 
 final class PlanAllowanceTests: XCTestCase {
-    /// The Worker's `PLAN_BUDGETS` (`mcp-server/src/ai-credits.js`).
+    /// The Worker's `DEFAULT_AI_LIMITS.plans` (`mcp-server/src/ai-limits.ts`).
     func testAllowancesMatchTheWorkersBudgets() {
-        XCTAssertEqual(PlanAllowance.forPlan(.standard), PlanAllowance(monthlyCredits: 120, dailyCredits: 60, fiveHourCredits: 40, callsPerMinute: 5))
-        XCTAssertEqual(PlanAllowance.forPlan(.plus), PlanAllowance(monthlyCredits: 1_500, dailyCredits: 600, fiveHourCredits: 400, callsPerMinute: 10))
-        XCTAssertEqual(PlanAllowance.forPlan(.pro), PlanAllowance(monthlyCredits: 4_000, dailyCredits: 1_500, fiveHourCredits: 1_000, callsPerMinute: 20))
-        XCTAssertEqual(PlanAllowance.forPlan(.free).monthlyCredits, 0)
+        XCTAssertEqual(PlanAllowance.forPlan(.standard), PlanAllowance(weeklyCredits: 30, fiveHourCredits: 10, callsPerMinute: 5))
+        XCTAssertEqual(PlanAllowance.forPlan(.plus), PlanAllowance(weeklyCredits: 350, fiveHourCredits: 100, callsPerMinute: 10))
+        XCTAssertEqual(PlanAllowance.forPlan(.pro), PlanAllowance(weeklyCredits: 920, fiveHourCredits: 250, callsPerMinute: 20))
+        XCTAssertEqual(PlanAllowance.forPlan(.free).weeklyCredits, 0)
     }
 
-    func testMonthlyTurnsPerModel() {
+    func testWeeklyTurnsPerModel() {
         let plus = PlanAllowance.forPlan(.plus)
         let pro = PlanAllowance.forPlan(.pro)
-        XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 20), 75)    // Sol
-        XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 1), 1_500)  // Luna
-        XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 22), 181)    // Terra
-        XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 100), 40)    // Astra
-        XCTAssertEqual(PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: 1), 120) // Luna
-        XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 0), 0)
+        XCTAssertEqual(plus.weeklyTurns(creditsPerTurn: 20), 17)    // Sol
+        XCTAssertEqual(plus.weeklyTurns(creditsPerTurn: 1), 350)    // Luna
+        XCTAssertEqual(pro.weeklyTurns(creditsPerTurn: 22), 41)     // Terra
+        XCTAssertEqual(pro.weeklyTurns(creditsPerTurn: 100), 9)     // Astra
+        XCTAssertEqual(PlanAllowance.forPlan(.standard).weeklyTurns(creditsPerTurn: 1), 30) // Luna
+        XCTAssertEqual(plus.weeklyTurns(creditsPerTurn: 0), 0)
     }
 
     func testHigherPlansNeverAllowLessInAnyWindow() {
         let plans: [StudiquoPlan] = [.free, .standard, .plus, .pro]
         for (lower, higher) in zip(plans, plans.dropFirst()) {
             let a = PlanAllowance.forPlan(lower), b = PlanAllowance.forPlan(higher)
-            XCTAssertLessThanOrEqual(a.monthlyCredits, b.monthlyCredits)
-            XCTAssertLessThanOrEqual(a.dailyCredits, b.dailyCredits)
+            XCTAssertLessThanOrEqual(a.weeklyCredits, b.weeklyCredits)
             XCTAssertLessThanOrEqual(a.fiveHourCredits, b.fiveHourCredits)
             XCTAssertLessThanOrEqual(a.callsPerMinute, b.callsPerMinute)
+        }
+    }
+
+    /// A week's allowance cannot be spent within one 5-hour window.
+    func testFiveHoursIsLessThanTheWeek() {
+        for plan in [StudiquoPlan.standard, .plus, .pro] {
+            let allowance = PlanAllowance.forPlan(plan)
+            XCTAssertLessThan(allowance.fiveHourCredits, allowance.weeklyCredits)
         }
     }
 }

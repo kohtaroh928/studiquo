@@ -25,6 +25,12 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["その他"].waitForExistence(timeout: 10), "「その他」画面が開きません。")
     }
 
+    /// 設定は6分類のボタンに分かれているので、目的の行がある分類まで開く。
+    private func openMore(category: String) {
+        openMore()
+        app.openSettingsCategory(category)
+    }
+
     @discardableResult
     private func scrollTo(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         for _ in 0..<10 where !element.exists || !element.isHittable {
@@ -37,7 +43,7 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
     private var connectionBar: XCUIElement { app.navigationBars["カレンダー連携"] }
 
     private func openConnectionFromMore() {
-        openMore()
+        openMore(category: "data")
         scrollTo(app.buttons["カレンダー連携(Google・大学)"]).tap()
         XCTAssertTrue(connectionBar.waitForExistence(timeout: 10), "カレンダー連携の設定が開きません。")
     }
@@ -46,7 +52,7 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
 
     /// 5. 「ログアウト」→確認→キャンセルならログイン状態のまま
     func testCancellingLogoutKeepsTheUserSignedIn() {
-        openMore()
+        openMore(category: "account")
         scrollTo(app.buttons["more-logout"]).tap()
 
         let confirmTitle = app.staticTexts["ログアウトしますか？"]
@@ -61,13 +67,15 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
         XCTAssertFalse(confirmTitle.waitForExistence(timeout: 3), "キャンセルしても確認が閉じません。")
 
         XCTAssertFalse(app.staticTexts["おかえりなさい"].waitForExistence(timeout: 2), "キャンセルしたのにログイン画面になりました。")
-        XCTAssertTrue(app.navigationBars["その他"].exists, "キャンセル後も「その他」画面に留まる必要があります。")
+        XCTAssertTrue(app.navigationBars["アカウント"].exists, "キャンセル後も「アカウント」画面に留まる必要があります。")
+        // 分類を開いている間はタブバーが隠れるので、一覧に戻ってから確かめる。
+        app.leaveSettingsCategory("account")
         XCTAssertTrue(app.buttons["home-tab-more"].exists, "キャンセル後もホームのタブが残る必要があります。")
     }
 
     /// 6. 確認で「ログアウト」→ログイン画面に戻る
     func testConfirmingLogoutReturnsToTheLoginScreen() {
-        openMore()
+        openMore(category: "account")
         scrollTo(app.buttons["more-logout"]).tap()
         XCTAssertTrue(app.staticTexts["ログアウトしますか？"].waitForExistence(timeout: 5), "ログアウトの確認が出ません。")
 
@@ -84,7 +92,7 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
 
     /// iPad縦向きのログイン画面で、Appleのサインインボタンが縦に伸びない(高さに上限がなく、余白を使い切っていた不具合の回帰)
     func testLoginScreenAppleButtonKeepsAButtonHeightInPortrait() {
-        openMore()
+        openMore(category: "account")
         scrollTo(app.buttons["more-logout"]).tap()
         XCTAssertTrue(app.staticTexts["ログアウトしますか？"].waitForExistence(timeout: 5), "ログアウトの確認が出ません。")
         let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "ログアウト")).allElementsBoundByIndex
@@ -107,6 +115,8 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
         connectionBar.buttons["完了"].tap()
         XCTAssertFalse(connectionBar.waitForExistence(timeout: 3), "「完了」で連携設定が閉じません。")
 
+        // 分類を開いている間はタブバーが隠れるので、「その他」の一覧まで戻る。
+        app.leaveSettingsCategory("data")
         app.buttons["home-tab-notes"].tap()
         app.buttons["home-tab-calendar"].tap()
         XCTAssertTrue(app.navigationBars["カレンダー"].waitForExistence(timeout: 10), "カレンダー画面に戻れません。")

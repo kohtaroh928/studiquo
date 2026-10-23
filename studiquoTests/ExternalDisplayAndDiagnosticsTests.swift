@@ -23,28 +23,3 @@ final class ExternalDisplayControllerTests: XCTestCase {
         XCTAssertFalse(controller.isConnected)
     }
 }
-
-final class GestureDiagnosticsTests: XCTestCase {
-    /// 診断用の出力だけで状態を持つ。どの順序で呼んでも落ちず、
-    /// パン計測の状態が報告のたびに初期化されることを確かめる。
-    func testPanReportingSurvivesFewAndManySamplesAndResets() {
-        GestureDiagnostics.endPanAndReport(scale: 1)   // サンプルなし
-        for _ in 0..<3 { GestureDiagnostics.recordPanUpdate() }
-        GestureDiagnostics.endPanAndReport(scale: 1)   // 少なすぎる
-        for _ in 0..<40 { GestureDiagnostics.recordPanUpdate() }
-        GestureDiagnostics.endPanAndReport(scale: 2.5) // 十分
-        GestureDiagnostics.endPanAndReport(scale: 2.5) // 直後は空に戻っている
-    }
-
-    func testOtherEmittersAcceptEdgeValues() {
-        GestureDiagnostics.panBegan(scale: 0)
-        GestureDiagnostics.zoomScale(.nan, phase: "changed")
-        GestureDiagnostics.zoomScale(1, phase: "ended")
-        GestureDiagnostics.pullBottomState(isAtBottom: true, adderMaxY: .infinity, viewportHeight: 0)
-        GestureDiagnostics.pullProgress(-1, extraPulled: 0)
-        GestureDiagnostics.pullGestureIgnored(reason: "test")
-        GestureDiagnostics.pullRawGeometry(maxY: 100, viewport: 100, contentHeight: 0)
-        GestureDiagnostics.strokeOutcome(before: 0, after: 0, tool: "pen", scratchOutFired: false)
-        GestureDiagnostics.scratchOutRemoval(candidates: 0, removed: 0)
-    }
-}
