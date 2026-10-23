@@ -3343,3 +3343,77 @@ test("admin routes refuse a caller that has no Access login", async () => {
     assert.equal(withSession.status, 403, `${method} ${path} with only a session token`);
   }
 });
+
+// AUTH-2: a token the person has since replaced (refresh keeps the old one for a
+// grace period) must not outlive a logout of the token that replaced it.
+test("logging out the refreshed token also revokes the token it replaced", async () => {
+  const env = environment({ strictSessions: true });
+  const oldToken = tokenIssuedDaysAgo(30, "g");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(oldToken)}`, JSON.stringify({ sub: "email:logout@example.com" }));
+  const refresh = await worker.fetch(request("/api/session/refresh", { method: "POST", token: oldToken, body: {} }), env, noopCtx);
+  const { token: newToken } = await refresh.json();
+  assert.ok(newToken);
+  assert.equal((await worker.fetch(request("/api/actions", { token: oldToken }), env, noopCtx)).status, 200, "the old token still works inside its grace period");
+
+  await revokeToken(env, newToken);
+
+  assert.equal((await worker.fetch(request("/api/actions", { token: newToken }), env, noopCtx)).status, 401);
+  assert.equal((await worker.fetch(request("/api/actions", { token: oldToken }), env, noopCtx)).status, 401, "the replaced token is revoked with it");
+});
+
+test("logging out a token that was never refreshed is unchanged and leaves other devices alone", async () => {
+  const env = environment({ strictSessions: true });
+  const mine = tokenIssuedDaysAgo(1, "m");
+  const other = tokenIssuedDaysAgo(1, "n");
+  for (const t of [mine, other]) await env.STUDIQUO_DATA.put(`session:${sha256Hex(t)}`, JSON.stringify({ sub: "email:two@example.com" }));
+  await revokeToken(env, mine);
+  assert.equal((await worker.fetch(request("/api/actions", { token: other }), env, noopCtx)).status, 200);
+});
+
+// CONF-1: a setting that is on while the secret it needs is missing must be visible.
+test("/health lists settings that are on without the secret they need", async () => {
+  const env = environment();
+  env.REQUIRE_SIGNED_TOKENS = "true";
+  const body = await (await worker.fetch(request("/health"), env, noopCtx)).json();
+  const warn = mock.method(console, "warn", () => {});
+  const withProblem = await (await worker.fetch(request("/health"), env, noopCtx)).json();
+  assert.equal(withProblem.misconfigured, 1, "only a count is public");
+  assert.match(String(warn.mock.calls[0].arguments[1]), /REQUIRE_SIGNED_TOKENS without TOKEN_SIGNING_KEY/);
+  warn.mock.restore();
+  assert.equal(body.misconfigured, 1);
+  env.TOKEN_SIGNING_KEY = Buffer.alloc(32, 7).toString("base64");
+  const fixed = await (await worker.fetch(request("/health"), env, noopCtx)).json();
+  assert.equal(fixed.misconfigured, undefined);
+});
+
+// TOKEN-1: the all-powerful session token must be refusable on /mcp.
+test("/mcp refuses a plain session token when MCP_REFUSE_SESSION_TOKENS is on, and still accepts it when off", async () => {
+  const env = environment({ strictSessions: true });
+  const token = freshToken("z");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:mcp@example.com" }));
+  await env.STUDIQUO_DATA.put(`snapshot:${sha256Hex(token)}`, "{}");
+  const off = await worker.fetch(request("/mcp", { method: "POST", token }), env, noopCtx);
+  assert.notEqual(off.status, 401);
+  env.MCP_REFUSE_SESSION_TOKENS = "true";
+  const on = await worker.fetch(request("/mcp", { method: "POST", token }), env, noopCtx);
+  assert.equal(on.status, 401);
+  assert.match((await on.json()).error, /connect/i);
+});
+
+test("/mcp with the flag on still sends the discovery 401 when there is no token", async () => {
+  const env = environment({ strictSessions: true });
+  env.MCP_REFUSE_SESSION_TOKENS = "true";
+  const response = await worker.fetch(request("/mcp", { method: "POST" }), env, noopCtx);
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get("www-authenticate") ?? "", /resource_metadata=/);
+});
+
+test("revoking a token terminates even if a predecessor record points back at itself", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(1, "L");
+  const key = sha256Hex(token);
+  await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub: "email:loop@example.com" }));
+  await env.STUDIQUO_DATA.put(`session-predecessor:${key}`, key);
+  await revokeToken(env, token);
+  assert.equal((await worker.fetch(request("/api/actions", { token }), env, noopCtx)).status, 401);
+});
