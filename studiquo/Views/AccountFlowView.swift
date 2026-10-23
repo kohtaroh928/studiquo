@@ -26,6 +26,7 @@ struct AccountGateView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
     @State private var cleanupError = ""
+    @StateObject private var blockingLoading = BlockingLoadingCoordinator()
 
     var body: some View {
         Group {
@@ -63,8 +64,16 @@ struct AccountGateView: View {
             }
         }
         .environmentObject(authentication)
+        .environmentObject(blockingLoading)
         // Why the server is paused, or that this build must be updated (ServerNotice.swift).
         .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // Sign-in, e-mail verification and passkey calls wait on the server:
+        // dim the screen and refuse touches until the reply arrives. Account
+        // deletion is not listed here; it runs inside a sheet (a later phase).
+        .blockingLoading(
+            authentication.isSignInBusy || authentication.isEmailVerifyBusy
+                || authentication.isPasskeyBusy || blockingLoading.isActive
+        )
         // The sign-in, verification and onboarding screens show an email address
         // and take a password or a code: not for the app switcher.
         .hidesInAppSwitcher(when: authentication.state != .authenticated)
