@@ -20,7 +20,7 @@ struct AnnouncementsView: View {
         List {
             if store.announcements.isEmpty {
                 Section {
-                    Text(AnnouncementScreenLogic.emptyMessageKey(loadFailed: store.loadFailed))
+                    Text(LocalizedStringKey(AnnouncementScreenLogic.emptyMessageKey(loadFailed: store.loadFailed)))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("announcements-empty")
                 }
