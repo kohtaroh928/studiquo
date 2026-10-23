@@ -34,6 +34,7 @@ import { verifyAppleIdentityToken } from "./apple-auth.ts";
 import { verifyGoogleIdentityToken } from "./google-auth.ts";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.ts";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
+import { warnOnUnsafeConfiguration } from "./config-warnings.ts";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./local-auth.ts";
 import { startAccountDeletion } from "./account-deletion.ts";
 import { hasModerationMark, CHAT_SUSPENSION_PREFIX, loggedInRecently, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
@@ -354,6 +355,7 @@ const heartbeatMemo = new WeakMap<object, { readAt: number; last: number }>();
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
+      warnOnUnsafeConfiguration(env);
       const url = new URL(request.url);
       if (url.pathname === "/health") {
         // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
@@ -685,6 +687,11 @@ async function handleSessionRefresh(request: Request, env: Env, token: string, s
   const originMs = session.originIssuedAtMs ?? session.issuedAtMs ?? issuedAt * 1000;
   const maxDays = Number(env.SESSION_MAX_DAYS) > 0 ? Number(env.SESSION_MAX_DAYS) : DEFAULT_SESSION_MAX_DAYS;
   if (Date.now() - originMs > maxDays * 24 * 60 * 60 * 1000) return json({ refreshed: false, reason: "session_too_old" });
+  // One refresh per token. The KV marker below can be read stale, so the claim
+  // is made on the counter object, which admits exactly one caller.
+  if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`session-refresh:${oldKey}`).bump(1, remainingValiditySeconds(token)))) {
+    return json({ refreshed: false });
+  }
   const refreshed = await mintSession(env, session.originalSub ?? session.sub, undefined, { originIssuedAtMs: originMs });
   if (!refreshed) return json({ error: "Signing in is not available for this account right now." }, 400);
   const newKey = await sha256Hex(refreshed);

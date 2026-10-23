@@ -58,12 +58,12 @@ test("usage reports the tightest remaining allowance without spending any", asyn
     const usageRequest = () => new Request("https://example.test/api/ai/usage");
     const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", partialCtx(ctx), { sub: "user-1" }, "standard"))!.json();
 
-    // standard: 40 credits per 5 hours is the tightest window (day 60, month 120).
-    assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null });
-    assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null }, "reading costs nothing");
+    // standard: 10 credits per 5 hours is the tightest window (week 30).
+    assert.deepEqual(await usage(), { limit: 10, remaining: 10, resetsAt: null });
+    assert.deepEqual(await usage(), { limit: 10, remaining: 10, resetsAt: null }, "reading costs nothing");
 
     assert.equal((await run("chat", chatBody(), { env })).response!.status, 200);
-    assert.equal((await usage()).remaining, 39);
+    assert.equal((await usage()).remaining, 9);
   } finally {
     fetchState.restore();
   }
@@ -229,13 +229,13 @@ test("review spends credits from the same allowance as chat", async () => {
   const fetchState = installFetch(() => responsesOK('{"isStudyRelevant":false,"explanationMarkdown":"","quiz":[]}'));
   try {
     const env = environment();
-    // standard: 40 credits per 5 hours and 5 calls a minute; a review costs 3 x 1 = 3.
+    // standard: 10 credits per 5 hours and 5 calls a minute; a review costs 3 x 1 = 3.
     // Drop the minute window so only the 5-hour window is being exercised.
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
     env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
-    for (let i = 0; i < 13; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response!.status, 200, `review ${i + 1}`);
+    for (let i = 0; i < 3; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response!.status, 200, `review ${i + 1}`);
     const over = await run("review", { question: "テスト" }, { env });
     assert.equal(over.response!.status, 429);
     assert.equal(JSON.parse(over.text).window, "fiveHours");
@@ -435,7 +435,7 @@ test("a refused chat logs the error's type and code, never its body", async () =
   assert.equal(JSON.parse(line).errorCode, "context_length_exceeded");
 });
 
-test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 21", async () => {
+test("a heavy model spends more credits: plus fits 5 Sol calls in 5 hours, not 6", async () => {
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
     const env = environment();
@@ -443,7 +443,7 @@ test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 
     env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
-    for (let i = 0; i < 20; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response!.status, 200, `call ${i + 1}`);
+    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response!.status, 200, `call ${i + 1}`);
     const over = await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" });
     assert.equal(over.response!.status, 429);
     assert.equal(JSON.parse(over.text).window, "fiveHours");
@@ -995,6 +995,158 @@ test("text too long to screen in full fails closed instead of leaving the rest u
     const { moderationRejection, MODERATION_UNAVAILABLE } = await import("./openai.ts");
     const result = await moderationRejection(environment(), ["あ".repeat(8000 * 70)], "key");
     assert.equal(result, MODERATION_UNAVAILABLE);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+// AI-2 (docs/API_SECURITY_AUDIT_2026-10-22.md): a long request costs what it
+// sends, and a chat sends at most AI_LIMITS' chatMaxChars.
+test("a chat drops its oldest turns to fit 60,000 characters, keeping the newest", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const turns = Array.from({ length: 10 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `${i}`.repeat(15_000) }));
+    const { response } = await run("chat", { messages: turns }, { plan: "pro" });
+    assert.equal(response!.status, 200);
+    const sent = fetchState.calls[0].body.input.filter((item: { role: string }) => item.role !== "system" && item.role !== "developer");
+    // 4 x 15,000 fit in 60,000; the 5th would not.
+    assert.equal(sent.length, 4);
+    assert.ok(JSON.stringify(sent.at(-1)).includes("9".repeat(100)), "the newest turn is sent");
+    assert.ok(!JSON.stringify(sent).includes("5".repeat(100)), "older turns are dropped");
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("only the turns that are sent are screened", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const turns = [{ role: "user", text: "古い".repeat(30_000) }, ...Array.from({ length: 4 }, () => ({ role: "user", text: "x".repeat(15_000) }))];
+    await run("chat", { messages: turns }, { plan: "pro" });
+    assert.ok(!JSON.stringify(fetchState.moderationCalls).includes("古い古い"), "a dropped turn is not screened");
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a long chat costs more credits than a short one", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment();
+    const usage = async () => (await handleAI(new URL("https://example.test/api/ai/usage"), new Request("https://example.test/api/ai/usage"), env, "device", partialCtx(executionContext()), { sub: "user-1" }, "plus"))!.json();
+    assert.equal((await run("chat", chatBody(), { env, plan: "plus" })).response!.status, 200);
+    assert.equal((await usage()).remaining, 99, "a short chat costs 1");
+    // 30,000 characters: 1 + ceil(18,000 / 6,000) = 4.
+    assert.equal((await run("chat", { messages: [{ role: "user", text: "あ".repeat(30_000).slice(0, 20_000) }, { role: "user", text: "い".repeat(10_000) }] }, { env, plan: "plus" })).response!.status, 200);
+    assert.equal((await usage()).remaining, 95);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a graded answer is charged for its length", async () => {
+  const fetchState = installFetch(() => responsesOK('{"score":1,"maxScore":1,"verdict":"ok","criteria":[],"issues":[]}'));
+  try {
+    const env = environment();
+    const body = { question: "q".repeat(20_000), answerText: "a".repeat(30_000), criteria: [{ name: "n", maxPoints: 1, requirement: "r" }] };
+    assert.equal((await run("grade", body, { env, plan: "pro" })).response!.status, 200);
+    const usage = await (await handleAI(new URL("https://example.test/api/ai/usage"), new Request("https://example.test/api/ai/usage"), env, "device", partialCtx(executionContext()), { sub: "user-1" }, "pro"))!.json();
+    // About 50,000 characters: multiplier 1 + ceil(38,000 / 6,000) = 8; grade x3 on Luna = 24.
+    assert.equal(usage.remaining, 250 - 24);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+// Review H-1: a request the plan can never pay for is not told to wait.
+test("a long chat on a dear model keeps working with less history instead of failing", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const turns = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `${i}`.repeat(9_000) }));
+    const { response } = await run("chat", { messages: turns, model: "openai-astra" }, { plan: "pro" });
+    assert.equal(response!.status, 200);
+    const sent = fetchState.calls[0].body.input.filter((item: { role: string }) => item.role !== "system" && item.role !== "developer");
+    // Astra on pro can pay for 18,000 characters: the newest two turns.
+    assert.equal(sent.length, 2);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("an answer too long for the plan to grade is refused as too long, not as a limit to wait out", async () => {
+  const fetchState = installFetch(() => responsesOK("{}"));
+  try {
+    const body = { question: "q".repeat(20_000), answerText: "a".repeat(30_000), criteria: [{ name: "n", maxPoints: 1, requirement: "r" }] };
+    const { response, text } = await run("grade", body, { plan: "standard" });
+    assert.equal(response!.status, 413);
+    assert.equal(JSON.parse(text).code, "input_too_long");
+    assert.equal(fetchState.calls.length, 0, "nothing is sent upstream");
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("an attached image is charged as 4,000 characters", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment();
+    // 9,000 characters + 1 image = 13,000: multiplier 2.
+    assert.equal((await run("chat", chatBody({ messages: [{ role: "user", text: "あ".repeat(9_000) }], images: [PNG] }), { env, plan: "plus" })).response!.status, 200);
+    const usage = await (await handleAI(new URL("https://example.test/api/ai/usage"), new Request("https://example.test/api/ai/usage"), env, "device", partialCtx(executionContext()), { sub: "user-1" }, "plus"))!.json();
+    assert.equal(usage.remaining, 98);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("the service-wide ceiling follows the plan's subscriber count", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const takes: { name: string; limit: number }[] = [];
+    const counter = fakeRateCounterBinding();
+    const env = environment({
+      ADMIN_DB: {
+        prepare() {
+          const statement = {
+            bind() { return statement; },
+            async all() { return { results: [{ product_id: "com.yabuko.studiquo.pro.monthly", n: 1000 }] }; },
+            async first() { return { n: 0 }; },
+          };
+          return statement;
+        },
+      },
+      RATE_COUNTER: {
+        getByName(name: string) {
+          const real = counter.getByName(name);
+          return { ...real, async take(limit: number, window: string, amount = 1) { takes.push({ name, limit }); return real.take(limit, window, amount); } };
+        },
+      },
+    });
+    assert.equal((await run("chat", chatBody(), { env, plan: "pro" })).response!.status, 200);
+    const global = takes.find(take => take.name === "ai:global:pro");
+    assert.equal(global?.limit, Math.floor(1000 * (920 / 7) * 3));
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a chat refused by the service-wide ceiling leaves the account's own windows as they were", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const counter = fakeRateCounterBinding();
+    const env = environment({
+      RATE_COUNTER: {
+        getByName(name: string) {
+          const real = counter.getByName(name);
+          return name.startsWith("ai:global:") ? { ...real, async take() { return { ok: false }; } } : real;
+        },
+      },
+    });
+    const { response, text } = await run("chat", chatBody(), { env, plan: "plus" });
+    assert.equal(response!.status, 429);
+    assert.equal(JSON.parse(text).window, "global");
+    const usage = await (await handleAI(new URL("https://example.test/api/ai/usage"), new Request("https://example.test/api/ai/usage"), env, "device", partialCtx(executionContext()), { sub: "user-1" }, "plus"))!.json();
+    assert.equal(usage.remaining, 100);
   } finally {
     fetchState.restore();
   }
