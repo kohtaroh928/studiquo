@@ -1186,6 +1186,7 @@ private struct MoreHomeView: View {
         Section {
             NavigationLink {
                 FriendPrivacySettingsView(shareStudyTime: $shareStudyTime, store: friendStore)
+                    .blockingLoading(friendStore.isBlocking, source: "friends")
             } label: {
                 Label("フレンド設定", systemImage: "person.2")
             }
@@ -1494,7 +1495,7 @@ struct DeleteAccountView: View {
             }
         }
         // This is a sheet: the gate's overlay does not reach it.
-        .blockingLoading(authentication.isAccountDeletionBusy)
+        .blockingLoading(authentication.isAccountDeletionBusy, presentationRoot: true)
     }
 
     @MainActor

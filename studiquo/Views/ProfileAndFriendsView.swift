@@ -333,10 +333,11 @@ final class FriendStore: ObservableObject {
     /// double-tap fires the operation twice before the first response ever
     /// comes back.
     @Published var pendingRequestActions: Set<String> = []
-    /// Reports (通報) waiting on the server; the chat screens dim and refuse
-    /// touches while this is above zero (`blockingLoading`).
-    @Published private(set) var reportsInFlight = 0
-    var isReporting: Bool { reportsInFlight > 0 }
+    /// User-started server calls (reports, friend and group changes, group
+    /// photo) still waiting for an answer; the screens dim and refuse touches
+    /// while this is above zero (`blockingLoading`).
+    @Published private(set) var blockingOperations = 0
+    var isBlocking: Bool { blockingOperations > 0 }
     /// Persisted alongside `messages` — without this, an app relaunch
     /// silently cleared every unread badge back to zero even though the
     /// underlying messages (which genuinely hadn't been read yet) were
@@ -981,6 +982,8 @@ final class FriendStore: ObservableObject {
 
     @discardableResult
     func removeFriend(_ contact: FriendChatService.BlockedContact) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         guard friends.contains(where: { $0.code == contact.code }),
               !pendingRemovalCodes.contains(contact.code) else { return false }
         pendingRemovalCodes.insert(contact.code)
@@ -1141,6 +1144,8 @@ final class FriendStore: ObservableObject {
     /// gets a pending invite (see `acceptGroupInvite`/`rejectGroupInvite`).
     @discardableResult
     func createGroup(name: String, memberCodes: [String]) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         do {
@@ -1162,6 +1167,8 @@ final class FriendStore: ObservableObject {
     /// in — like creation, this only ever creates a pending invite.
     @discardableResult
     func inviteToGroup(roomID: String, code: String) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         do {
             let result = try await client.inviteToGroup(roomID: roomID, code: code)
             if result.status == "already_pending" {
@@ -1183,6 +1190,8 @@ final class FriendStore: ObservableObject {
         guard !pendingGroupActions.contains(invite.roomID) else { return }
         pendingGroupActions.insert(invite.roomID)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingGroupActions.remove(invite.roomID) }
             do {
                 let joined = try await client.acceptGroupInvite(roomID: invite.roomID)
@@ -1202,6 +1211,8 @@ final class FriendStore: ObservableObject {
         guard !pendingGroupActions.contains(invite.roomID) else { return }
         pendingGroupActions.insert(invite.roomID)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingGroupActions.remove(invite.roomID) }
             do {
                 _ = try await client.rejectGroupInvite(roomID: invite.roomID)
@@ -1217,6 +1228,8 @@ final class FriendStore: ObservableObject {
 
     @discardableResult
     func renameGroup(roomID: String, name: String) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         do {
@@ -1246,6 +1259,8 @@ final class FriendStore: ObservableObject {
     /// same call — any current member may do either.
     @discardableResult
     func removeGroupMember(roomID: String, code: String) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         guard !pendingGroupActions.contains(roomID) else { return false }
         pendingGroupActions.insert(roomID)
         defer { pendingGroupActions.remove(roomID) }
@@ -1292,6 +1307,8 @@ final class FriendStore: ObservableObject {
 
     @discardableResult
     func updateGroupAvatar(roomID: String, data: Data) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         guard !data.isEmpty,
               data.count <= AvatarImageProcessor.maximumUploadBytes,
               !pendingGroupAvatarUploads.contains(roomID) else { return false }
@@ -1404,8 +1421,8 @@ final class FriendStore: ObservableObject {
 
     func reportGroupMessage(_ message: FriendChatService.Message, roomID: String, reason: String) async {
         guard !message.isMine, message.isCanceled != true else { return }
-        reportsInFlight += 1
-        defer { reportsInFlight -= 1 }
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         do {
             _ = try await client.report(roomID: roomID, messageID: message.id, reason: reason)
             errorMessage = ""
@@ -1419,6 +1436,8 @@ final class FriendStore: ObservableObject {
     /// even returns.
     @discardableResult
     func addAndWait(code raw: String) async -> Bool {
+        blockingOperations += 1
+        defer { blockingOperations -= 1 }
         let code = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard code.wholeMatch(of: Self.codePattern) != nil,
               code != myCode,
@@ -1453,6 +1472,8 @@ final class FriendStore: ObservableObject {
         guard !pendingRequestActions.contains(request.code) else { return }
         pendingRequestActions.insert(request.code)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingRequestActions.remove(request.code) }
             do {
                 let friend = try await client.accept(code: request.code)
@@ -1478,6 +1499,8 @@ final class FriendStore: ObservableObject {
         guard !pendingRequestActions.contains(request.code) else { return }
         pendingRequestActions.insert(request.code)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingRequestActions.remove(request.code) }
             do {
                 _ = try await client.reject(code: request.code)
@@ -1617,6 +1640,8 @@ final class FriendStore: ObservableObject {
             return
         }
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             do {
                 let result = try await client.addViaLink(token: token)
                 clearRemovalTombstone(result.code)
@@ -1846,6 +1871,8 @@ final class FriendStore: ObservableObject {
               !pendingBlockRoomIDs.contains(roomID) else { return }
         pendingBlockRoomIDs.insert(roomID)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingBlockRoomIDs.remove(roomID) }
             do {
                 _ = try await client.block(roomID: roomID)
@@ -1862,6 +1889,8 @@ final class FriendStore: ObservableObject {
               !pendingBlockRoomIDs.contains(roomID) else { return }
         pendingBlockRoomIDs.insert(roomID)
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             defer { pendingBlockRoomIDs.remove(roomID) }
             do {
                 _ = try await client.unblock(roomID: roomID)
@@ -1875,6 +1904,8 @@ final class FriendStore: ObservableObject {
 
     func unblock(_ contact: FriendChatService.BlockedContact) {
         Task {
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             do {
                 _ = try await client.unblock(roomID: contact.roomID)
                 blockedByMeRoomIDs.remove(contact.roomID)
@@ -1893,8 +1924,8 @@ final class FriendStore: ObservableObject {
         guard let roomID = friends.first(where: { $0.id == message.friendID })?.roomID,
               let serverID = message.serverID else { return }
         Task {
-            reportsInFlight += 1
-            defer { reportsInFlight -= 1 }
+            blockingOperations += 1
+            defer { blockingOperations -= 1 }
             do {
                 _ = try await client.report(roomID: roomID, messageID: serverID, reason: reason)
             } catch {
@@ -2332,8 +2363,11 @@ struct FriendsHomeView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
-        .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
-        .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store) }
+        .sheet(isPresented: $showsAdd) { AddFriendView(store: store).blockingLoading(store.isBlocking, source: "friends", presentationRoot: true) }
+        .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store).blockingLoading(store.isBlocking, source: "friends", presentationRoot: true) }
+        // Friend, group and report calls wait on the server. Sheets below are
+        // presentations of their own and carry the same overlay.
+        .blockingLoading(store.isBlocking, source: "friends")
         .sheet(item: $pendingReportIssue) { pending in ReportIssueSheet(capturedScreenshot: pending.screenshot) }
         .confirmationDialog("フレンドを削除しますか？", isPresented: Binding(
             get: { friendToRemove != nil },
@@ -2372,6 +2406,7 @@ struct FriendsHomeView: View {
                         }
                     }
             }
+            .blockingLoading(store.isBlocking, source: "friends", presentationRoot: true)
         }
         // Clears the home-screen tab badge now that the requests it was
         // counting are actually visible on screen. Incoming requests
@@ -3157,6 +3192,7 @@ private struct GroupProfileView: View {
                 existingCodes: Set(group.members.map(\.code)),
                 store: store
             )
+            .blockingLoading(store.isBlocking, source: "friends", presentationRoot: true)
         }
         .confirmationDialog(
             "「\(group.name)」から退出しますか？",
@@ -3708,7 +3744,7 @@ struct GroupChatView: View {
             }
         }
         .sheet(isPresented: $showsMembers) {
-            if let group { GroupMembersView(roomID: roomID, group: group, store: store) }
+            if let group { GroupMembersView(roomID: roomID, group: group, store: store).blockingLoading(store.isBlocking, source: "friends", presentationRoot: true) }
         }
         .alert("グループ名を変更", isPresented: $showsRename) {
             TextField("グループ名", text: $renameDraft)
@@ -3733,7 +3769,6 @@ struct GroupChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
-        .blockingLoading(store.isReporting)
         .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { for url in urls { if let item = await saveFileAttachment(from: url) { attachments.append(item) } } }
@@ -4062,6 +4097,7 @@ private struct GroupMembersView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .sheet(isPresented: $showsInvite) {
                 InviteToGroupView(roomID: roomID, existingCodes: Set(group.members.map(\.code)), store: store)
+                    .blockingLoading(store.isBlocking, source: "friends", presentationRoot: true)
             }
         }
     }
@@ -4325,6 +4361,7 @@ struct FriendChatView: View {
                     store: store,
                     openChat: { showsFriendProfile = false }
                 )
+                .blockingLoading(store.isBlocking, source: "friends", presentationRoot: true)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("閉じる") { showsFriendProfile = false }
@@ -4368,7 +4405,6 @@ struct FriendChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
-        .blockingLoading(store.isReporting)
         .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, isPaneSwitchDrop(value) else { return false }
