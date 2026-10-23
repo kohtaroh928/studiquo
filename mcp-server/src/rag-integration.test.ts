@@ -665,3 +665,38 @@ test('the retrieval log line carries the status, reason and check code, and none
     }
   } finally { console.log = log; globalThis.fetch = original; }
 });
+
+
+test("RAG reserves actual revalidated references before dispatch, retries once charged, and refunds failures", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const mode of ["ok", "retry", "refuse", "failure"]) {
+      const qenv = qualityEnvironment(), used = new Map();
+      const environment = { ...env(), ...qenv, AI_RETRY_BASE_MS: 0, RATE_COUNTER: { getByName(name) { return {
+        async take(limit, seconds, amount = 1) {
+          if (mode === "refuse" && name.startsWith("ai:cr:5h2:") && (used.get(name) || 0) >= 1) return { ok: false };
+          const next = (used.get(name) || 0) + amount;
+          if (next > limit) return { ok: false };
+          used.set(name, next); return { ok: true, windowEndsAt: 1 };
+        },
+        async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+      }; } } };
+      await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+      environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
+      let calls = 0;
+      globalThis.fetch = async () => { calls++; return mode === "failure" || (mode === "retry" && calls === 1) ? new Response("error", {status: 503}) : new Response(sse(["回答"])); };
+      const result = await chat(environment, { messages: [{ role: "assistant", text: "x".repeat(3980) }, { role: "user", text: "光合成とは？" }], noteContext: "x".repeat(8000), rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+      if (mode === "refuse") { assert.equal(result.response.status, 429); assert.equal(calls, 0); }
+      else if (mode === "failure") assert.equal(result.response.status, 503);
+      else { assert.equal(result.response.status, 200); assert.equal(calls, mode === "retry" ? 2 : 1); }
+      if (mode === "refuse" || mode === "failure") assert.ok([...used.values()].every(v => v === 0));
+      else {
+        assert.equal([...used].find(([n]) => n.startsWith("ai:cr:min:"))[1], 1);
+        const five = [...used].find(([n]) => n.startsWith("ai:cr:5h2:"))[1];
+        assert.ok(five > 1);
+        assert.equal([...used].find(([n]) => n.startsWith("ai:cr:wk:"))[1], five);
+        assert.equal(used.get("ai:global:standard"), five);
+      }
+    }
+  } finally { globalThis.fetch = original; }
+});

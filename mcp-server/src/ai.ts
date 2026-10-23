@@ -187,12 +187,21 @@ async function creditGate(env: Env, { account, plan, kind, model, inputChars }: 
   const limits = aiLimits(env);
   const globalLimit = await planGlobalLimit(env, plan, limits);
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, inputChars, globalLimit, limits });
-  if (result.ok) return { response: null, refund: result.refund! };
+  if (result.ok) return { response: null, refund: result.refund!, reserve: result.reserve! };
+  return { response: creditLimitResponse(result.window!), refund: async () => {}, reserve: result.reserve };
+}
+
+function creditLimitResponse(window: string) {
   // Too long for the plan at all: waiting will not help, so not a 429.
-  if (result.window === "input") return { response: json({ error: LIMIT_MESSAGES.input, code: "input_too_long", window: "input" }, 413), refund: async () => {} };
-  const response = json({ error: LIMIT_MESSAGES[result.window!], code: "ai_limit", window: result.window }, 429);
-  if (result.window === "minute" || result.window === "global") response.headers.set("retry-after", "60");
-  return { response, refund: async () => {} };
+  if (window === "input") return json({ error: LIMIT_MESSAGES.input, code: "input_too_long", window: "input" }, 413);
+  const response = json({ error: LIMIT_MESSAGES[window], code: "ai_limit", window }, 429);
+  if (window === "minute" || window === "global") response.headers.set("retry-after", "60");
+  return response;
+}
+
+class CreditLimitError extends Error {
+  readonly response: Response;
+  constructor(response: Response) { super("AI credit limit reached"); this.response = response; }
 }
 
 /** The plan's service-wide credits per day; 0 for a plan with no AI. */
@@ -312,9 +321,10 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
     text: String(turn?.text ?? "").slice(0, 20_000),
   })), context.length + images.length * limits.input.imageChars, sendable);
 
+  const baseInputChars = inputSize(limits, [...recentTurns.map(turn => turn.text), context], images.length);
   const gate = await creditGate(env, {
     account, plan, kind: "chat", model: requestedModel || DEFAULT_MODEL,
-    inputChars: inputSize(limits, [...recentTurns.map(turn => turn.text), context], images.length),
+    inputChars: baseInputChars,
   });
   if (gate.response) return gate.response;
 
@@ -324,12 +334,18 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   // one flagged reply would block the whole conversation for as long as it
   // stayed in the history.
   const latestAssistant = new Set(recentTurns.map((turn, index) => (turn.role === "assistant" ? index : -1)).filter(index => index >= 0).slice(-2));
-  const rejected = await moderateOrRefund(env, gate, [
-    ...recentTurns
-      .filter((turn, index) => turn.role !== "assistant" || latestAssistant.has(index))
-      .map(turn => turn.text),
-    context,
-  ]);
+  let rejected: Response | null;
+  try {
+    rejected = await moderateOrRefund(env, gate, [
+      ...recentTurns
+        .filter((turn, index) => turn.role !== "assistant" || latestAssistant.has(index))
+        .map(turn => turn.text),
+      context,
+    ]);
+  } catch (error) {
+    await gate.refund();
+    throw error;
+  }
   if (rejected) return rejected;
 
   console.log(JSON.stringify({
@@ -408,6 +424,8 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
         safetyId: account,
         ...(ragRequested ? { beforeDispatch: async () => {
           rag = await revalidateRetrieval(env, session, rag);
+          const extra = await gate.reserve!(baseInputChars + rag.context.length);
+          if (!extra.ok) throw new CreditLimitError(creditLimitResponse(extra.window!));
           referencesSent = rag.context;
           const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
           // Off by default: moving the excerpts changes what the model sees, so
@@ -429,6 +447,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   } catch (error) {
     // A missing key or a network failure must not cost the student credits.
     await gate.refund();
+    if (error instanceof CreditLimitError) return error.response;
     throw error;
   }
 
