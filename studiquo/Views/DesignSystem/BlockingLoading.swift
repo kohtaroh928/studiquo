@@ -1,21 +1,5 @@
 import SwiftUI
 
-/// Counts the operations that are waiting on the server so that overlapping
-/// requests keep the blocking spinner up until the last one finishes.
-@MainActor
-final class BlockingLoadingCoordinator: ObservableObject {
-    @Published private(set) var activeCount = 0
-
-    var isActive: Bool { activeCount > 0 }
-
-    /// Shows the blocking spinner for as long as `operation` runs.
-    func withBlockingLoading<T>(_ operation: () async throws -> T) async rethrows -> T {
-        activeCount += 1
-        defer { activeCount -= 1 }
-        return try await operation()
-    }
-}
-
 /// When the spinner appears and how long it stays, so that a fast response
 /// does not flash a dim screen and a slow one does not blink away.
 enum BlockingLoadingTiming {
@@ -26,8 +10,27 @@ enum BlockingLoadingTiming {
     /// After this long a line explains that the server is slow.
     static let slowNoticeDelay: Duration = .seconds(15)
 
+    /// How long the dimming takes to fade out after the request ends.
+    static let fadeOut: Duration = .milliseconds(150)
+
     static func remainingMinimumDisplay(shownAt: Date, now: Date) -> TimeInterval {
         max(0, minimumDisplay - now.timeIntervalSince(shownAt))
+    }
+}
+
+/// Which views draw an overlay for a source, so that a view nested in the
+/// same presentation does not dim the screen a second time.
+enum BlockingLoadingScope {
+    /// A view whose ancestor already covers `source` stays quiet. A sheet or
+    /// full-screen cover is a new presentation the ancestor's overlay cannot
+    /// reach, so its root (`presentationRoot`) always draws its own.
+    static func isCovered(source: String, presentationRoot: Bool, ancestors: Set<String>) -> Bool {
+        !presentationRoot && ancestors.contains(source)
+    }
+
+    /// The sources covered for the views inside this one.
+    static func sourcesCovered(source: String, presentationRoot: Bool, ancestors: Set<String>) -> Set<String> {
+        presentationRoot ? [source] : ancestors.union([source])
     }
 }
 
@@ -55,42 +58,39 @@ private struct BlockingLoadingModifier: ViewModifier {
     @State private var isShown = false
     @State private var shownAt = Date.distantPast
     @State private var isSlow = false
+    @State private var isFadingOut = false
 
-    /// A view already covered by an ancestor's overlay for the same source
-    /// stays quiet. A sheet or full-screen cover is a new presentation the
-    /// ancestor's overlay cannot reach, so its root passes `presentationRoot`.
     private var isCoveredByAncestor: Bool {
-        !presentationRoot && coveredSources.contains(source)
+        BlockingLoadingScope.isCovered(source: source, presentationRoot: presentationRoot, ancestors: coveredSources)
     }
 
     func body(content: Content) -> some View {
         content
-            .environment(\.blockingLoadingSources, presentationRoot ? [source] : coveredSources.union([source]))
+            .environment(\.blockingLoadingSources, BlockingLoadingScope.sourcesCovered(source: source, presentationRoot: presentationRoot, ancestors: coveredSources))
             .accessibilityHidden(isShown)
             .overlay {
-                if !isCoveredByAncestor && (isActive || isShown) {
+                if !isCoveredByAncestor && (isActive || isShown || isFadingOut) {
                     ZStack {
                         // Swallows touches from the first moment.
                         Color.clear.contentShape(Rectangle())
-                        if isShown {
-                            Color.black.opacity(0.35)
-                                .transition(.opacity)
-                            VStack(spacing: 14) {
-                                ProgressView()
-                                    .controlSize(.large)
-                                    .tint(.white)
-                                if isSlow {
-                                    Text("通信に時間がかかっています")
-                                        .font(.footnote)
-                                        .foregroundStyle(.white)
-                                }
+                        Color.black.opacity(isShown ? 0.35 : 0)
+                        VStack(spacing: 14) {
+                            ProgressView()
+                                .controlSize(.large)
+                                .tint(.white)
+                            if isSlow {
+                                Text("通信に時間がかかっています")
+                                    .font(.footnote)
+                                    .foregroundStyle(.white)
                             }
-                            .padding(24)
-                            .background(.ultraThinMaterial.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(Text("読み込み中"))
-                            .accessibilityAddTraits(.updatesFrequently)
                         }
+                        .padding(24)
+                        .background(.ultraThinMaterial.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+                        .opacity(isShown ? 1 : 0)
+                        .accessibilityHidden(!isShown)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text("読み込み中"))
+                        .accessibilityAddTraits(.updatesFrequently)
                     }
                     .ignoresSafeArea()
                     .accessibilityIdentifier("blockingLoadingOverlay")
@@ -102,14 +102,25 @@ private struct BlockingLoadingModifier: ViewModifier {
 
     @MainActor
     private func follow(_ active: Bool) async {
+        // The ancestor's overlay does the work (announcement, keyboard,
+        // hiding the content); doing it again here would repeat all of it.
+        guard !isCoveredByAncestor else { return }
         if active {
-            try? await Task.sleep(for: BlockingLoadingTiming.showDelay)
-            guard !Task.isCancelled else { return }
-            shownAt = Date()
-            isShown = true
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            UIAccessibility.post(notification: .announcement, argument: L("読み込み中"))
-            try? await Task.sleep(for: BlockingLoadingTiming.slowNoticeDelay - BlockingLoadingTiming.showDelay)
+            isSlow = false
+            // Active again while the previous overlay is still up (waiting out
+            // its minimum display): keep it, and only restart the slow notice.
+            let wasShown = isShown
+            if !wasShown {
+                try? await Task.sleep(for: BlockingLoadingTiming.showDelay)
+                guard !Task.isCancelled else { return }
+                shownAt = Date()
+                isShown = true
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                UIAccessibility.post(notification: .announcement, argument: L("読み込み中"))
+            }
+            try? await Task.sleep(for: wasShown
+                ? BlockingLoadingTiming.slowNoticeDelay
+                : BlockingLoadingTiming.slowNoticeDelay - BlockingLoadingTiming.showDelay)
             guard !Task.isCancelled else { return }
             isSlow = true
         } else if isShown {
@@ -118,8 +129,11 @@ private struct BlockingLoadingModifier: ViewModifier {
             // A new request may have started while waiting; the task is
             // cancelled then and the overlay stays up.
             guard !Task.isCancelled else { return }
+            isFadingOut = true
+            defer { isFadingOut = false }
             isShown = false
             isSlow = false
+            try? await Task.sleep(for: BlockingLoadingTiming.fadeOut)
         }
     }
 }
