@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// Counts the system sign-in screens (passkey sheet, Google sign-in, consent)
+/// that are up. While one is, the app is waiting on the person, not the
+/// server, so the dimmed screen steps aside and comes back for the server
+/// call that follows.
+@MainActor
+final class SystemAuthUITracker: ObservableObject {
+    static let shared = SystemAuthUITracker()
+
+    @Published private(set) var presentedCount = 0
+
+    var isPresenting: Bool { presentedCount > 0 }
+
+    /// Marks a system screen as up for as long as `operation` runs.
+    func track<T>(_ operation: () async throws -> T) async rethrows -> T {
+        presentedCount += 1
+        defer { presentedCount -= 1 }
+        return try await operation()
+    }
+}
+
 /// When the spinner appears and how long it stays, so that a fast response
 /// does not flash a dim screen and a slow one does not blink away.
 enum BlockingLoadingTiming {
@@ -55,10 +75,14 @@ private struct BlockingLoadingModifier: ViewModifier {
     let source: String
     let presentationRoot: Bool
     @Environment(\.blockingLoadingSources) private var coveredSources
+    @ObservedObject private var systemAuthUI = SystemAuthUITracker.shared
     @State private var isShown = false
     @State private var shownAt = Date.distantPast
     @State private var isSlow = false
     @State private var isFadingOut = false
+
+    /// Waiting on the server, and not on a system sign-in screen.
+    private var isWaiting: Bool { isActive && !systemAuthUI.isPresenting }
 
     private var isCoveredByAncestor: Bool {
         BlockingLoadingScope.isCovered(source: source, presentationRoot: presentationRoot, ancestors: coveredSources)
@@ -69,7 +93,7 @@ private struct BlockingLoadingModifier: ViewModifier {
             .environment(\.blockingLoadingSources, BlockingLoadingScope.sourcesCovered(source: source, presentationRoot: presentationRoot, ancestors: coveredSources))
             .accessibilityHidden(isShown)
             .overlay {
-                if !isCoveredByAncestor && (isActive || isShown || isFadingOut) {
+                if !isCoveredByAncestor && (isWaiting || isShown || isFadingOut) {
                     ZStack {
                         // Swallows touches from the first moment.
                         Color.clear.contentShape(Rectangle())
@@ -97,7 +121,7 @@ private struct BlockingLoadingModifier: ViewModifier {
                 }
             }
             .animation(.easeInOut(duration: 0.15), value: isShown)
-            .task(id: isActive) { await follow(isActive) }
+            .task(id: isWaiting) { await follow(isWaiting) }
     }
 
     @MainActor

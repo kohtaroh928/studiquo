@@ -834,14 +834,19 @@ enum GoogleCalendar {
             guard let presenting = presentingViewController() else {
                 throw GoogleCalendarError.noPresentingViewController
             }
-            user = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting).user
+            // Google's own screens wait on the person, not the server.
+            user = try await SystemAuthUITracker.shared.track {
+                try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting).user
+            }
         }
 
         if user.grantedScopes?.contains(calendarReadOnlyScope) != true {
             guard let presenting = presentingViewController() else {
                 throw GoogleCalendarError.noPresentingViewController
             }
-            return try await user.addScopes(scopes, presenting: presenting).user
+            return try await SystemAuthUITracker.shared.track {
+                try await user.addScopes(scopes, presenting: presenting).user
+            }
         }
         return try await user.refreshTokensIfNeeded()
     }

@@ -711,6 +711,9 @@ private enum AppLanguage: String, CaseIterable, Identifiable {
 /// so switching it here updates every screen immediately — no restart.
 private struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    /// The friend settings inside can unblock someone; this sheet is its own
+    /// presentation, so it carries its own overlay over the navigation bar too.
+    let isBlockingFriends: Bool
 
     var body: some View {
         NavigationStack {
@@ -723,6 +726,7 @@ private struct AppSettingsView: View {
                     }
                 }
         }
+        .blockingLoading(isBlockingFriends, source: "friends", presentationRoot: true)
     }
 }
 
@@ -1186,7 +1190,6 @@ private struct MoreHomeView: View {
         Section {
             NavigationLink {
                 FriendPrivacySettingsView(shareStudyTime: $shareStudyTime, store: friendStore)
-                    .blockingLoading(friendStore.isBlocking, source: "friends")
             } label: {
                 Label("フレンド設定", systemImage: "person.2")
             }
@@ -2891,6 +2894,10 @@ struct ContentView: View {
         // looked like nothing happened until the preview eventually opened,
         // or silently did nothing at all if it failed.
         .blockingLoading(isDownloadingFriendAttachment, source: "attachment")
+        // Friend and group calls (including unblocking from the friend
+        // settings under その他) cover the whole screen, navigation bar and
+        // tab bar included.
+        .blockingLoading(friendStore.isBlocking, source: "friends")
         .fullScreenCover(item: $previewURL) { wrapped in
             NavigationStack {
                 DocumentPreview(url: wrapped.url)
@@ -3076,7 +3083,7 @@ struct ContentView: View {
             StudySessionView(notebook: notebook)
         }
         .sheet(isPresented: $showsAppSettings) {
-            AppSettingsView()
+            AppSettingsView(isBlockingFriends: friendStore.isBlocking)
         }
         .sheet(isPresented: $showsProfile) {
             UserProfileView()
