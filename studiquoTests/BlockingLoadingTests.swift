@@ -1,6 +1,7 @@
 import XCTest
 @testable import studiquo
 
+@MainActor
 final class BlockingLoadingTests: XCTestCase {
     func testRemainingMinimumDisplay() {
         let shown = Date(timeIntervalSince1970: 1000)
@@ -35,5 +36,33 @@ final class BlockingLoadingTests: XCTestCase {
         XCTAssertEqual(
             BlockingLoadingScope.sourcesCovered(source: "friends", presentationRoot: false, ancestors: ["default"]),
             ["default", "friends"])
+    }
+
+    func testSystemAuthUIIsCountedOnlyWhileTheOperationRuns() async {
+        let tracker = SystemAuthUITracker()
+        XCTAssertFalse(tracker.isPresenting)
+        await tracker.track {
+            XCTAssertTrue(tracker.isPresenting)
+        }
+        XCTAssertFalse(tracker.isPresenting)
+    }
+
+    func testSystemAuthUIEndsEvenWhenTheOperationThrows() async {
+        struct Cancelled: Error {}
+        let tracker = SystemAuthUITracker()
+        do {
+            try await tracker.track { throw Cancelled() }
+            XCTFail("expected throw")
+        } catch {}
+        XCTAssertFalse(tracker.isPresenting)
+    }
+
+    func testOverlappingSystemScreensKeepItPresentingUntilTheLastEnds() async {
+        let tracker = SystemAuthUITracker()
+        async let slow: Void = tracker.track { try? await Task.sleep(for: .milliseconds(150)) }
+        await tracker.track { try? await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(tracker.isPresenting)
+        await slow
+        XCTAssertFalse(tracker.isPresenting)
     }
 }
