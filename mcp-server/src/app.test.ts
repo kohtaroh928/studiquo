@@ -2879,6 +2879,75 @@ test("an emailed code cannot reset the password or sign in for an account with a
   } finally { mail.mock.restore(); }
 });
 
+// The passkey of an account still being deleted is there until the deletion
+// finishes. Telling the person "this account uses a passkey" then is wrong: they
+// have just deleted it. They are told the deletion is running.
+async function markDeleting(env: any, key: string) {
+  await env.STUDIQUO_DATA.put(`account-deletion:${sha256Hex(key)}`, JSON.stringify({ status: "deleting", generation: 1 }));
+}
+
+test("a password sign-in for an account being deleted says so, not that it needs a passkey", async () => {
+  const env = await withPasskeyAccount();
+  await markDeleting(env, "email:person@example.com");
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal(response.status, 409);
+    const body = await response.json();
+    assert.equal(body.code, "account_deleting");
+    assert.equal(body.token, undefined);
+    assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${sha256Hex("email:person@example.com")}`), null, "no recovery was started");
+  } finally { mail.mock.restore(); }
+});
+
+test("an emailed code for an account being deleted says so, and changes nothing", async () => {
+  const env = await withPasskeyAccount();
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  await markDeleting(env, "email:person@example.com");
+  const before = await env.STUDIQUO_DATA.get("account:local:person@example.com");
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", { method: "POST", body: { email: "person@example.com", code: stub.code(), password: "another-long-password", randomValue: "r".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "account_deleting");
+    assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), before);
+  } finally { mail.mock.restore(); }
+});
+
+test("Apple and Google sign-ins for an account being deleted say so, not that it needs a passkey", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  const google = await makeGoogleSigningKey();
+  await seedGoogleJWKS(env, google.jwk);
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-a", JSON.stringify({ id: "cred-a", email: "del-apple@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-g", JSON.stringify({ id: "cred-g", email: "del-google@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkey-index-backfilled", "1");
+  const { indexAccountPasskey } = await import("./passkey-policy.ts");
+  await indexAccountPasskey(env, "del-apple-sub", "del-apple@example.com", "cred-a");
+  await indexAccountPasskey(env, "google:del-google-sub", "del-google@example.com", "cred-g");
+  await markDeleting(env, "del-apple-sub");
+  await markDeleting(env, "google:del-google-sub");
+
+  const appleToken = await signAppleIdentityToken(apple.privateKey, apple.jwk.kid, { sub: "del-apple-sub", email: "del-apple@example.com" });
+  const appleResponse = await worker.fetch(request("/api/auth/apple", { method: "POST", body: { identityToken: appleToken, randomValue: "a".repeat(40) } }), env, noopCtx);
+  assert.equal(appleResponse.status, 409);
+  assert.equal((await appleResponse.json()).code, "account_deleting");
+
+  const googleToken = await signGoogleIdentityToken(google.privateKey, google.jwk.kid, { sub: "del-google-sub", email: "del-google@example.com", emailVerified: true });
+  const googleResponse = await worker.fetch(request("/api/auth/google", { method: "POST", body: { idToken: googleToken, randomValue: "g".repeat(40) } }), env, noopCtx);
+  assert.equal(googleResponse.status, 409);
+  assert.equal((await googleResponse.json()).code, "account_deleting");
+});
+
 test("deleting the account and approving an app need a recent passkey check when the account has a passkey", async () => {
   const env = await withPasskeyAccount();
   const token = freshToken("k");
