@@ -203,3 +203,68 @@ test("two verifiers with different cache keys do not share cached keys", async (
     await assert.rejects(verifyIdentityToken(await sign(a.privateKey, "k1"), env));
   });
 });
+
+// MARK: Key rotation and fetch limits
+
+async function signWith(privateKey: Awaited<ReturnType<typeof makeKey>>["privateKey"], kid: string) {
+  return new SignJWT({}).setProtectedHeader({ alg: "RS256", kid }).setIssuer("https://idp.example.test").setAudience("client-1")
+    .setSubject("u").setIssuedAt().setExpirationTime("5m").sign(privateKey);
+}
+
+function rotatingVerifier() {
+  return jwksVerifier({
+    providerName: "TestProvider", jwksUrl: "https://idp.example.test/keys", cacheKey: "rot:jwks",
+    issuer: "https://idp.example.test", audience: "client-1",
+  });
+}
+
+test("a token signed with a key newer than the cached set triggers one refresh instead of failing until the cache expires", async () => {
+  const env = makeEnv();
+  const oldKey = await makeKey("kid-old");
+  const newKey = await makeKey("kid-new");
+  await env.STUDIQUO_DATA.put("rot:jwks", JSON.stringify({ keys: [oldKey.jwk] }));
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => { fetchCount += 1; return new Response(JSON.stringify({ keys: [oldKey.jwk, newKey.jwk] }), { status: 200 }); };
+  try {
+    const verifier = rotatingVerifier();
+    const payload = await verifier.verifyIdentityToken(await signWith(newKey.privateKey, "kid-new"), env);
+    assert.equal(payload.sub, "u");
+    assert.equal(fetchCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an unknown key id refreshes at most once per cooldown, so garbage tokens cannot make the Worker hammer the provider", async () => {
+  const env = makeEnv();
+  const known = await makeKey("kid-known");
+  const stranger = await makeKey("kid-stranger");
+  await env.STUDIQUO_DATA.put("rot:jwks", JSON.stringify({ keys: [known.jwk] }));
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => { fetchCount += 1; return new Response(JSON.stringify({ keys: [known.jwk] }), { status: 200 }); };
+  try {
+    const verifier = rotatingVerifier();
+    for (let i = 0; i < 5; i += 1) {
+      await assert.rejects(verifier.verifyIdentityToken(await signWith(stranger.privateKey, "kid-stranger"), env));
+    }
+    assert.equal(fetchCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the provider's key endpoint is fetched with a timeout", async () => {
+  const env = makeEnv();
+  const { jwk } = await makeKey();
+  const originalFetch = globalThis.fetch;
+  let signal: AbortSignal | null | undefined;
+  globalThis.fetch = async (_url, init) => { signal = init?.signal; return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 }); };
+  try {
+    await rotatingVerifier().getPublicKeys(env);
+    assert.ok(signal, "fetch must carry an abort signal");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

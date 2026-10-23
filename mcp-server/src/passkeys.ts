@@ -163,6 +163,14 @@ export function associationFile() {
   });
 }
 
+// A challenge is single-use. Deleting it from the store is not enough on its
+// own: KV reads can lag, so a second request could still read it. The counter
+// object admits exactly one caller per transaction.
+async function claimChallenge(env: Env, transaction: string) {
+  if (!env.RATE_COUNTER) return true;
+  return env.RATE_COUNTER.getByName(`passkey-challenge:${await sha256Hex(transaction)}`).bump(1, 600);
+}
+
 export async function handlePasskeys(url: URL, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
 
@@ -280,6 +288,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
     if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     if (await isRevoked(env, pending.userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    if (!(await claimChallenge(env, transaction))) return json({ error: "Registration expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     await env.STUDIQUO_DATA.delete(emailProofKey(pending.userKey));
     try {
@@ -353,6 +362,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${credentialID}`, "json"),
     ]);
     if (!pending || pending.kind !== "authentication" || !record) return json({ error: "Login expired." }, 400);
+    if (!(await claimChallenge(env, transaction))) return json({ error: "Login expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     try {
       const verification = await verifyAuthenticationResponse({
@@ -469,6 +479,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     if (!pending || pending.kind !== "reauth" || pending.tokenHash !== auth.tokenHash || !record) {
       return json({ error: "Verification expired." }, 400);
     }
+    if (!(await claimChallenge(env, transaction))) return json({ error: "Verification expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     const ids = await listEstablishedPasskeys(env, auth.session.sub, null);
     if (!ids.includes(record.id)) return json({ error: "Passkey verification failed." }, 401);
