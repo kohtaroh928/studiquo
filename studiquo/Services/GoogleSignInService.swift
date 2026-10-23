@@ -75,6 +75,7 @@ final class GoogleSignInService {
         let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             if (response as? HTTPURLResponse)?.statusCode == 403, PasskeyRequired.isIn(body: data) { throw GoogleSignInServiceError.passkeyRequired }
+            if (response as? HTTPURLResponse)?.statusCode == 409, AccountDeleting.isIn(body: data) { throw GoogleSignInServiceError.accountDeleting }
             throw GoogleSignInServiceError.serverRejected
         }
         return try JSONDecoder().decode(ExchangeResponse.self, from: data).token
@@ -93,12 +94,15 @@ enum GoogleSignInServiceError: LocalizedError {
     case noPresentingViewController, invalidResponse, serverRejected
     /// The account has a passkey, so a Google sign-in is no longer accepted.
     case passkeyRequired
+    /// The account was just deleted and the server is still finishing it.
+    case accountDeleting
     var errorDescription: String? {
         switch self {
         case .noPresentingViewController: "サインイン画面を表示できませんでした。"
         case .invalidResponse: "Googleのサインイン応答を読み取れませんでした。"
         case .serverRejected: "サインインサーバーに接続できませんでした。"
         case .passkeyRequired: PasskeyRequired.message
+        case .accountDeleting: AccountDeleting.message
         }
     }
 }

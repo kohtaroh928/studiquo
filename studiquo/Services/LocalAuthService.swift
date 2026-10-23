@@ -50,6 +50,7 @@ enum LocalAuthService {
                     throw LocalAuthError.serverBusy(retryAfter: retryAfter)
                 }
                 if http.statusCode == 403, PasskeyRequired.isIn(body: data) { throw LocalAuthError.passkeyRequired }
+                if http.statusCode == 409, AccountDeleting.isIn(body: data) { throw LocalAuthError.accountDeleting }
             }
             throw LocalAuthError.rejected
         }
@@ -79,6 +80,8 @@ enum LocalAuthError: LocalizedError, Equatable {
     case serverBusy(retryAfter: TimeInterval?)
     /// The account has a passkey, so a password is no longer accepted.
     case passkeyRequired
+    /// The account was just deleted and the server is still finishing it.
+    case accountDeleting
     /// The operator paused the service (maintenance) or sign-in. Not retried.
     case servicePaused(message: String)
 
@@ -86,6 +89,7 @@ enum LocalAuthError: LocalizedError, Equatable {
         switch self {
         case .servicePaused(let message): message
         case .passkeyRequired: PasskeyRequired.message
+        case .accountDeleting: AccountDeleting.message
         case .rejected:
             "メールアドレスまたはパスワードが違います。"
         case .tooManyAttempts(let retryAfter):
@@ -108,6 +112,19 @@ private struct RetryBody: Decodable { let retryAfterSeconds: Int? }
 
 private struct LoginRequest: Encodable { let email: String; let password: String; let randomValue: String }
 private struct LoginResponse: Decodable { let token: String }
+
+/// The account the person is signing in to was deleted a moment ago and the
+/// server is still removing it (`code: "account_deleting"`, 409). It finishes by
+/// itself, usually within the hour; signing up again works after that. Without
+/// this the person saw the passkey of the account they had just deleted.
+enum AccountDeleting {
+    static let message = "このアカウントは削除の処理中です。しばらく(最長で1時間ほど)してから、もう一度お試しください。"
+
+    static func isIn(body: Data) -> Bool {
+        struct Body: Decodable { let code: String? }
+        return (try? JSONDecoder().decode(Body.self, from: body))?.code == "account_deleting"
+    }
+}
 
 /// The server refuses a password or e-mailed code for an account that has a
 /// passkey (`code: "passkey_required"`).
