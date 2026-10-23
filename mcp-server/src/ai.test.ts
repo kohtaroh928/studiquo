@@ -10,6 +10,7 @@ const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAus
 // test here spans a real window boundary.
 function fakeRateCounterBinding() {
   const counts = new Map();
+  const reservations = new Map();
   return {
     getByName(name: string) {
       return {
@@ -22,6 +23,23 @@ function fakeRateCounterBinding() {
         },
         async give(amount = 1) {
           counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
+        },
+        async reserve(operation: string, limit: number, _window: string, amount: number) {
+          const key = `${name}:${operation}`;
+          const before = reservations.get(key) ?? 0;
+          const used = (counts.get(name) ?? 0) + amount - before;
+          if (used > limit) return { ok: false };
+          counts.set(name, Math.max(0, used));
+          reservations.set(key, amount);
+          return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation: string) {
+          const key = `${name}:${operation}`;
+          const amount = reservations.get(key);
+          if (amount === undefined) return false;
+          counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
+          reservations.delete(key);
+          return true;
         },
         async usage(limit: number) {
           const used = counts.get(name) ?? 0;
@@ -233,7 +251,7 @@ test("review spends credits from the same allowance as chat", async () => {
     // Drop the minute window so only the 5-hour window is being exercised.
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
     env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
-      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
+      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {}, async reserve() { return { ok: true, windowEndsAt: 1 }; }, async release() { return false; } }
       : original(name);
     for (let i = 0; i < 3; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response!.status, 200, `review ${i + 1}`);
     const over = await run("review", { question: "テスト" }, { env });
@@ -441,7 +459,7 @@ test("a heavy model spends more credits: plus fits 5 Sol calls in 5 hours, not 6
     const env = environment();
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
     env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
-      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
+      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {}, async reserve() { return { ok: true, windowEndsAt: 1 }; }, async release() { return false; } }
       : original(name);
     for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response!.status, 200, `call ${i + 1}`);
     const over = await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" });
@@ -1118,7 +1136,7 @@ test("the service-wide ceiling follows the plan's subscriber count", async () =>
       RATE_COUNTER: {
         getByName(name: string) {
           const real = counter.getByName(name);
-          return { ...real, async take(limit: number, window: string, amount = 1) { takes.push({ name, limit }); return real.take(limit, window, amount); } };
+          return { ...real, async reserve(operation: string, limit: number, window: string, amount: number) { takes.push({ name, limit }); return real.reserve(operation, limit, window, amount); } };
         },
       },
     });
@@ -1138,7 +1156,7 @@ test("a chat refused by the service-wide ceiling leaves the account's own window
       RATE_COUNTER: {
         getByName(name: string) {
           const real = counter.getByName(name);
-          return name.startsWith("ai:global:") ? { ...real, async take() { return { ok: false }; } } : real;
+          return name.startsWith("ai:global:") ? { ...real, async reserve() { return { ok: false }; } } : real;
         },
       },
     });
