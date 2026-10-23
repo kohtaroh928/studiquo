@@ -172,12 +172,15 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
     }
 
     private func perform(_ request: ASAuthorizationRequest) async throws -> ASAuthorization {
-        try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            let controller = ASAuthorizationController(authorizationRequests: [request])
-            controller.delegate = self
-            controller.presentationContextProvider = self
-            controller.performRequests()
+        // The passkey sheet waits on the person, not the server.
+        try await SystemAuthUITracker.shared.track {
+            try await withCheckedThrowingContinuation { continuation in
+                self.continuation = continuation
+                let controller = ASAuthorizationController(authorizationRequests: [request])
+                controller.delegate = self
+                controller.presentationContextProvider = self
+                controller.performRequests()
+            }
         }
     }
 
