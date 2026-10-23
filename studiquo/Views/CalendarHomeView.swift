@@ -834,14 +834,19 @@ enum GoogleCalendar {
             guard let presenting = presentingViewController() else {
                 throw GoogleCalendarError.noPresentingViewController
             }
-            user = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting).user
+            // Google's own screens wait on the person, not the server.
+            user = try await SystemAuthUITracker.shared.track {
+                try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting).user
+            }
         }
 
         if user.grantedScopes?.contains(calendarReadOnlyScope) != true {
             guard let presenting = presentingViewController() else {
                 throw GoogleCalendarError.noPresentingViewController
             }
-            return try await user.addScopes(scopes, presenting: presenting).user
+            return try await SystemAuthUITracker.shared.track {
+                try await user.addScopes(scopes, presenting: presenting).user
+            }
         }
         return try await user.refreshTokensIfNeeded()
     }
@@ -1172,7 +1177,6 @@ struct CalendarHomeView: View {
                             Task { await syncUniversityCalendar() }
                         }
                         .disabled(isUniversitySyncing || universityCalendarURL.isEmpty)
-                        if isUniversitySyncing { ProgressView() }
                         if !universityStatus.isEmpty {
                             Text(universityStatus).foregroundStyle(.secondary)
                         }
@@ -1198,7 +1202,6 @@ struct CalendarHomeView: View {
                             Task { await syncGoogleCalendar() }
                         }
                         .disabled(isGoogleSyncing)
-                        if isGoogleSyncing { ProgressView() }
                         if !googleStatus.isEmpty {
                             Text(googleStatus).foregroundStyle(.secondary)
                         }
@@ -1256,6 +1259,9 @@ struct CalendarHomeView: View {
                     }
                 }
             }
+            // A calendar sync waits on the school's server or Google: refuse
+            // touches until it answers.
+            .blockingLoading(isUniversitySyncing || isGoogleSyncing, source: "calendar", presentationRoot: true)
         }
     }
 

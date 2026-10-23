@@ -711,6 +711,9 @@ private enum AppLanguage: String, CaseIterable, Identifiable {
 /// so switching it here updates every screen immediately — no restart.
 private struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    /// The friend settings inside can unblock someone; this sheet is its own
+    /// presentation, so it carries its own overlay over the navigation bar too.
+    let isBlockingFriends: Bool
 
     var body: some View {
         NavigationStack {
@@ -723,6 +726,7 @@ private struct AppSettingsView: View {
                     }
                 }
         }
+        .blockingLoading(isBlockingFriends, source: "friends", presentationRoot: true)
     }
 }
 
@@ -1493,6 +1497,8 @@ struct DeleteAccountView: View {
                 }
             }
         }
+        // This is a sheet: the gate's overlay does not reach it.
+        .blockingLoading(authentication.isAccountDeletionBusy, presentationRoot: true)
     }
 
     @MainActor
@@ -2286,7 +2292,6 @@ struct ContentView: View {
     @State private var previewURL: IdentifiableURL?
     @State private var isDownloadingFriendAttachment = false
     @State private var openNotebooks: [Notebook] = []
-    @State private var openStudyNotebooks: [Notebook] = []
     @State private var openFlashcardDecks: [FlashcardDeck] = []
     @State private var openWebTabs: [WebTabInfo] = []
     /// One tab per AI conversation, kept here because the tab bar lives here
@@ -2329,7 +2334,6 @@ struct ContentView: View {
     @State private var selectionResultMessage: String?
     @State private var folderToRename: Folder?
     @State private var folderRenameText = ""
-    @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
     @State private var deckHostNotebook = Notebook(title: "")
     /// Deck (and a token that forces a fresh view) to open straight into a
@@ -2347,6 +2351,10 @@ struct ContentView: View {
     @State private var showsMCPCloudSettings = false
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
+    /// Calls the student started from the MCP settings sheet that are still
+    /// waiting on the server. The automatic pull on return to the app is not
+    /// counted, so it never dims the screen.
+    @State private var mcpUserRequestsInFlight = 0
     @State private var mcpPairKind: MCPConnectionKind = .claude
     @State private var mcpIssuedCode: MCPPairingCode?
     @State private var mcpCodeExpiresAt: Date?
@@ -2883,13 +2891,11 @@ struct ContentView: View {
         // used to give no feedback at all while in flight — tapping it just
         // looked like nothing happened until the preview eventually opened,
         // or silently did nothing at all if it failed.
-        .overlay {
-            if isDownloadingFriendAttachment {
-                ProgressView("読み込み中…")
-                    .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
-            }
-        }
+        .blockingLoading(isDownloadingFriendAttachment, source: "attachment")
+        // Friend and group calls (including unblocking from the friend
+        // settings under その他) cover the whole screen, navigation bar and
+        // tab bar included.
+        .blockingLoading(friendStore.isBlocking, source: "friends")
         .fullScreenCover(item: $previewURL) { wrapped in
             NavigationStack {
                 DocumentPreview(url: wrapped.url)
@@ -2967,13 +2973,12 @@ struct ContentView: View {
             }
             Section {
                 Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
-                    Task { await syncMCPCloud() }
+                    Task { await waitingOnMCPServer { await syncMCPCloud() } }
                 }
                 Button("受信した資料を確認", systemImage: "tray.and.arrow.down") {
-                    Task { await pullMCPInbox() }
+                    Task { await waitingOnMCPServer { await pullMCPInbox() } }
                 }
                 .disabled(isMCPCloudSyncing || mcpCloudEndpoint.isEmpty || mcpCloudToken.count < 32)
-                if isMCPCloudSyncing { ProgressView() }
                 if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
             } footer: {
                 Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。")
@@ -2982,7 +2987,7 @@ struct ContentView: View {
                 Picker("接続するAIアプリ", selection: $mcpPairKind) {
                     ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
                 }
-                Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                Button("コードを発行") { Task { await waitingOnMCPServer { await issueMCPPairingCode() } } }
                 if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         if context.date < expiresAt {
@@ -3018,7 +3023,7 @@ struct ContentView: View {
                         }
                         Spacer()
                         Button("解除", role: .destructive) {
-                            Task { await disconnectMCP(connection) }
+                            Task { await waitingOnMCPServer { await disconnectMCP(connection) } }
                         }
                     }
                 }
@@ -3070,12 +3075,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showsMCPCloudSettings) {
             mcpCloudSettingsSheet
-        }
-        .sheet(item: $studyNotebook) { notebook in
-            StudySessionView(notebook: notebook)
+                .blockingLoading(mcpUserRequestsInFlight > 0, source: "mcp", presentationRoot: true)
         }
         .sheet(isPresented: $showsAppSettings) {
-            AppSettingsView()
+            AppSettingsView(isBlockingFriends: friendStore.isBlocking)
         }
         .sheet(isPresented: $showsProfile) {
             UserProfileView()
@@ -3488,27 +3491,6 @@ struct ContentView: View {
                     .frame(height: 34)
                     .tabBlock(tint: .accentColor, selected: selectedNotebook === notebook)
                     .tabDraggable("notebook:\(notebookID(notebook))")
-                }
-                ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
-                    HStack(spacing: 5) {
-                        Button {
-                            studyNotebook = notebook
-                        } label: {
-                            Label("\(notebook.title)・暗記カード", systemImage: "rectangle.on.rectangle.angled")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            openStudyNotebooks.removeAll { $0 === notebook }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .tabBlock(tint: .indigo, selected: false)
-                    .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
                     HStack(spacing: 5) {
@@ -4185,13 +4167,9 @@ struct ContentView: View {
             return true
         }
         guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { return false }
-        if parts[0] == "flashcards" {
-            studyNotebook = notebook
-        } else {
-            selectedFlashcardDeck = nil
-            openNotebookTab(notebook)
-            selectedNotebook = notebook
-        }
+        selectedFlashcardDeck = nil
+        openNotebookTab(notebook)
+        selectedNotebook = notebook
         return true
     }
 
@@ -6698,6 +6676,13 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func waitingOnMCPServer(_ operation: () async -> Void) async {
+        mcpUserRequestsInFlight += 1
+        defer { mcpUserRequestsInFlight -= 1 }
+        await operation()
+    }
+
+    @MainActor
     private func syncMCPCloud() async {
         guard let baseURL = WorkerEndpointPolicy.resolve(mcpCloudEndpoint),
               let snapshotData = makeMCPSnapshotData(),
@@ -6917,9 +6902,7 @@ struct ContentView: View {
     /// removed note never lingers as a tab whose content is gone.
     private func closeNotebookTabs(_ notebook: Notebook) {
         openNotebooks.removeAll { $0 === notebook }
-        openStudyNotebooks.removeAll { $0 === notebook }
         if selectedNotebook === notebook { selectedNotebook = nil }
-        if studyNotebook === notebook { studyNotebook = nil }
     }
 
     private func closeDeckTabs(_ deck: FlashcardDeck) {
@@ -6954,7 +6937,6 @@ struct ContentView: View {
     private var isStudySurfaceOpen: Bool {
         selectedNotebook != nil || selectedFlashcardDeck != nil
             || selectedTextDocument != nil
-            || studyNotebook != nil
     }
 
     /// A value that changes whenever what is open changes, so the tracker can
@@ -6962,8 +6944,7 @@ struct ContentView: View {
     private var studySurfaceKey: String {
         [selectedNotebook?.persistentModelID.hashValue,
          selectedFlashcardDeck?.persistentModelID.hashValue,
-         selectedTextDocument?.persistentModelID.hashValue,
-         studyNotebook?.persistentModelID.hashValue]
+         selectedTextDocument?.persistentModelID.hashValue]
             .map { $0.map(String.init) ?? "-" }
             .joined(separator: ":")
     }
