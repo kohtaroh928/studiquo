@@ -50,8 +50,12 @@ async function processJobs<Job>(env: Env, prefix: string, callback: (key: string
     const job = await env.STUDIQUO_DATA.get<Job>(key.name, "json");
     if (!job) continue;
     try { await callback(key.name, job); }
-    catch {
-      console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix }));
+    catch (error) {
+      // The reason is kept (a name and a short message, never the job or its
+      // identity): without it a deletion that dies at the same step every hour
+      // — for instance on the subrequest limit — cannot be told from any other.
+      const reason = error instanceof Error ? { error: error.name, detail: error.message.slice(0, 120) } : {};
+      console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix, ...reason }));
       await raiseAlert(env, OPS_ALERTS.deletionRetry);
     }
   }
