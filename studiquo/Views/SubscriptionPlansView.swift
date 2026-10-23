@@ -6,6 +6,8 @@ struct SubscriptionPlansView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsTermsOfUse = false
     @State private var showsPrivacyPolicy = false
+    /// A restore or a reload the student started is waiting on the server.
+    @State private var isWaitingForServer = false
     /// Presented by the paywall gate: no way to dismiss it without a plan.
     var isBlocking = false
 
@@ -33,10 +35,14 @@ struct SubscriptionPlansView: View {
                     planCard(plan: .plus, subtitle: "学習をもっと深く", features: plusFeatures)
                     planCard(plan: .pro, subtitle: "難関課題・研究に", features: proFeatures)
 
-                    if isBlocking { PaywallExits() }
+                    if isBlocking { PaywallExits(isWorking: $isWaitingForServer) }
 
                     Button("購入履歴を復元") {
-                        Task { await store.restorePurchases() }
+                        Task {
+                            isWaitingForServer = true
+                            defer { isWaitingForServer = false }
+                            await store.restorePurchases()
+                        }
                     }
                     .disabled(store.isLoading || store.isPurchasing)
 
@@ -87,6 +93,10 @@ struct SubscriptionPlansView: View {
             }
             .task { if sampleOptions.isEmpty { await store.refresh() } }
         }
+        // A purchase, a restore or a reload waits on the App Store / Worker:
+        // refuse touches until it answers. The background refresh that runs on
+        // return to the app is not listed, so it never dims the screen.
+        .blockingLoading(store.isPurchasing || isWaitingForServer)
     }
 
     private var messageIsPresented: Binding<Bool> {
@@ -278,11 +288,16 @@ private struct PaywallExits: View {
     @EnvironmentObject private var store: SubscriptionStore
     @EnvironmentObject private var authentication: AuthenticationStore
     @State private var showsAccountDeletion = false
+    @Binding var isWorking: Bool
 
     var body: some View {
         VStack(spacing: 10) {
             Button("プランを再読み込み") {
-                Task { await store.refresh() }
+                Task {
+                    isWorking = true
+                    defer { isWorking = false }
+                    await store.refresh()
+                }
             }
             .disabled(store.isLoading || store.isPurchasing)
             HStack(spacing: 16) {

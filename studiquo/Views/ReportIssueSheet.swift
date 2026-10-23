@@ -156,12 +156,8 @@ struct ReportIssueSheet: View {
                         .disabled(state.isSubmitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if state.isSubmitting {
-                        ProgressView()
-                    } else {
-                        Button("送信") { submit() }
-                            .disabled(!state.canSubmit)
-                    }
+                    Button("送信") { submit() }
+                        .disabled(!state.canSubmit)
                 }
             }
             .alert("送信しました", isPresented: Binding(
@@ -174,6 +170,8 @@ struct ReportIssueSheet: View {
             }
         }
         .interactiveDismissDisabled(state.isSubmitting)
+        // This is a sheet: the gate's overlay does not reach it.
+        .blockingLoading(state.isSubmitting)
     }
 
     private func submit() {

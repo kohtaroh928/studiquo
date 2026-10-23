@@ -1493,6 +1493,8 @@ struct DeleteAccountView: View {
                 }
             }
         }
+        // This is a sheet: the gate's overlay does not reach it.
+        .blockingLoading(authentication.isAccountDeletionBusy)
     }
 
     @MainActor
