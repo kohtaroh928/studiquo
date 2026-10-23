@@ -20,6 +20,32 @@ final class FriendStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testBlockingStaysOnUntilTheServerAnswersAndIsOffAfterwards() async throws {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        XCTAssertFalse(store.isBlocking)
+
+        // The friend-list refresh that follows a request is held open, so the
+        // add is still waiting on the server.
+        await client.holdFriends()
+        let pending = Task { await store.addAndWait(code: "ALICE1") }
+        for _ in 0..<100 where !store.isBlocking { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(store.isBlocking)
+
+        await client.releaseFriends()
+        _ = await pending.value
+        XCTAssertFalse(store.isBlocking)
+    }
+
+    func testBlockingIsOffAfterAFailedCall() async {
+        let client = MockFriendChatClient()
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let succeeded = await store.addAndWait(code: "ALICE1")
+        XCTAssertFalse(succeeded)
+        XCTAssertFalse(store.isBlocking)
+    }
+
     func testMessageListURLUsesAQueryItemForTheCursor() throws {
         let roomID = String(repeating: "a", count: 64)
         let baseURL = try XCTUnwrap(URL(string: "https://example.com"))
