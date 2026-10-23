@@ -2292,7 +2292,6 @@ struct ContentView: View {
     @State private var previewURL: IdentifiableURL?
     @State private var isDownloadingFriendAttachment = false
     @State private var openNotebooks: [Notebook] = []
-    @State private var openStudyNotebooks: [Notebook] = []
     @State private var openFlashcardDecks: [FlashcardDeck] = []
     @State private var openWebTabs: [WebTabInfo] = []
     /// One tab per AI conversation, kept here because the tab bar lives here
@@ -2335,7 +2334,6 @@ struct ContentView: View {
     @State private var selectionResultMessage: String?
     @State private var folderToRename: Folder?
     @State private var folderRenameText = ""
-    @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
     @State private var deckHostNotebook = Notebook(title: "")
     /// Deck (and a token that forces a fresh view) to open straight into a
@@ -3079,9 +3077,6 @@ struct ContentView: View {
             mcpCloudSettingsSheet
                 .blockingLoading(mcpUserRequestsInFlight > 0, source: "mcp", presentationRoot: true)
         }
-        .sheet(item: $studyNotebook) { notebook in
-            StudySessionView(notebook: notebook)
-        }
         .sheet(isPresented: $showsAppSettings) {
             AppSettingsView(isBlockingFriends: friendStore.isBlocking)
         }
@@ -3496,27 +3491,6 @@ struct ContentView: View {
                     .frame(height: 34)
                     .tabBlock(tint: .accentColor, selected: selectedNotebook === notebook)
                     .tabDraggable("notebook:\(notebookID(notebook))")
-                }
-                ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
-                    HStack(spacing: 5) {
-                        Button {
-                            studyNotebook = notebook
-                        } label: {
-                            Label("\(notebook.title)・暗記カード", systemImage: "rectangle.on.rectangle.angled")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            openStudyNotebooks.removeAll { $0 === notebook }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .tabBlock(tint: .indigo, selected: false)
-                    .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
                     HStack(spacing: 5) {
@@ -4193,13 +4167,9 @@ struct ContentView: View {
             return true
         }
         guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { return false }
-        if parts[0] == "flashcards" {
-            studyNotebook = notebook
-        } else {
-            selectedFlashcardDeck = nil
-            openNotebookTab(notebook)
-            selectedNotebook = notebook
-        }
+        selectedFlashcardDeck = nil
+        openNotebookTab(notebook)
+        selectedNotebook = notebook
         return true
     }
 
@@ -6932,9 +6902,7 @@ struct ContentView: View {
     /// removed note never lingers as a tab whose content is gone.
     private func closeNotebookTabs(_ notebook: Notebook) {
         openNotebooks.removeAll { $0 === notebook }
-        openStudyNotebooks.removeAll { $0 === notebook }
         if selectedNotebook === notebook { selectedNotebook = nil }
-        if studyNotebook === notebook { studyNotebook = nil }
     }
 
     private func closeDeckTabs(_ deck: FlashcardDeck) {
@@ -6969,7 +6937,6 @@ struct ContentView: View {
     private var isStudySurfaceOpen: Bool {
         selectedNotebook != nil || selectedFlashcardDeck != nil
             || selectedTextDocument != nil
-            || studyNotebook != nil
     }
 
     /// A value that changes whenever what is open changes, so the tracker can
@@ -6977,8 +6944,7 @@ struct ContentView: View {
     private var studySurfaceKey: String {
         [selectedNotebook?.persistentModelID.hashValue,
          selectedFlashcardDeck?.persistentModelID.hashValue,
-         selectedTextDocument?.persistentModelID.hashValue,
-         studyNotebook?.persistentModelID.hashValue]
+         selectedTextDocument?.persistentModelID.hashValue]
             .map { $0.map(String.init) ?? "-" }
             .joined(separator: ":")
     }
