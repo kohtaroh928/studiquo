@@ -42,6 +42,17 @@ export async function retryRevenueCatDeletion(env: Env, key: string, job: { iden
   return true;
 }
 
+/**
+ * A runtime error's message can carry the key it was working on, and a key can
+ * hold an address or the hash of one: both are blanked before the message is logged.
+ */
+export function redactedDetail(message: string) {
+  return message
+    .replace(/[^\s@:/]+@[^\s@:/]+/g, "[address]")
+    .replace(/\b[0-9a-f]{32,}\b/gi, "[hash]")
+    .slice(0, 120);
+}
+
 async function processJobs<Job>(env: Env, prefix: string, callback: (key: string, job: Job) => Promise<unknown>, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
@@ -54,7 +65,7 @@ async function processJobs<Job>(env: Env, prefix: string, callback: (key: string
       // The reason is kept (a name and a short message, never the job or its
       // identity): without it a deletion that dies at the same step every hour
       // — for instance on the subrequest limit — cannot be told from any other.
-      const reason = error instanceof Error ? { error: error.name, detail: error.message.slice(0, 120) } : {};
+      const reason = error instanceof Error ? { error: error.name, detail: redactedDetail(error.message) } : {};
       console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix, ...reason }));
       await raiseAlert(env, OPS_ALERTS.deletionRetry);
     }
