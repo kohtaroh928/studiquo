@@ -1095,10 +1095,6 @@ private struct MoreHomeView: View {
         .navigationDestination(isPresented: $showsAnnouncements) {
             AnnouncementsView(store: announcementStore)
         }
-        .confirmationDialog("ログアウトしますか？", isPresented: $confirmsLogout, titleVisibility: .visible) {
-            Button("ログアウト", role: .destructive) { authentication.logout() }
-            Button("キャンセル", role: .cancel) {}
-        }
     }
 
     private var announcementSection: some View {
@@ -1137,6 +1133,11 @@ private struct MoreHomeView: View {
             .accessibilityIdentifier("more-profile")
             Button("ログアウト", role: .destructive) { confirmsLogout = true }
                 .accessibilityIdentifier("more-logout")
+                // ここに付ける。分類の画面を開いた先では、親の画面に付けた確認は出ない。
+                .confirmationDialog("ログアウトしますか？", isPresented: $confirmsLogout, titleVisibility: .visible) {
+                    Button("ログアウト", role: .destructive) { authentication.logout() }
+                    Button("キャンセル", role: .cancel) {}
+                }
         } header: {
             Text("プロフィールとログイン")
         } footer: {
