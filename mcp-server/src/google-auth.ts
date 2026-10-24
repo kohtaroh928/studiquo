@@ -12,7 +12,7 @@ import { jwksVerifier } from "./jwks-verify.ts";
 // Google's own documented guidance for verifying ID tokens.
 const ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
-const { getPublicKeys: getGooglePublicKeys, verifyIdentityToken: verifyGoogleIdentityToken } = jwksVerifier({
+const defaultVerifier = jwksVerifier({
   providerName: "Google",
   jwksUrl: "https://www.googleapis.com/oauth2/v3/certs",
   cacheKey: "google:jwks",
@@ -20,4 +20,21 @@ const { getPublicKeys: getGooglePublicKeys, verifyIdentityToken: verifyGoogleIde
   audience: "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com",
 });
 
-export { getGooglePublicKeys, verifyGoogleIdentityToken };
+export const getGooglePublicKeys = defaultVerifier.getPublicKeys;
+
+/// The staging app has its own OAuth client. The JWT audience therefore has
+/// to be selected from the Worker environment rather than compiled in.
+export function verifyGoogleIdentityToken(token: string, env: import("./env.ts").Env) {
+  const configured = env.GOOGLE_OAUTH_SERVER_CLIENT_ID?.trim();
+  if (env.DEPLOYMENT_ENVIRONMENT === "staging" && !configured) {
+    throw new Error("Staging Google OAuth client is not configured");
+  }
+  const audience = configured || "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com";
+  return jwksVerifier({
+    providerName: "Google",
+    jwksUrl: "https://www.googleapis.com/oauth2/v3/certs",
+    cacheKey: "google:jwks",
+    issuer: ISSUERS,
+    audience,
+  }).verifyIdentityToken(token, env);
+}

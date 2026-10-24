@@ -106,11 +106,12 @@ enum RAGRegistrationState: String, Decodable {
 
 enum RAGConsent {
     static let version = "rag-openai-v1"
+    private static let key = LaunchStoreEnvironment.namespaced("ragCloudConsentVersion")
     static var isGranted: Bool {
-        UserDefaults.standard.string(forKey: "ragCloudConsentVersion") == version
+        UserDefaults.standard.string(forKey: key) == version
     }
-    static func grant() { UserDefaults.standard.set(version, forKey: "ragCloudConsentVersion") }
-    static func revoke() { UserDefaults.standard.removeObject(forKey: "ragCloudConsentVersion") }
+    static func grant() { UserDefaults.standard.set(version, forKey: key) }
+    static func revoke() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
 /// All uploads are explicit. Opening/importing a notebook never invokes indexing.
@@ -361,7 +362,7 @@ enum RAGDeletionQueue {
     static func accountPartition() -> String? {
         func identity(_ account: String) -> [String: Any]? {
             let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: "com.yabuko.studiquo.authentication",
+                kSecAttrService as String: LaunchStoreEnvironment.namespaced("com.yabuko.studiquo.authentication"),
                 kSecAttrAccount as String: account, kSecReturnData as String: true]
             var result: CFTypeRef?
             guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
@@ -379,7 +380,7 @@ enum RAGDeletionQueue {
         return SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     private static var key: String? {
-        accountPartition().map { "ragPendingSourceDeletions-" + $0 }
+        accountPartition().map { LaunchStoreEnvironment.namespaced("ragPendingSourceDeletions-" + $0) }
     }
     static func enqueueNotebook(_ notebook: Notebook, preservingCitations: Bool = true, state: String = "deleted") {
         _ = RAGLibrarySyncService.shared.canSearch // Refresh the account/endpoint before choosing the lifecycle route.
