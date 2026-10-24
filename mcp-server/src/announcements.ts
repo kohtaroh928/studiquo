@@ -20,6 +20,7 @@ import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
 import { deviceStorageKey, loadDevices, type Device } from "./devices.ts";
 import { sendPush } from "./push.ts";
 import type { Env } from "./env.ts";
+import { markAdminPage } from "./environment.ts";
 import { nextCursor } from "./kv.ts";
 
 export const SUPPORTED_LANGUAGES = [
@@ -641,7 +642,7 @@ load().catch(() => { $('error').textContent = '読み込みに失敗しました
 </script>
 </html>`;
 
-export function handleAnnouncementsPage(url: URL) {
+export function handleAnnouncementsPage(url: URL, env: Pick<Env, "ENVIRONMENT_LABEL"> = {}) {
   if (url.pathname !== "/admin/announcements") return null;
-  return new Response(ADMIN_PAGE_HTML, { headers: htmlHeaders({ connect: true }) });
+  return new Response(markAdminPage(env, ADMIN_PAGE_HTML), { headers: htmlHeaders({ connect: true }) });
 }

@@ -178,6 +178,30 @@ test("a SANDBOX purchase grants a plan when ALLOW_SANDBOX_PURCHASES is true", as
   assert.equal((await stats(env)).activeSubscribers, 1);
 });
 
+test("a staging deployment drops PRODUCTION events and keeps SANDBOX ones", async () => {
+  const env = { ...environment(), ENVIRONMENT_LABEL: "staging", ALLOW_SANDBOX_PURCHASES: "true" };
+  const real = await sendWebhook(env, purchaseEvent({ app_user_id: "real-customer", environment: "PRODUCTION" }));
+  assert.deepEqual(await real.json(), { received: true, ignored: true });
+  const typo = await sendWebhook({ ...env, ENVIRONMENT_LABEL: "stg!" }, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "real-customer-4" }));
+  assert.deepEqual(await typo.json(), { received: true, ignored: true }, "a malformed label still protects");
+  const lowerCase = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "real-customer-3", environment: "production" }));
+  assert.deepEqual(await lowerCase.json(), { received: true, ignored: true });
+  const noEnvironment = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "real-customer-2", environment: undefined }));
+  assert.deepEqual(await noEnvironment.json(), { received: true, ignored: true });
+  assert.equal(await env.ADMIN_DB.prepare("SELECT 1 AS found FROM revenuecat_events WHERE app_user_id LIKE 'real-customer%'").first(), null, "nothing about the real customer is stored");
+  assert.equal((await stats(env)).activeSubscribers, 0);
+
+  const sandbox = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID(), app_user_id: "tester", environment: "SANDBOX" }));
+  assert.deepEqual(await sandbox.json(), { received: true });
+  assert.equal((await stats(env)).activeSubscribers, 1);
+});
+
+test("a staging deployment still refuses a webhook with the wrong secret", async () => {
+  const env = { ...environment(), ENVIRONMENT_LABEL: "staging" };
+  const response = await sendWebhook(env, purchaseEvent({ environment: "SANDBOX" }), "wrong");
+  assert.equal(response.status, 401);
+});
+
 test("an older event delivered late does not overwrite a newer one", async () => {
   const env = environment();
   const now = Date.now();

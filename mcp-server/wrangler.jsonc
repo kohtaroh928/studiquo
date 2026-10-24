@@ -292,6 +292,9 @@
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
         "ALLOW_SANDBOX_PURCHASES": "true",
+        // Marks every Slack message, push, e-mail subject and admin page from this Worker
+        // as staging (environment.ts). Production leaves it unset, so nothing is marked there.
+        "ENVIRONMENT_LABEL": "staging",
         "APNS_TOPIC": "com.yabuko.studiquo.staging",
         "ARGON2_WRITE": "false",
         // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.

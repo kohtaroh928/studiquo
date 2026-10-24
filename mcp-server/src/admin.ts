@@ -18,6 +18,7 @@ import { productForPlanChange } from "./entitlements.ts";
 import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.ts";
 import type { Env } from "./env.ts";
+import { isNonProduction, markAdminPage } from "./environment.ts";
 import { nextCursor } from "./kv.ts";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
@@ -121,6 +122,14 @@ export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
   const event = body?.event;
   if (!event || typeof event.id !== "string" || typeof event.app_user_id !== "string" || typeof event.type !== "string") {
     return json({ error: "Invalid request." }, 400);
+  }
+
+  // A staging deployment is for sandbox purchases only. A real customer's
+  // purchase (RevenueCat's PRODUCTION environment) sent to it by a mistaken
+  // webhook setting is acknowledged and dropped, so no real customer's data
+  // lands in the test database. An event without an `environment` counts as PRODUCTION.
+  if (isNonProduction(env) && String(event.environment ?? "PRODUCTION").toUpperCase() === "PRODUCTION") {
+    return json({ received: true, ignored: true });
   }
 
   const occurredAt = Number(event.event_timestamp_ms) || Date.now();
@@ -434,7 +443,7 @@ fetch('/api/admin/stats').then(r => {
 <script>${MODERATION_SCRIPT}</script>
 </html>`;
 
-export function handleAdminPage(url: URL) {
+export function handleAdminPage(url: URL, env: Pick<Env, "ENVIRONMENT_LABEL"> = {}) {
   if (url.pathname !== "/admin" && url.pathname !== "/admin/") return null;
-  return new Response(DASHBOARD_HTML, { headers: htmlHeaders({ connect: true }) });
+  return new Response(markAdminPage(env, DASHBOARD_HTML), { headers: htmlHeaders({ connect: true }) });
 }
