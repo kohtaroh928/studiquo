@@ -1959,7 +1959,7 @@ private struct AIDataDisclosureView: View {
                         }
                     }
                     .padding(14)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
 
                     Text("設定 → プライバシーから許可の変更・取り消しができます。翌日復習は初期状態ではオフです。取り消しても送信済みの情報は回収できません。")
                         .font(.caption)
