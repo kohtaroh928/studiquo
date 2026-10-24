@@ -167,7 +167,7 @@ test('the retrieval log line carries the judge outcome and bucket, and none of t
     const environment: any = qualityEnvironment();
     Object.assign(environment, { OPENAI_LUNA_MODEL: 'gpt-test-luna', AI_MODERATION: 'off', OPENAI_API_KEY: 'test-placeholder', RAG_JUDGE: 'shadow',
       STUDIQUO_DATA: { async get() { return null; }, async put() {} },
-      RATE_COUNTER: { getByName: () => ({ async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }) } });
+      RATE_COUNTER: { getByName: () => ({ async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {}, async reserve() { return { ok: true, windowEndsAt: 1 }; }, async release() { return true; } }) } });
     await indexSource(environment, await accountKey('canonical-owner'), qualitySource({ totalPages: TYPHOON.length, pages: TYPHOON }));
     const run = environment.AI.run;
     environment.AI.run = async (model: any, input: any) => (model === JUDGE.model ? reply(0.62) : run(model, input));
