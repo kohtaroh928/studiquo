@@ -95,7 +95,7 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
    let service=RAGIndexingService(recognizer:{_ in
     if changeAccount { account="synthetic-b" } else { notebook.encryptedContent=Data([0]) }
     return .init(lines:[],failed:false)
-   },accountPartition:{account},accountPartition:{"synthetic"},transport:{request in
+   },accountPartition:{account},transport:{request in
     if request.httpMethod != "GET" { uploads += 1 }
     return (Data("{\"enabled\":true}".utf8),HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
    })
