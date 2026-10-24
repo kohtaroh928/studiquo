@@ -46,15 +46,20 @@ function env(overrides = {}) {
         values.set(k, v);
       },
     },
-    RATE_COUNTER: {
-      getByName() {
-        return {
-          async bump() { return true; },
-          async take() { return {ok:true, windowEndsAt:1}; },
-          async give() {},
-        };
-      },
-    },
+    RATE_COUNTER: (() => {
+      const used = new Map(), reservations = new Map();
+      return { getByName(name) { return {
+        async bump() { return true; },
+        async take() { return {ok:true, windowEndsAt:1}; }, async give() {},
+        async reserve(operation, limit, _seconds, amount) {
+          const key = `${name}:${operation}`, before = reservations.get(key) ?? 0;
+          const next = (used.get(name) ?? 0) + amount - before;
+          if (next > limit) return { ok: false };
+          used.set(name, next); reservations.set(key, amount); return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) ?? 0) - amount); reservations.delete(key); return true; },
+      }; } };
+    })(),
     ...overrides,
   };
 }
@@ -664,4 +669,88 @@ test('the retrieval log line carries the status, reason and check code, and none
       for (const secret of ['電流計', '合格率', 'TensorFlow', 'ridge', 'リッジ', '摂氏', '台風']) assert.ok(!text.includes(secret), secret);
     }
   } finally { console.log = log; globalThis.fetch = original; }
+});
+
+
+test("RAG reserves actual revalidated references before dispatch, retries once charged, and refunds failures", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const mode of ["ok", "retry", "refuse", "failure"]) {
+      const qenv = qualityEnvironment(), used = new Map(), reservations = new Map();
+      const environment = { ...env(), ...qenv, AI_RETRY_BASE_MS: 0, RATE_COUNTER: { getByName(name) { return {
+        async take(limit, seconds, amount = 1) {
+          if (mode === "refuse" && name.startsWith("ai:cr:5h2:") && (used.get(name) || 0) >= 1) return { ok: false };
+          const next = (used.get(name) || 0) + amount;
+          if (next > limit) return { ok: false };
+          used.set(name, next); return { ok: true, windowEndsAt: 1 };
+        },
+        async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+        async bump() { return true; },
+        async reserve(operation, limit, seconds, amount) {
+          const key = `${name}:${operation}`, previous = reservations.get(key) || 0;
+          if (mode === "refuse" && name.startsWith("ai:cr:5h2:") && previous >= 1) return { ok: false };
+          const next = (used.get(name) || 0) + amount - previous;
+          if (next > limit) return { ok: false };
+          used.set(name, next); reservations.set(key, amount); return { ok: true, windowEndsAt: 1 };
+        },
+        async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) || 0) - amount); reservations.delete(key); return true; },
+      }; } } };
+      await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+      environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
+      let calls = 0;
+      globalThis.fetch = async () => { calls++; return mode === "failure" || (mode === "retry" && calls === 1) ? new Response("error", {status: 503}) : new Response(sse(["回答"])); };
+      const result = await chat(environment, { messages: [{ role: "assistant", text: "x".repeat(3980) }, { role: "user", text: "光合成とは？" }], noteContext: "x".repeat(8000), rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+      if (mode === "refuse") { assert.equal(result.response.status, 429); assert.equal(calls, 0); }
+      else if (mode === "failure") assert.equal(result.response.status, 503);
+      else { assert.equal(result.response.status, 200); assert.equal(calls, mode === "retry" ? 2 : 1); }
+      if (mode === "refuse" || mode === "failure") assert.ok([...used.values()].every(v => v === 0));
+      else {
+        assert.equal([...used].find(([n]) => n.startsWith("ai:cr:min:"))[1], 1);
+        const five = [...used].find(([n]) => n.startsWith("ai:cr:5h2:"))[1];
+        assert.ok(five > 1);
+        assert.equal([...used].find(([n]) => n.startsWith("ai:cr:wk:"))[1], five);
+        assert.equal(used.get("ai:global:standard"), five);
+      }
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+
+test("revocation during additional credit reservation prevents model dispatch and returns all credits", async () => {
+  const original = globalThis.fetch;
+  try {
+    const qenv = qualityEnvironment(), used = new Map(), reservations = new Map();
+    let revoked = false, calls = 0;
+    const environment = { ...env(), ...qenv, RATE_COUNTER: { getByName(name) { return {
+      async take(limit, seconds, amount = 1) {
+        const previous = used.get(name) || 0;
+        if (previous + amount > limit) return { ok: false };
+        used.set(name, previous + amount);
+        if (!revoked && name.startsWith("ai:cr:5h2:") && previous > 0) {
+          revoked = true;
+          qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1");
+        }
+        return { ok: true, windowEndsAt: 1 };
+      },
+      async give(amount) { used.set(name, (used.get(name) || 0) - amount); },
+      async bump() { return true; },
+      async reserve(operation, limit, seconds, amount) {
+        const key = `${name}:${operation}`, previous = reservations.get(key) || 0, next = (used.get(name) || 0) + amount - previous;
+        if (next > limit) return { ok: false };
+        used.set(name, next); reservations.set(key, amount);
+        if (!revoked && name.startsWith("ai:cr:5h2:") && previous > 0) { revoked = true; qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1"); }
+        return { ok: true, windowEndsAt: 1 };
+      },
+      async release(operation) { const key = `${name}:${operation}`, amount = reservations.get(key); if (amount === undefined) return false; used.set(name, (used.get(name) || 0) - amount); reservations.delete(key); return true; },
+    }; } } };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map(v => ({ id: v.id, score: 0.6 })) });
+    globalThis.fetch = async () => { calls++; return new Response(sse(["回答"])); };
+    const result = await chat(environment, { messages: [{ role: "assistant", text: "x".repeat(3980) }, { role: "user", text: "光合成とは？" }], noteContext: "x".repeat(8000), rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.equal(revoked, true);
+    assert.equal(result.response.status, 503);
+    assert.equal(JSON.parse(result.text).code, "rag_authorization_changed");
+    assert.equal(calls, 0);
+    assert.ok([...used.values()].every(value => value === 0));
+  } finally { globalThis.fetch = original; }
 });

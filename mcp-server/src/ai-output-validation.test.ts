@@ -48,8 +48,21 @@ test('Zod wire preserves existing public shape, integer type and enum without ne
 async function run(path, result, { refusal = false, complete = true, splitBytes = false, malformed = false } = {}) {
   const original = globalThis.fetch;
   let refunds = 0, calls = 0;
-  const reserved = [], returned = [];
-  const binding = { getByName: name => ({ async take(_limit, _window, amount) { reserved.push({name, amount}); return { ok: true, windowEndsAt: 1 }; }, async give(amount) { refunds++; returned.push({name, amount}); } }) };
+  const reserved = [], returned = [], reservations = new Map();
+  const binding = { getByName: name => ({
+    async reserve(operation, _limit, _window, amount) {
+      const key = `${name}:${operation}`, before = reservations.get(key);
+      if (before === undefined) reserved.push({ name, amount });
+      reservations.set(key, amount);
+      return { ok: true, windowEndsAt: 1 };
+    },
+    async release(operation) {
+      const key = `${name}:${operation}`, amount = reservations.get(key);
+      if (amount === undefined) return false;
+      refunds++; returned.push({ name, amount }); reservations.delete(key);
+      return true;
+    },
+  }) };
   globalThis.fetch = async url => {
     if (String(url).includes('/moderations')) return Response.json({ results: [{ flagged: false }] });
     calls++;
