@@ -11,7 +11,7 @@
 | 対象 | 本番 | ステージング |
 |---|---|---|
 | iPad アプリ | `com.yabuko.studiquo` | `com.yabuko.studiquo.staging` |
-| Worker | `api.studiquo.app` | `staging-api.studiquo.app`（準備中。移行までは workers.dev） |
+| Worker | `api.studiquo.app` | `staging-api.studiquo.app` |
 | Keychain・端末設定・RAG状態 | 通常の名前空間 | `.staging` を付けた名前空間 |
 | SwiftData / CloudKit | `iCloud.com.yabuko.studiquo` | `iCloud.com.yabuko.studiquo.staging` |
 | 共有シート用 App Group | `group.com.yabuko.studiquo.share` | `group.com.yabuko.studiquo.staging.share` |
@@ -30,7 +30,7 @@ Worker はパスキー、Apple ID、Google ID token の対象を環境変数か�
 
 1. Apple Developer で `com.yabuko.studiquo.staging` と `com.yabuko.studiquo.staging.share` を登録する。Sign in with Apple、Push Notifications、Associated Domains、CloudKit、App Groups を有効化する。
 2. staging 専用の CloudKit container `iCloud.com.yabuko.studiquo.staging` と App Group `group.com.yabuko.studiquo.staging.share` を作り、両 target に関連付ける。CloudKit schema は本番と同じ状態にする。
-3. Cloudflare の管理ゾーンで `staging-api.studiquo.app` を staging Worker の route にする。TLS が有効になった後、`/.well-known/apple-app-site-association` が staging App ID だけを返すことを確認する。`workers.dev` は iOS の WebAuthn associated domain に使えないため、パスキーの確認には使わない。
+3. `mcp-server/wrangler.jsonc` の staging Custom Domain を含めて staging Worker を配備する。Cloudflare が `staging-api.studiquo.app` の DNS と TLS を作成する。既存の同名 CNAME は作成前に取り除く。TLS が有効になった後、`/.well-known/apple-app-site-association` が staging App ID だけを返すことを確認する。`workers.dev` は無効化し、iOS の WebAuthn associated domain に使わない。
 4. staging Worker に `PASSKEY_RP_ID`、`PASSKEY_ORIGIN`、`PASSKEY_APP_ID`、`APPLE_OAUTH_CLIENT_ID` を staging 値どおりに設定して配備する。
 5. Google Cloud で staging bundle ID 用の iOS client と staging 専用の server client を作る。iOS client ID、server client ID、reverse client ID を `Configuration/Staging.local.xcconfig` に設定する。server client ID は staging Worker の `GOOGLE_OAUTH_SERVER_CLIENT_ID` にも設定する。空のままでは staging Worker は Google sign-in を拒否する。
 6. RevenueCat に staging project / app を作る。公開 SDK key は `Configuration/Staging.local.xcconfig`、secret API key と webhook secret は staging Worker の secret に設定する。Webhook URL は staging Worker にする。
