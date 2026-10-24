@@ -92,7 +92,7 @@ function linkedAttribute(span: any, target: any, rule: any) {
  if (targetAt < 0 || !label) return false;
  const between = span.slice(targetAt + target.length, Math.max(targetAt + target.length, label.index));
  // Attribute must belong to the named target, not another entity in the sentence.
- return /^(?:の|は|が|について|[:：]|\s|\d{4}年|\d+(?:\.\d+)?°c|で|税込|税抜|販売|定価|メーカー|[-a-z\d_])*$/u.test(between) ||
+ return /^(?:の|は|が|について|[:：]|\s|\d{4}年|(?<=\d)(?:\.\d+)?°c|で|税込|税抜|販売|定価|メーカー|[-a-z\d_])*$/u.test(between) ||
   rule.id==='price' && /^(?:は|の)点灯(?:時間)?\d+(?:\.\d+)?時間で$/u.test(between);
 }
 
