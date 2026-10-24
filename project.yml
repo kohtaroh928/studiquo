@@ -1,4 +1,10 @@
 name: studiquo
+configs:
+  Debug: debug
+  Release: release
+  # The staging scheme uses the same source and feature set as Debug, but a
+  # separate app identity and service configuration.
+  Staging: debug
 options:
   bundleIdPrefix: com.yabuko
   # xcuserdata内のユーザースキームは共有スキームより優先される。LaunchActionが空のものが
@@ -43,11 +49,9 @@ schemes:
       targets:
         studiquo: all
     run:
-      config: Debug
-      commandLineArguments:
-        "-mcpCloudEndpoint https://studiquo-mcp-staging.studiquo-mcp-server.workers.dev": true
+      config: Staging
     test:
-      config: Debug
+      config: Staging
       targets:
         - studiquoTests
     profile:
@@ -81,16 +85,16 @@ targets:
         com.apple.developer.applesignin:
           - Default
         com.apple.developer.associated-domains:
-          - applinks:api.studiquo.app
-          - webcredentials:api.studiquo.app
+          - applinks:$(STUDIQUO_ASSOCIATED_DOMAIN)
+          - webcredentials:$(STUDIQUO_ASSOCIATED_DOMAIN)
         com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.yabuko.studiquo
+          - $(STUDIQUO_CLOUDKIT_CONTAINER)
         com.apple.developer.icloud-services:
           - CloudKit
         # Shared with the studiquoShare extension: the inbox where shared
         # files wait for the student to choose a destination folder.
         com.apple.security.application-groups:
-          - group.com.yabuko.studiquo.share
+          - $(STUDIQUO_APP_GROUP)
     # Sign in with Apple's SystemCapabilities entry can't be expressed here:
     # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
     # single string, corrupting project.pbxproj. It must be re-added by hand
@@ -121,6 +125,13 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SWIFT_VERSION: "5.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
+        PRODUCT_NAME: studiquo
+        STUDIQUO_APP_PRODUCT_NAME: studiquo
+        STUDIQUO_ENVIRONMENT: production
+        STUDIQUO_WORKER_ENDPOINT: https://api.studiquo.app
+        STUDIQUO_ASSOCIATED_DOMAIN: api.studiquo.app
+        STUDIQUO_CLOUDKIT_CONTAINER: iCloud.com.yabuko.studiquo
+        STUDIQUO_APP_GROUP: group.com.yabuko.studiquo.share
         # Neither key existed anywhere in the project before (not here, not
         # in the generated Info.plist) — an archive built without them has
         # no CFBundleShortVersionString/CFBundleVersion at all, which
@@ -146,6 +157,28 @@ targets:
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug: &productionServiceSettings
+          STUDIQUO_REVENUECAT_PUBLIC_API_KEY: appl_vVZTDpluttzBVtyfnYdYaklHPGc
+          STUDIQUO_GOOGLE_IOS_CLIENT_ID: 812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com
+          STUDIQUO_GOOGLE_SERVER_CLIENT_ID: 812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com
+          STUDIQUO_GOOGLE_URL_SCHEME: com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd
+        Release: *productionServiceSettings
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo.staging
+          PRODUCT_NAME: "studiquo Staging"
+          PRODUCT_MODULE_NAME: studiquo
+          STUDIQUO_APP_PRODUCT_NAME: "studiquo Staging"
+          STUDIQUO_ENVIRONMENT: staging
+          # This is replaced by staging-api.studiquo.app once its DNS, TLS,
+          # AASA and Worker route have been provisioned. Keeping the current
+          # Worker host here makes the separate backend testable in the meantime.
+          STUDIQUO_WORKER_ENDPOINT: https://studiquo-mcp-staging.studiquo-mcp-server.workers.dev
+          STUDIQUO_ASSOCIATED_DOMAIN: staging-api.studiquo.app
+          STUDIQUO_CLOUDKIT_CONTAINER: iCloud.com.yabuko.studiquo.staging
+          STUDIQUO_APP_GROUP: group.com.yabuko.studiquo.staging.share
+          # Staging credentials come from Configuration/Staging.xcconfig,
+          # whose machine-local override is deliberately not committed.
     info:
       path: studiquo/Info.plist
       properties:
@@ -180,15 +213,22 @@ targets:
             UTTypeDescription: Studiquo Page Snippet
             UTTypeConformsTo:
               - public.data
-        GIDClientID: "812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com"
-        GIDServerClientID: "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com"
+        GIDClientID: $(STUDIQUO_GOOGLE_IOS_CLIENT_ID)
+        GIDServerClientID: $(STUDIQUO_GOOGLE_SERVER_CLIENT_ID)
+        StudiquoEnvironment: $(STUDIQUO_ENVIRONMENT)
+        StudiquoWorkerEndpoint: $(STUDIQUO_WORKER_ENDPOINT)
+        StudiquoCloudKitContainer: $(STUDIQUO_CLOUDKIT_CONTAINER)
+        StudiquoAppGroup: $(STUDIQUO_APP_GROUP)
+        StudiquoRevenueCatPublicAPIKey: $(STUDIQUO_REVENUECAT_PUBLIC_API_KEY)
         CFBundleURLTypes:
           - CFBundleURLName: com.yabuko.studiquo.friend
             CFBundleURLSchemes:
               - studiquo
           - CFBundleURLName: com.yabuko.studiquo.google-signin
             CFBundleURLSchemes:
-              - com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd
+              - $(STUDIQUO_GOOGLE_URL_SCHEME)
+    configFiles:
+      Staging: Configuration/Staging.xcconfig
   # Share extension: puts studiquo in the share sheet's app row (Files app,
   # Photos…). Compiles only SharedInbox from the app's sources — it copies
   # files into the App Group inbox and opens the app; nothing heavier fits in
@@ -204,11 +244,12 @@ targets:
       path: studiquoShare/studiquoShare.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.yabuko.studiquo.share
+          - $(STUDIQUO_APP_GROUP)
     info:
       path: studiquoShare/Info.plist
       properties:
         CFBundleDisplayName: studiquo
+        StudiquoAppGroup: $(STUDIQUO_APP_GROUP)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -236,6 +277,10 @@ targets:
         DEVELOPMENT_TEAM: 972G4VGUA6
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES
+      configs:
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo.staging.share
+          STUDIQUO_APP_GROUP: group.com.yabuko.studiquo.staging.share
   studiquoTests:
     type: bundle.unit-test
     platform: iOS
@@ -249,8 +294,12 @@ targets:
         SWIFT_VERSION: "5.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquoTests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/studiquo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/studiquo"
+        STUDIQUO_APP_PRODUCT_NAME: studiquo
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(STUDIQUO_APP_PRODUCT_NAME).app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/$(STUDIQUO_APP_PRODUCT_NAME)"
         BUNDLE_LOADER: "$(TEST_HOST)"
+      configs:
+        Staging:
+          STUDIQUO_APP_PRODUCT_NAME: "studiquo Staging"
   studiquoUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -265,3 +314,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquoUITests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: studiquo
+      configs:
+        Staging:
+          TEST_TARGET_NAME: studiquo

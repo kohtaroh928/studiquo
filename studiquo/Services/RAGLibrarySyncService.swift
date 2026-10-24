@@ -46,10 +46,8 @@ final class RAGLibrarySyncService {
     }
     static func defaultPartition() -> String? {
         guard let account = RAGDeletionQueue.accountPartition() else { return nil }
-        let endpoint = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? WorkerAIProvider.defaultEndpoint)
-            .trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let effective = endpoint.isEmpty ? WorkerAIProvider.defaultEndpoint : endpoint
-        return account + "-" + digest(Data(effective.utf8))
+        guard let endpoint = LaunchStoreEnvironment.endpoint else { return nil }
+        return account + "-" + digest(Data(endpoint.absoluteString.utf8))
     }
     private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private func load() {

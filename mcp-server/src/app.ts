@@ -395,7 +395,7 @@ const handler = {
       }
       const oauth = await handleMCPOAuth(url, request, env, ctx);
       if (oauth) return oauth;
-      if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
+      if (url.pathname === "/.well-known/apple-app-site-association") return associationFile(env);
       const invitePage = handleInvitePage(url);
       if (invitePage) return invitePage;
 

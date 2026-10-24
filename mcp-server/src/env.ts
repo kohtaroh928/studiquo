@@ -90,6 +90,13 @@ export interface Env {
   APP_ATTEST_APP_ID?: string;
   APP_ATTEST_MODE?: string;
   APP_ATTEST_ALLOW_DEVELOP?: string;
+  /** WebAuthn relying-party configuration. Production defaults live in passkeys.ts. */
+  PASSKEY_RP_ID?: string;
+  PASSKEY_ORIGIN?: string;
+  PASSKEY_APP_ID?: string;
+  GOOGLE_OAUTH_SERVER_CLIENT_ID?: string;
+  APPLE_OAUTH_CLIENT_ID?: string;
+  DEPLOYMENT_ENVIRONMENT?: string;
   PWNED_PASSWORDS_FETCH?: string;
   PAYWALL_ENABLED?: string;
   ARGON2_WRITE?: string;

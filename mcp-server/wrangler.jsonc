@@ -122,6 +122,7 @@
     { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "1027", "simple": { "limit": 300, "period": 60 } }
   ],
   "vars": {
+    "DEPLOYMENT_ENVIRONMENT": "production",
     "RAG_ENABLED": "false",
     // Answerability judge (src/rag/judge.ts, docs/RAG_SEMANTIC_JUDGE_DESIGN.md): "off" (default), "shadow" (call the
     // judge and log its outcome only) or "on" (also stop or demote answers the judge says are not in the excerpts).
@@ -263,6 +264,7 @@
         { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "2027", "simple": { "limit": 300, "period": 60 } }
       ],
       "vars": {
+        "DEPLOYMENT_ENVIRONMENT": "staging",
         "RAG_ENABLED": "false",
         "RAG_JUDGE": "off",
         "RAG_AUTO_INDEX_ENABLED": "false",
@@ -280,7 +282,7 @@
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
         "ALLOW_SANDBOX_PURCHASES": "true",
-        "APNS_TOPIC": "com.yabuko.studiquo",
+        "APNS_TOPIC": "com.yabuko.studiquo.staging",
         "ARGON2_WRITE": "false",
         // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.
         "REQUIRE_SIGNED_TOKENS": "false",
@@ -292,8 +294,17 @@
         // App Attest stays off here until staging has a TOKEN_SIGNING_KEY (the challenge
         // is signed with it). Development-environment keys are accepted on staging only.
         "APP_ATTEST_MODE": "off",
-        "APP_ATTEST_APP_ID": "972G4VGUA6.com.yabuko.studiquo",
+        "APP_ATTEST_APP_ID": "972G4VGUA6.com.yabuko.studiquo.staging",
         "APP_ATTEST_ALLOW_DEVELOP": "true",
+        // These values take effect when staging-api.studiquo.app is routed to
+        // this Worker and its Apple App ID has been registered. workers.dev
+        // cannot be used as an iOS WebAuthn associated domain.
+        "PASSKEY_RP_ID": "staging-api.studiquo.app",
+        "PASSKEY_ORIGIN": "https://staging-api.studiquo.app",
+        "PASSKEY_APP_ID": "972G4VGUA6.com.yabuko.studiquo.staging",
+        "APPLE_OAUTH_CLIENT_ID": "com.yabuko.studiquo.staging",
+        // Fill after creating a distinct Google OAuth server client. Staging rejects Google sign-in until this is set.
+        "GOOGLE_OAUTH_SERVER_CLIENT_ID": "",
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },
