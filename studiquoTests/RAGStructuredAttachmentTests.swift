@@ -153,7 +153,7 @@ final class RAGStructuredAttachmentTests: XCTestCase {
         catch { XCTAssertEqual(posts, 0) }
     }
 
-    func testChangingEndpointDuringCapabilityCheckPreventsContentPost() async throws {
+    func testChangingEndpointSettingDuringCapabilityCheckNeverRedirectsContent() async throws {
         let granted = RAGConsent.isGranted, old = AIDataDisclosure.defaults
         let oldEndpoint = UserDefaults.standard.string(forKey: "mcpCloudEndpoint")
         AIDataDisclosure.defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -164,14 +164,18 @@ final class RAGStructuredAttachmentTests: XCTestCase {
         }
         let (pdf, manifest) = try fixture()
         let notebook = try RAGStructuredAttachment.importNotebook(pdfData: pdf, manifestData: manifest, title: "Synthetic")
-        var posts = 0
+        // The Worker address is fixed at launch (`LaunchStoreEnvironment`); the stored
+        // setting is no longer read, so changing it mid-check cannot move the request.
+        var hosts: [String] = []
         let service = RAGIndexingService(accountPartition: { "synthetic" }) { request in
+            hosts.append(request.url?.host ?? "")
             if request.httpMethod == "GET" { UserDefaults.standard.set("https://synthetic-endpoint.invalid", forKey: "mcpCloudEndpoint") }
-            else { posts += 1 }
             return (Data("{\"enabled\":true,\"structuredIngestVersion\":1}".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         }
-        do { _ = try await service.index(notebook); XCTFail("Capability from another endpoint must not be reused") }
-        catch { XCTAssertEqual(posts, 0) }
+        _ = try? await service.index(notebook)
+        XCTAssertFalse(hosts.isEmpty)
+        XCTAssertFalse(hosts.contains("synthetic-endpoint.invalid"), "A changed setting must never receive the content")
+        XCTAssertEqual(Set(hosts), [WorkerAIProvider().baseURL?.host ?? ""], "Every request goes to the endpoint fixed at launch")
     }
 
 }
