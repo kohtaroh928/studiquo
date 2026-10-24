@@ -514,6 +514,35 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
     const heldPieces: string[] = [];
     let keepalive: ReturnType<typeof setInterval> | null = null;
     let answer = ""; // what the student saw, kept (bounded) for the teen output screen
+    // What the screen reads: the first 24000 characters, cut by character (never in the middle of a
+    // surrogate pair) and sent to moderation in pieces of at most 8000, the size it reads per input.
+    const SCREEN_CAP = 24000, SCREEN_PIECE = 8000;
+    const clip = (text: string) => {
+      const head = text.slice(0, SCREEN_CAP);
+      const last = head.charCodeAt(head.length - 1);
+      return text.length > SCREEN_CAP && last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head;
+    };
+    const pieces = (text: string) => {
+      const out: string[] = [];
+      for (let start = 0; start < text.length;) {
+        let end = Math.min(start + SCREEN_PIECE, text.length);
+        const last = text.charCodeAt(end - 1);
+        if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+        out.push(text.slice(start, end));
+        start = end;
+      }
+      return out;
+    };
+    // A teen's reply that was built from outside text is screened once it is complete (or, if
+    // the connection broke, once what arrived has been sent).
+    const screenForTeen = async () => {
+      if (!moderateOutput || !answer) return;
+      // Only a refusal (a string) is a flag; "moderation unavailable" is not, and the reply is already shown.
+      if (typeof await moderationRejection(env, pieces(answer), undefined, { timeoutMs: 4000 }) === "string") {
+        console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
+        await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
+      }
+    };
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -575,7 +604,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
             produced += text.length;
             if (holdReply) heldPieces.push(text);
             else {
-              if (answer.length < 8000) answer += text;
+              if (answer.length < SCREEN_CAP) answer = clip(answer + text);
               await send(text);
             }
           }
@@ -585,18 +614,15 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
         const safe = filterReply(heldPieces.join(""));
         heldPieces.length = 0; // sent (or empty): the catch below must not send it again
         if (safe) {
-          answer = Array.from(safe).slice(0, 8000).join(""); // by character, not in the middle of a surrogate pair
+          answer = clip(safe);
           await send(safe);
         }
       }
       // The text is already on the student's screen and cannot be taken back, so a
       // flagged reply gets a plain notice after it and a log line (no text).
-      // A reply cut off at the output limit is still delivered, so it is screened like a finished one.
+      // A reply that failed or was cut off still shows what arrived, so it is screened like a finished one.
       const delivered = !failed || (truncated && !hardFailed);
-      if (moderateOutput && delivered && answer && typeof await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 }) === "string") {
-        console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
-        await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
-      }
+      await screenForTeen();
       if (groundingSource && delivered && answer) {
         // Shadow mode: counts go to the log, the answer is untouched.
         console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
@@ -620,7 +646,11 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
         try {
           const safe = filterReply(heldPieces.join(""));
           heldPieces.length = 0;
-          if (safe) await send(safe);
+          if (safe) {
+            answer = clip(safe);
+            await send(safe);
+            await screenForTeen();
+          }
         } catch {
           // nothing more can be done for the held text
         }
