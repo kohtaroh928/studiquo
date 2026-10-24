@@ -195,7 +195,13 @@
       "services": [{"binding":"DOCLING_PROCESSOR","service":"studiquo-private-docling-staging","entrypoint":"DoclingProcessor"}],
       "ai": { "binding": "AI" },
       "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1-staging" }],
-      "workers_dev": true,
+      // The Worker is its own origin, so use a Custom Domain rather than a
+      // route in front of another origin. Cloudflare provisions the DNS record
+      // and TLS certificate during `wrangler deploy --env staging`.
+      "routes": [{ "pattern": "staging-api.studiquo.app", "custom_domain": true }],
+      // Do not leave an unaudited second public API entrypoint after the
+      // staging custom domain is live.
+      "workers_dev": false,
       "preview_urls": false,
       // No hourly retention job on staging.
       "triggers": { "crons": [] },
