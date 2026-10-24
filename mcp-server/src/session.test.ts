@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mintSession, hasRealSession, realSession } from "./session.ts";
+import { sha256Hex } from "./auth.ts";
+import { accountIsBeingDeleted, mintSession, hasRealSession, realSession } from "./session.ts";
 import { partialEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
@@ -74,4 +75,25 @@ test("an already-issued provider session resolves to the shared canonical accoun
 
   assert.equal(session!.sub, "apple-sub-1");
   assert.equal(session!.originalSub, "google:google-sub-1");
+});
+
+async function putState(env: Untyped, key: string, status: string) {
+  await env.STUDIQUO_DATA.put(`account-deletion:${await sha256Hex(key)}`, JSON.stringify({ status, generation: 1 }));
+}
+
+test("accountIsBeingDeleted: found through a linked identity's canonical account", async () => {
+  const env = environment();
+  await env.STUDIQUO_DATA.put("identity-canonical:google:alias-sub", "apple-canonical");
+  await putState(env, "apple-canonical", "deleting");
+  assert.equal(await accountIsBeingDeleted(env, "google:alias-sub"), true);
+  assert.equal(await accountIsBeingDeleted(env, "apple-canonical"), true);
+});
+
+test("accountIsBeingDeleted: a finished deletion, an active account and an unknown one are not being deleted", async () => {
+  const env = environment();
+  await putState(env, "gone", "deleted");
+  await putState(env, "back", "active");
+  assert.equal(await accountIsBeingDeleted(env, "gone"), false);
+  assert.equal(await accountIsBeingDeleted(env, "back"), false);
+  assert.equal(await accountIsBeingDeleted(env, "never-seen"), false);
 });
