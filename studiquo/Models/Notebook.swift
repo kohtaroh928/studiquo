@@ -3,6 +3,24 @@ import SwiftData
 
 @Model
 final class Notebook {
+    /// Stable cross-device identity for cloud retrieval; CloudKit-compatible default.
+    var ragDocumentID: String = ""
+    var ragID: String = ""
+    var ragPreviousSourceIDs: String = ""
+
+    /// Server deletion tombstones an ID permanently; retain aliases for historical citations.
+    func retireRAGSource(preservingCitations: Bool = true) -> String {
+        ensureRAGIdentity()
+        let previous = ragID
+        if preservingCitations {
+            ragPreviousSourceIDs += (ragPreviousSourceIDs.isEmpty ? "" : ",") + previous
+        } else { ragPreviousSourceIDs = "" }
+        ragID = UUID().uuidString
+        return previous
+    }
+    func matchesRAGSource(_ sourceId: String) -> Bool {
+        ragID == sourceId || ragPreviousSourceIDs.split(separator: ",").contains(Substring(sourceId))
+    }
     var title: String = ""
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
@@ -30,6 +48,10 @@ final class Notebook {
     /// actually been removed (either from that menu or from the
     /// post-import "save a password-free copy too?" offer).
     @Attribute(.externalStorage) var lockedPDFData: Data?
+    /// Verified Docling index package; protected with notebook content when locked.
+    @Attribute(.externalStorage) var ragStructuredData: Data?
+    var ragStructuredFingerprint: String?
+    var ragOriginalPDFHash: String?
     var cachedPageCount: Int = 0
     var cachedContainsPDF: Bool = false
     var libraryMetadataVersion: Int = 0
@@ -38,10 +60,16 @@ final class Notebook {
     var pages: [NotePage]?
 
     init(title: String) {
+        self.ragID = UUID().uuidString
         self.title = title
         self.createdAt = .now
         self.updatedAt = .now
         self.libraryMetadataVersion = 1
+    }
+
+    func ensureRAGIdentity() {
+        if ragID.isEmpty { ragID = UUID().uuidString }
+        if ragDocumentID.isEmpty { ragDocumentID = UUID().uuidString }
     }
 
     /// Appends to the CloudKit-required optional relationship, creating the

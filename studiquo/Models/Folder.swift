@@ -8,6 +8,8 @@ import SwiftData
 /// `FolderMigrationService`, which converts existing data into this shape).
 @Model
 final class Folder {
+    /// Stable cross-device identity for cloud retrieval; CloudKit-compatible default.
+    var ragID: String = ""
     var name: String = ""
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
@@ -29,10 +31,15 @@ final class Folder {
     var textDocuments: [TextDocument]?
 
     init(name: String, parent: Folder? = nil) {
+        self.ragID = UUID().uuidString
         self.name = name
         self.parent = parent
         self.createdAt = .now
         self.updatedAt = .now
+    }
+
+    func ensureRAGIdentity() {
+        if ragID.isEmpty { ragID = UUID().uuidString }
     }
 
     /// Root-to-this path, joined the same way the legacy `folderName` strings
