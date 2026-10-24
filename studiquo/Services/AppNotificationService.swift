@@ -179,7 +179,7 @@ enum AppNotificationPreferences {
 }
 
 enum NotificationInstallationIdentity {
-    private static let service = "com.yabuko.studiquo.notification-installation"
+    private static let service = LaunchStoreEnvironment.namespaced("com.yabuko.studiquo.notification-installation")
     private static let account = "installation-id"
 
     static var id: String {

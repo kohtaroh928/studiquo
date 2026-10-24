@@ -105,10 +105,10 @@ final class WorkerAIProvider: AIProvider {
     /// both paths agree.
     static let defaultEndpoint = "https://api.studiquo.app"
 
-    /// Read fresh each call so changing the endpoint in settings takes effect
-    /// without restarting.
+    /// Fixed before credentials and local stores are opened. Changing the
+    /// setting requires a restart and cannot redirect an active session.
     var baseURL: URL? {
-        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
+        LaunchStoreEnvironment.endpoint
     }
 
     var isConfigured: Bool { baseURL != nil }
@@ -173,9 +173,15 @@ final class WorkerAIProvider: AIProvider {
         return .http(status: status, message: message)
     }
 
-    func request(path: String, body: [String: Any]) throws -> URLRequest {
-        guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
-        guard let baseURL else { throw ProviderError.notConfigured }
+    func request(path: String, body: [String: Any], requiresAIConsent: Bool = true) throws -> URLRequest {
+        guard !requiresAIConsent || AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
+        let resolvedEndpoint = baseURL
+        if path.hasPrefix("api/rag/") || body["rag"] != nil {
+            guard LaunchStoreEnvironment.ragLock.allows(resolvedEndpoint) else {
+                throw ProviderError.transport(L("接続先が起動時から変更されたため、RAGを停止しました。アプリを再起動してください。"))
+            }
+        }
+        guard let baseURL = resolvedEndpoint else { throw ProviderError.notConfigured }
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = "POST"
         request.timeoutInterval = 300

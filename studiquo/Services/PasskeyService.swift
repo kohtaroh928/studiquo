@@ -6,14 +6,15 @@ import UIKit
 final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     static let shared = PasskeyService()
 
-    // The Worker has one address (WorkerAIProvider.defaultEndpoint). The relying party
-    // identifier is its host: it must match both the associated domain in the
-    // entitlements and what the Worker checks (passkeys.js).
-    private let endpoint = URL(string: WorkerAIProvider.defaultEndpoint)!
-    private var relyingPartyIdentifier: String { endpoint.host ?? "api.studiquo.app" }
+    // The relying-party host is the selected environment's host. Production
+    // and staging must each configure their own associated domain and Worker
+    // validation; a staging run never falls back to a production passkey.
+    private var endpoint: URL? { MCPCloudCredentials.configuredEndpoint() }
+    private var relyingPartyIdentifier: String? { endpoint?.host }
     private var continuation: CheckedContinuation<ASAuthorization, Error>?
 
     func register(email: String, token: String) async throws {
+        guard let relyingPartyIdentifier else { throw PasskeyError.invalidResponse }
         let envelope: RegistrationOptionsEnvelope = try await post(
             path: "api/passkeys/register/options", body: ["email": email], bearer: token
         )
@@ -64,6 +65,7 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
     /// so the server mints a real session here, same as it does for
     /// Apple/Google/local-password sign-in.
     func login() async throws -> (email: String, token: String) {
+        guard let relyingPartyIdentifier else { throw PasskeyError.invalidResponse }
         let envelope: AuthenticationOptionsEnvelope = try await post(
             path: "api/passkeys/login/options", body: EmptyBody(), bearer: nil
         )
@@ -105,6 +107,7 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
     /// "add-passkey", "remove-passkeys"); the server only accepts the check for
     /// that action, once.
     func reauthenticate(token: String, action: String) async throws {
+        guard let relyingPartyIdentifier else { throw PasskeyError.invalidResponse }
         let envelope: ReauthOptionsEnvelope = try await post(
             path: "api/passkeys/reauth/options", body: ReauthOptionsBody(action: action), bearer: token
         )
@@ -204,7 +207,8 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
     private func post<Response: Decodable, Body: Encodable>(
         path: String, body: Body, bearer: String?
     ) async throws -> Response {
-        try await PasskeyHTTPClient.post(
+        guard let endpoint else { throw PasskeyError.invalidResponse }
+        return try await PasskeyHTTPClient.post(
             endpoint: endpoint,
             path: path,
             body: body,

@@ -12,7 +12,13 @@ import Foundation
 /// converting them (PDF page rendering is far above an extension's memory
 /// limit) is the app's job.
 struct SharedInbox {
-    static let appGroupIdentifier = "group.com.yabuko.studiquo.share"
+    // This source is also compiled into the share extension, which does not
+    // link the app's networking configuration. Both targets receive the same
+    // value through their generated Info.plist.
+    static var appGroupIdentifier: String {
+        (Bundle.main.object(forInfoDictionaryKey: "StudiquoAppGroup") as? String)
+            ?? "group.com.yabuko.studiquo.share"
+    }
 
     struct Item: Identifiable, Hashable {
         let url: URL

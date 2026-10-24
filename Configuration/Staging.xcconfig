@@ -1,0 +1,15 @@
+// Staging has its own public OAuth and RevenueCat identifiers. Keep the real
+// values in Staging.local.xcconfig, which is ignored by Git.
+//
+// Example:
+// STUDIQUO_REVENUECAT_PUBLIC_API_KEY = appl_xxx
+// STUDIQUO_GOOGLE_IOS_CLIENT_ID = 123.apps.googleusercontent.com
+// STUDIQUO_GOOGLE_SERVER_CLIENT_ID = 456.apps.googleusercontent.com
+// STUDIQUO_GOOGLE_URL_SCHEME = com.googleusercontent.apps.123
+
+STUDIQUO_REVENUECAT_PUBLIC_API_KEY =
+STUDIQUO_GOOGLE_IOS_CLIENT_ID =
+STUDIQUO_GOOGLE_SERVER_CLIENT_ID =
+STUDIQUO_GOOGLE_URL_SCHEME =
+
+#include? "Staging.local.xcconfig"
