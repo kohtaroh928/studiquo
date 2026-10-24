@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
 import { forgetSettledAlerts } from "./ops-alerts.ts";
-import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
+import { processPendingDeletions, redactedDetail, runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
 import { partialEnv, type Untyped } from "./test-env.ts";
@@ -158,4 +158,33 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
   await handleAdminWebhook(url, new Request(url, { method: "POST", headers: { authorization: "test-secret", "content-type": "application/json" }, body: JSON.stringify({ event: { id: "race", app_user_id: "race-owner", type: "RENEWAL" } }) }), env);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM subscribers").get()!.n, 0);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM revenuecat_events").get()!.n, 0);
+});
+
+test("a deletion that keeps failing says why in the log, without naming the job", async () => {
+  const env = environment();
+  env._values.set("privacy-account-delete:abc", JSON.stringify({ canonicalSub: "email:secret@example.com", requestedAt: 1, generation: 0 }));
+  // The deletion dies partway, as it does when the subrequest limit is reached.
+  const kv = env.STUDIQUO_DATA;
+  const get = kv.get.bind(kv);
+  kv.get = async (key: string, type?: string) => {
+    if (key.startsWith("account-deletion:")) throw new Error("Too many subrequests.");
+    return get(key, type);
+  };
+  const logged: string[] = [];
+  const original = console.error;
+  console.error = (line: string) => { logged.push(String(line)); };
+  try { await processPendingDeletions(env, fetch, { limit: 1 }); } finally { console.error = original; }
+  const entry = logged.map(line => { try { return JSON.parse(line); } catch { return null; } }).find(item => item?.message === "privacy deletion retry failed");
+  assert.ok(entry, "the failure is logged");
+  assert.equal(entry.error, "Error");
+  assert.match(entry.detail, /Too many subrequests/);
+  assert.equal(logged.join("").includes("secret@example.com"), false);
+});
+
+test("a logged failure reason blanks addresses and hashes, and stays short", () => {
+  assert.equal(redactedDetail("KV GET failed for account:local:secret@example.com"), "KV GET failed for account:local:[address]");
+  const hash = "a".repeat(64);
+  assert.equal(redactedDetail(`could not read account-deletion:${hash}`), "could not read account-deletion:[hash]");
+  assert.equal(redactedDetail("Too many subrequests."), "Too many subrequests.");
+  assert.equal(redactedDetail("x".repeat(500)).length, 120);
 });

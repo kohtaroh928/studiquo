@@ -197,7 +197,7 @@ final class AuthenticationStore: ObservableObject {
             // A wait or a busy server says nothing about the password, so it
             // must not read as "wrong password".
             switch error {
-            case .tooManyAttempts, .serverBusy, .passkeyRequired, .servicePaused: errorMessage = error.localizedDescription
+            case .tooManyAttempts, .serverBusy, .passkeyRequired, .accountDeleting, .servicePaused: errorMessage = error.localizedDescription
             case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
             }
             return false
