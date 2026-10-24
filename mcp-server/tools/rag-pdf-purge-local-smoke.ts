@@ -1,6 +1,6 @@
 // @ts-nocheck -- ported from JavaScript untyped; typing it is tracked in Notion (Studiquo タスク).
 // Manual synthetic workerd/D1 test. No remote bindings or persisted user data.
-import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import {Miniflare,convertV4MiniflareOptions} from './rag-local-runtime.ts';
 import {unstable_splitSqlQuery} from 'wrangler';
 import {readFileSync,readdirSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {purgeSettledRawPDFJobs} from '../src/rag/pdf-purge.ts';
 const temp=mkdtempSync(join(tmpdir(),'studiquo-purge-smoke-'));
-const mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',cf:false,persist:temp,
+const mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',cf:false,d1Persist:join(temp,'d1'),durableObjectsPersist:join(temp,'do'),
  workers:[{name:'step5b',modules:true,script:"export default {fetch(){return new Response('ok')}}",
   compatibilityDate:'2026-08-27',d1Databases:['ADMIN_DB']}]}));
 try{

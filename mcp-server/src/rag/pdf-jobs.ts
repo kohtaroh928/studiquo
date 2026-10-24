@@ -1,3 +1,4 @@
+import {requireRawPDFStartEnabled,requireRawPDFStartSchema} from './pdf-start-gate.ts';
 import {sha256Hex} from '../auth.ts';
 import {requireRawPDFIntakeAuthorization} from './pdf-intake.ts';
 import {RAW_PDF_CONSENT_VERSION} from './pdf-preflight.ts';
@@ -8,21 +9,21 @@ const snapshot=(v: any)=>object(v)?Object.freeze({...v}):v;
 const fail=(code: any)=>{throw new Error(code);};
 const stmt=(db: any,sql: any,...args: any[])=>db.prepare(sql).bind(...args);
 function now(clock: any){const n=clock();if(!Number.isSafeInteger(n)||n<0||n>Number.MAX_SAFE_INTEGER-TTL)fail('invalid_pdf_job_clock');return n;}
-async function owner(session: any){if(typeof session?.sub!=='string'||!session.sub.length||session.sub.length>512)fail('pdf_job_unauthorized');return sha256Hex(`rag-account:${session.sub}`);}
-async function schema(db: any){
+async function owner(session: any): Promise<any> {if(typeof session?.sub!=='string'||!session.sub.length||session.sub.length>512)fail('pdf_job_unauthorized');return sha256Hex(`rag-account:${session.sub}`);}
+async function schema(db: any): Promise<any> {
  const r=await stmt(db,`SELECT COUNT(*) AS n FROM sqlite_master WHERE
   (type='table' AND name='rag_pdf_jobs') OR (type='trigger' AND name IN ('rag_pdf_jobs_intake_changed','rag_pdf_jobs_intake_deleted'))`).first();
  if(r?.n!==3)fail('pdf_job_upgrade_required');
 }
 // Old schema/writers remain usable for cancellation and settlement. Unknown
 // timestamps are retained by future purge; never backfill them on a retry.
-export async function rawPDFJobTimestampsSupported(db: any){
+export async function rawPDFJobTimestampsSupported(db: any): Promise<any> {
  const columns=await stmt(db,'PRAGMA table_info(rag_pdf_jobs)').all();
- return ['created_at','settled_at'].every(name=>columns.results.some((c: any)=>c.name===name));
+ return ['created_at','settled_at'].every((name: any)=>columns.results.some((c: any)=>c.name===name));
 }
 function policy(input: any){
  const p=snapshot(input),keys=['perOwnerActive','globalActive','globalMemoryBytes','perOwnerDailyUnits','globalDailyUnits','reservationUnits','perOwnerDailyRequests','globalDailyRequests'];
- if(!object(p)||Object.keys(p).length!==keys.length||keys.some(k=>!Number.isSafeInteger(p[k])||p[k]<1||p[k]>1000000000)||
+ if(!object(p)||Object.keys(p).length!==keys.length||keys.some((k: any)=>!Number.isSafeInteger(p[k])||p[k]<1||p[k]>1000000000)||
   p.perOwnerActive>p.globalActive||p.globalActive>16||p.globalMemoryBytes<MEMORY||p.globalMemoryBytes>96*1024*1024||
   p.reservationUnits>p.perOwnerDailyUnits||p.reservationUnits>p.globalDailyUnits||
   p.perOwnerDailyRequests>10000||p.globalDailyRequests>100000)fail('pdf_job_policy_required');
@@ -42,8 +43,8 @@ const fields='job_id,document_id,intake_id,generation,state,ever_dispatched,wind
 function result(r: any){return Object.freeze({jobId:r.job_id,documentId:r.document_id,intakeId:r.intake_id,generation:r.generation,
  state:r.state,everDispatched:r.ever_dispatched===1,windowStart:r.window_start,reservedUnits:r.reserved_units,
  settledUnits:r.settled_units,memoryWeight:r.memory_weight,policyVersion:r.policy_version,deadline:r.deadline});}
-async function row(db: any,key: any,jobId: any){if(!id(jobId))fail('invalid_pdf_job');return stmt(db,`SELECT ${fields} FROM rag_pdf_jobs WHERE account_key=? AND job_id=?`,key,jobId).first();}
-async function reserve(env: any,session: any,input: any,limits: any,clock: any){
+async function row(db: any,key: any,jobId: any): Promise<any> {if(!id(jobId))fail('invalid_pdf_job');return stmt(db,`SELECT ${fields} FROM rag_pdf_jobs WHERE account_key=? AND job_id=?`,key,jobId).first();}
+async function reserve(env: any,session: any,input: any,limits: any,clock: any): Promise<any> {
  session=snapshot(session);const p=policy(limits),proof=snapshot(input),key=await owner(session);
  const verified=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
  const db=env.ADMIN_DB;await schema(db);
@@ -71,32 +72,41 @@ async function reserve(env: any,session: any,input: any,limits: any,clock: any){
  if(r?.meta?.changes!==1 && saved.intake_id!==verified.intakeId)fail('pdf_job_admission_denied');
  return result(saved);
 }
-async function claim(env: any,session: any,input: any,jobId: any,clock: any){
+async function claim(env: any,session: any,input: any,jobId: any,clock: any,stopProtocol: any=false): Promise<any> {
  session=snapshot(session);const proof=snapshot(input),key=await owner(session);
  if(!id(jobId))fail('invalid_pdf_job');const p=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
  const db=env.ADMIN_DB;await schema(db);const token=crypto.randomUUID(),tokenHash=await sha256Hex(token),n=now(clock);
- const r=await stmt(db,`UPDATE rag_pdf_jobs SET state='receiving',token_hash=?
+ const update=stmt(db,`UPDATE rag_pdf_jobs SET state='receiving',token_hash=?${stopProtocol?",claim_protocol='stop-proof-v1'":''}
  WHERE account_key=? AND job_id=? AND intake_id=? AND state='reserved' AND token_hash IS NULL AND deadline>?
- AND ${gate}`,tokenHash,key,jobId,p.intakeId,n,...gateArgs(key,p,n)).run();
- if(r?.meta?.changes!==1)fail('pdf_job_claim_conflict');
+ AND ${gate}${stopProtocol?' RETURNING job_id':''}`,tokenHash,key,jobId,p.intakeId,n,...gateArgs(key,p,n));
+ // D1 changes also counts the evidence INSERT trigger. RETURNING isolates the
+ // claim winner instead of interpreting two writes as a losing claim.
+ const r=stopProtocol?await update.all():await update.run();
+ if(stopProtocol?r.results.length!==1:r?.meta?.changes!==1)fail('pdf_job_claim_conflict');
  return Object.freeze({jobId,executionToken:token});
 }
-async function dispatch(env: any,session: any,input: any,jobId: any,token: any,clock: any){
+async function dispatch(env: any,session: any,input: any,jobId: any,token: any,clock: any,v2: any=false,start: any=false): Promise<any> {
  session=snapshot(session);const proof=snapshot(input),key=await owner(session);
  if(!id(jobId)||!id(token))fail('invalid_pdf_job');const p=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
  const db=env.ADMIN_DB;await schema(db);const tokenHash=await sha256Hex(token),n=now(clock);
- const r=await stmt(db,`UPDATE rag_pdf_jobs SET state='dispatched',ever_dispatched=1
+ if(v2)await requireRawPDFRPCV2Schema(db);
+ if(start){requireRawPDFStartEnabled(env);await requireRawPDFStartSchema(db);requireRawPDFStartEnabled(env);}
+ const update=stmt(db,`UPDATE rag_pdf_jobs SET state='dispatched',ever_dispatched=1${v2?",rpc_version=2,rpc_pdf_sha256=?,rpc_not_after=deadline":''}${start?",start_protocol='one-shot-v1'":''}
  WHERE account_key=? AND job_id=? AND intake_id=? AND token_hash=? AND state='receiving'
- AND ever_dispatched=0 AND deadline>? AND ${gate}`,key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n)).run();
- if(r?.meta?.changes!==1)fail('pdf_job_dispatch_conflict');return {dispatch:true};
+ AND ever_dispatched=0 AND deadline>? AND ${gate}${start?" AND start_protocol='legacy' AND claim_protocol='stop-proof-v1'":''}${v2?' RETURNING job_id,rpc_pdf_sha256,rpc_not_after':''}`,
+ ...(v2?[p.pdfSha256]:[]),key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n));
+ const r=v2?await update.all():await update.run();
+ if(start)requireRawPDFStartEnabled(env);
+ if(v2?r.results.length!==1:r?.meta?.changes!==1)fail('pdf_job_dispatch_conflict');
+ return v2?Object.freeze({version:2,jobId:r.results[0].job_id,pdfSha256:r.results[0].rpc_pdf_sha256,notAfter:r.results[0].rpc_not_after}):{dispatch:true};
 }
-async function stop(env: any,session: any,jobId: any){
+async function stop(env: any,session: any,jobId: any): Promise<any> {
  session=snapshot(session);const key=await owner(session),db=env.ADMIN_DB;await schema(db);
  if(!id(jobId))fail('invalid_pdf_job');
  await stmt(db,`UPDATE rag_pdf_jobs SET state='stop_requested' WHERE account_key=? AND job_id=? AND state!='settled'`,key,jobId).run();
  const saved=await row(db,key,jobId);if(!saved)fail('pdf_job_not_found');return result(saved);
 }
-async function expire(env: any,clock: any,limit: any){
+async function expire(env: any,clock: any,limit: any): Promise<any> {
  if(!Number.isSafeInteger(limit)||limit<1||limit>100)fail('invalid_pdf_job');
  const db=env.ADMIN_DB;await schema(db);const n=now(clock);
  const r=await stmt(db,`UPDATE rag_pdf_jobs SET state='stop_requested' WHERE job_id IN
@@ -104,7 +114,7 @@ async function expire(env: any,clock: any,limit: any){
  AND deadline<=? AND state IN ('reserved','receiving','dispatched')`,n,limit,n).run();
  return {requested:r?.meta?.changes??0};
 }
-async function closeUnclaimed(env: any,session: any,jobId: any,clock: any){
+async function closeUnclaimed(env: any,session: any,jobId: any,clock: any): Promise<any> {
  session=snapshot(session);const key=await owner(session),db=env.ADMIN_DB;await schema(db);if(!id(jobId))fail('invalid_pdf_job');
  const timed=await rawPDFJobTimestampsSupported(db),at=now(clock);
  // DB execution can finish long after capture/timeout. Round DB time upward;
@@ -119,7 +129,7 @@ async function closeUnclaimed(env: any,session: any,jobId: any,clock: any){
 }
 // Trusted executor ONLY: stopConfirmed must reflect completed reader/VM cleanup,
 // never a client's claim. Unknown stopping/DB state must retain the reservation.
-async function settle(env: any,jobId: any,token: any,stopConfirmed: any,clock: any){
+async function settle(env: any,jobId: any,token: any,stopConfirmed: any,clock: any): Promise<any> {
  if(!id(jobId)||!id(token))fail('invalid_pdf_job');if(stopConfirmed!==true)fail('pdf_job_stop_unconfirmed');
  const db=env.ADMIN_DB;await schema(db);const tokenHash=await sha256Hex(token);
  const timed=await rawPDFJobTimestampsSupported(db),at=now(clock);
@@ -128,12 +138,14 @@ async function settle(env: any,jobId: any,token: any,stopConfirmed: any,clock: a
  const saved=await stmt(db,`SELECT ${fields} FROM rag_pdf_jobs WHERE job_id=? AND token_hash=? AND state='settled'`,jobId,tokenHash).first();
  if(!saved)fail('pdf_job_stop_unconfirmed');return result(saved);
 }
-const errors=new Set(['invalid_pdf_job_clock','pdf_job_unauthorized','pdf_job_upgrade_required','pdf_job_policy_required',
+const errors=new Set(['pdf_start_disabled','pdf_start_upgrade_required','invalid_pdf_job_clock','pdf_job_unauthorized','pdf_job_upgrade_required','pdf_job_policy_required',
  'invalid_pdf_job','pdf_job_admission_denied','pdf_job_claim_conflict','pdf_job_dispatch_conflict','pdf_job_not_found','pdf_job_stop_unconfirmed',
  'pdf_intake_unauthorized','pdf_intake_upgrade_required','pdf_intake_disabled','invalid_pdf_intake_proof','pdf_intake_not_authorized','invalid_pdf_intake_clock']);
-async function guarded(work: any){try{return await work();}catch(e: any){throw new Error(errors.has(e?.message)?e.message:'pdf_job_unavailable');}}
+async function guarded(work: any): Promise<any> {try{return await work();}catch(e: any){throw new Error(errors.has(e?.message)?e.message:'pdf_job_unavailable');}}
 export const reserveRawPDFJob=(env: any,session: any,proof: any,limits: any,{clock=Date.now}: any={})=>guarded(()=>reserve(env,session,proof,limits,clock));
 export const claimRawPDFJob=(env: any,session: any,proof: any,jobId: any,{clock=Date.now}: any={})=>guarded(()=>claim(env,session,proof,jobId,clock));
+// Internal stop-evidence adapter only; no client-selectable protocol parameter.
+export const claimRawPDFJobWithStopProtocol=(env: any,session: any,proof: any,jobId: any,{clock=Date.now}: any={})=>guarded(()=>claim(env,session,proof,jobId,clock,true));
 export const markRawPDFJobDispatched=(env: any,session: any,proof: any,jobId: any,token: any,{clock=Date.now}: any={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock));
 export const requestRawPDFJobStop=(env: any,session: any,jobId: any)=>guarded(()=>stop(env,session,jobId));
 export const requestExpiredRawPDFJobsStop=(env: any,{clock=Date.now,limit=100}: any={})=>guarded(()=>expire(env,clock,limit));
@@ -142,7 +154,7 @@ export const settleRawPDFJob=(env: any,jobId: any,token: any,{stopConfirmed=fals
 
 // Internal executor guard, including job-only cancellation. A settled success may
 // be checked immediately before result return, but it is never a new execution grant.
-export const requireRawPDFJobExecution=(env: any,session: any,proof: any,jobId: any,token: any,{clock=Date.now,settled=false}: any={})=>guarded(async()=>{
+export const requireRawPDFJobExecution=(env: any,session: any,proof: any,jobId: any,token: any,{clock=Date.now,settled=false}: any={})=>guarded(async(): Promise<any> =>{
  session=snapshot(session);proof=snapshot(proof);const key=await owner(session);
  if(!id(jobId)||!id(token)||typeof settled!=='boolean')fail('invalid_pdf_job');
  const p=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
@@ -152,3 +164,14 @@ export const requireRawPDFJobExecution=(env: any,session: any,proof: any,jobId: 
   AND ${gate}`,key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n)).first();
  if(!found)fail('pdf_job_claim_conflict');return result(found);
 });
+
+// Internal v2 dispatch fixes the envelope in the same winning CAS, before RPC.
+export async function requireRawPDFRPCV2Schema(db: any): Promise<any> {
+ const columns=await stmt(db,'PRAGMA table_info(rag_pdf_jobs)').all();
+ const guards=await stmt(db,"SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_jobs_rpc_insert','rag_pdf_jobs_rpc_update')").first();
+ if(!['rpc_version','rpc_pdf_sha256','rpc_not_after'].every((n: any)=>columns.results.some((c: any)=>c.name===n))||guards?.n!==2)fail('pdf_job_upgrade_required');
+}
+export const markRawPDFJobDispatchedV2=(env: any,session: any,proof: any,jobId: any,token: any,{clock=Date.now}: any={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock,true));
+
+// Internal only; not selected by the current processor or public request.
+export const markRawPDFJobDispatchedWithStartProtocol=(env: any,session: any,proof: any,jobId: any,token: any,{clock=Date.now}: any={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock,true,true));

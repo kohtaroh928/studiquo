@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-20",
+  "step": "Step5-D2b-A",
+  "branch": "codex/rag-wip",
+  "scope": "local_only_destroy_observation_and_prerequisites",
+  "tests": {
+    "privateWorker": {
+      "pass": 51,
+      "fail": 0,
+      "skip": 0
+    },
+    "mcpV2Integration": {
+      "pass": 12,
+      "fail": 0,
+      "skip": 0
+    },
+    "serverFullRerun": false
+  },
+  "localRuntime": {
+    "localWorkerd": true,
+    "d1Migrations": 18,
+    "serviceBindingRPC": true,
+    "sqliteDO": true,
+    "mcpPipeline": true,
+    "immutableEnvelope": true,
+    "bothStopProofs": true,
+    "intakeErasedStop": true,
+    "flagOffStop": true,
+    "legacyParseRejected": true,
+    "replayRejected": true,
+    "destroyObservationDurable": true,
+    "physicalPurge": false,
+    "vm": "synthetic_io_adapter_only",
+    "remoteChanges": false
+  },
+  "linux": {
+    "syntheticOnly": true,
+    "platform": "linux/amd64",
+    "network": "none",
+    "hostMounts": false,
+    "publishedPorts": false,
+    "parseSeconds": 20.945,
+    "pages": 2,
+    "manifestBytes": 8454,
+    "parsePosts": 1,
+    "uid": 10001,
+    "architecture": "x86_64",
+    "jobRootEmpty": true,
+    "codeModelsReadOnly": true,
+    "egressBlocked": true,
+    "memoryPeakBytes": 2147483648,
+    "invalidPDFRejected": true,
+    "realChildCancelled": true,
+    "shortenedDeadlineReaped": true,
+    "stopJobDirectoriesRemoved": true,
+    "sigtermCleanExit": true,
+    "imageId": "sha256:32018601399c0791a787fd72516acfd8fddce9fe568da12d6344a4c19792bc4d"
+  },
+  "linuxLimits": "separate_existing_runner_not_v2_Cloudflare_VM_integration",
+  "sourceSha256": {
+    "services/docling-worker/index.js": "d5f53b55328b956b95c466050490845d4ea9eddca6fa61ad9388df059528affe",
+    "services/docling-worker/destroy-confirmation.test.js": "02ad209d768f764356662212d601dd659a423c178c08bdea90ab788c3601ac26",
+    "mcp-server/tools/rag-docling-destroy-confirmation-local-smoke.mjs": "25b3a0d50a46c0dda33f27c2b8697dd3122980ac5cf7844c60d3e65961e6b995",
+    "tools/docling/linux_smoke.py": "c5d2841460a81e8dcf2faf7f3eeaacdaa8cd313c951dfd28c9190a5f35658448"
+  },
+  "physicalPurgeImplemented": false,
+  "clockReplayCounterexample": "in_memory_Map_fixture_only",
+  "retentionAlarmImplemented": false,
+  "newConfigOrMigration": false,
+  "remoteChanges": false,
+  "paidAI": false,
+  "realPDF": false,
+  "promptChanged": false,
+  "automation": "PAUSED",
+  "processesStartedThisTurn": "all_completed",
+  "linuxVM": "restored_to_initial_stopped_state",
+  "reviews": {
+    "planner": "physical_purge_deferred_external_clock_fence_needed",
+    "code": "no_findings_read_only",
+    "security": "no_findings_read_only"
+  },
+  "intermediateFailure": "new_test_module_duplicate_declaration_fixed"
+}

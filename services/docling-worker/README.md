@@ -17,3 +17,22 @@ Tests load the real JavaScript classes with a small `cloudflare:workers` shim an
 See `../docling-container/README.md` for offline provisioning and build-context restrictions. No dependency/model download, image push, resource creation, migration application or deployment is authorized by this preparation unit.
 
 References: [direct Container API](https://developers.cloudflare.com/containers/api/durable-object-container/), [DO concurrency/reset rules](https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile), [container config](https://developers.cloudflare.com/containers/configuration/wrangler/).
+
+
+## Step5-D1: opt-in v2 boundary (local only, 2026-10-20)
+
+`DOCLING_RPC_V2_ONLY=true` selects strict `parseV2({version:2,jobId,pdfSha256,notAfter},bytes)` and `cancelV2({version:2,jobId,notAfter})` on both entrypoint and DO. Legacy signatures are rejected in this mode. Execution uses the fixed deadline, never extending it on replay/cancel. Cancellation remains available after expiry; an expired empty DO still requires destroy confirmation without creating a marker. Legacy states can be stopped without inventing a v2 deadline.
+
+The flag is not set by this change. **Do not enable it with the current legacy MCP callers.** D2a must persist the immutable envelope before dispatch and migrate every stop/recovery/account caller. No finite purge or deleteAll is implemented, and existing markers remain. Local RPC/SQLite smoke uses a synthetic VM-destroy override, not a real Container. See `docs/RAG_DO_V2_BOUNDARY_REPORT.md` for tests, limitations and rollout prerequisites.
+
+
+## Step5-D2a v2接続（2026-10-20）
+
+MCPのRAG_PDF_RPC_V2_ENABLED opt-inからparseV2/cancelV2へ接続済み（ローカル実装）。0018でdispatchと固定envelope保存を原子化し、保存v2 jobはMCP受付flagをOFFにしてもcancelV2を維持する。旧pendingは元job.deadlineによるcancelV2でdrainし、v2 parse用digestを補完しない。配備時は新規受付を止め、0018＋cleanup対応MCPを先行準備し、private DOCLING_RPC_V2_ONLYとMCPのflagを整合させてから再開する。不整合は受付/停止失敗として保持し、downgrade fallbackしない。今回flags/remoteは未変更、有限DO purgeは未実装。
+
+詳細: [接続検証](../../docs/RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
+
+
+## D2b-A：停止観測と削除前提（2026-10-20）
+
+cleanupはv2のdestroy解決後に初回destroyConfirmedAtを保存し、保存/時計/alarm失敗時は成功ackを返さず保持する。これは過去の観測で、現在停止/全task静止/削除許可を証明しない。legacy/期限後空DOへは追加しない。全消去後の時計巻戻しで古い契約が再有効になるため、外部fence等を確定するまでdeleteAll/物理purgeは実装しない。retention alarmは未追加で、既存alarmはcleanup専用。

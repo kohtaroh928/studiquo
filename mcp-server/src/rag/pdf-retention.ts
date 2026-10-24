@@ -8,15 +8,15 @@ function time(clock: any){const n=clock();if(!Number.isSafeInteger(n)||n<0||n>Nu
 function bounded(timeoutMs: any){
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>PASS_MS)fail('invalid_pdf_retention_options');
  const end=performance.now()+timeoutMs;
- return async (work: any): Promise<any>=>{
+ return async (work: any): Promise<any> =>{
   const remaining=end-performance.now();if(remaining<=0)fail('pdf_retention_timeout');
-  let timer;
-  try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{
+  let timer: any;
+  try{return await Promise.race([Promise.resolve().then(work),new Promise((_: any,reject: any)=>{
    timer=setTimeout(()=>reject(new Error('pdf_retention_timeout')),remaining);
   })]);}finally{clearTimeout(timer);}
  };
 }
-async function schema(db: any,within: any){
+async function schema(db: any,within: any): Promise<any> {
  const found=await within(()=>stmt(db,`SELECT COUNT(*) AS n FROM sqlite_master WHERE
   (type='table' AND name='rag_pdf_retention_control') OR
   (type='index' AND name IN ('rag_pdf_jobs_settled_at','rag_pdf_intakes_retention_due')) OR
@@ -28,14 +28,14 @@ async function schema(db: any,within: any){
  // Explicitly verify the additive columns even when the job table is empty.
  await within(()=>stmt(db,'SELECT created_at,settled_at FROM rag_pdf_jobs LIMIT 0').all());
 }
-async function guarded(work: any){
+async function guarded(work: any): Promise<any> {
  try{return await work();}catch(e: any){
   const allowed=['invalid_pdf_retention_options','pdf_retention_disabled','pdf_retention_upgrade_required','pdf_retention_timeout'];
   throw new Error(allowed.includes(e?.message)?e.message:'pdf_retention_unavailable');
  }
 }
 
-export const minimizeExpiredRawPDFIntakes=(env: any,{clock=Date.now,limit=10,timeoutMs=PASS_MS}: any={})=>guarded(async()=>{
+export const minimizeExpiredRawPDFIntakes=(env: any,{clock=Date.now,limit=10,timeoutMs=PASS_MS}: any={})=>guarded(async(): Promise<any> =>{
  if(typeof clock!=='function'||!Number.isSafeInteger(limit)||limit<1||limit>10)fail('invalid_pdf_retention_options');
  if(env.RAG_PDF_RETENTION_ENABLED!=='true')fail('pdf_retention_disabled');
  const within=bounded(timeoutMs),db=env.ADMIN_DB;time(clock);await schema(db,within);
@@ -58,11 +58,17 @@ export const minimizeExpiredRawPDFIntakes=(env: any,{clock=Date.now,limit=10,tim
 });
 
 // Operator-only read; full aggregate scans are not a cheap per-request endpoint.
-export const rawPDFRetentionStatus=(env: any,{clock=Date.now,timeoutMs=PASS_MS}: any={})=>guarded(async()=>{
+export const rawPDFRetentionStatus=(env: any,{clock=Date.now,timeoutMs=PASS_MS}: any={})=>guarded(async(): Promise<any> =>{
  if(typeof clock!=='function')fail('invalid_pdf_retention_options');
  const within=bounded(timeoutMs),db=env.ADMIN_DB;const at=time(clock);await schema(db,within);
  const newer=await within(()=>stmt(db,"SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='rag_pdf_purge_control'").first());
- const purge=newer?await within(()=>stmt(db,'SELECT enabled,contract_version FROM rag_pdf_purge_control WHERE singleton=1').first()):null;
+ const purge=newer?await within(()=>stmt(db,`SELECT enabled,contract_version,
+  (((contract_version='pre-adoption-v1' AND (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name GLOB 'rag_pdf_*')=5)
+    OR (contract_version='pre-adoption-stop-v2' AND (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name GLOB 'rag_pdf_*')=6
+     AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_purge_context_guard','rag_pdf_purge_context_clear'))=2
+     AND EXISTS(SELECT 1 FROM pragma_foreign_key_list('rag_pdf_execution_evidence') WHERE "table"='rag_pdf_jobs' AND "from"='job_id' AND "to"='job_id' AND on_delete='CASCADE')))
+   AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name LIKE '%receipt%')) AS compatible
+  FROM rag_pdf_purge_control WHERE singleton=1`).first()):null;
  const r=await within(()=>stmt(db,`SELECT
   (SELECT COUNT(*) FROM rag_pdf_intakes WHERE ${due} AND expires_at<=?) AS expired,
   (SELECT MIN(expires_at) FROM rag_pdf_intakes WHERE ${due} AND expires_at<=?) AS oldest,
@@ -72,5 +78,5 @@ export const rawPDFRetentionStatus=(env: any,{clock=Date.now,timeoutMs=PASS_MS}:
  return Object.freeze({expiredIntakes:r.expired,oldestExpiredMs:r.oldest===null?0:Math.max(0,at-r.oldest),
   heldJobs:r.held,settledWithoutTime:r.unknown_settled,settledWithTime:r.dated_settled,
   physicalPurgeEnabled:env.RAG_PDF_RETENTION_ENABLED==='true'&&env.RAG_PDF_JOB_PURGE_ENABLED==='true'
-   &&purge?.enabled===1&&purge.contract_version==='pre-adoption-v1'});
+   &&purge?.enabled===1&&['pre-adoption-v1','pre-adoption-stop-v2'].includes(purge.contract_version)&&purge.compatible===1});
 });
