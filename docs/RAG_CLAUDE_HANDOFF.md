@@ -119,7 +119,7 @@ claude/rag-followupの作業中4ファイルとdetached main-mergeのinventory�
 - 型: `src`は`strict`で通る（暗黙のanyは明示の`any`にした）。テストとスクリプトのうち型エラーのあった127本は先頭に`// @ts-nocheck`を付けた（`src` 80、`scripts/rag-quality` 45、`tools` 2）。型を付けるのは別カード。
 - 挙動: 型を消して移行前の`.js`と比べると、235本中231本は同一。違う4本は意図した変更（使い方のコメント、`rag-paired-task-planner-request.test`の固定ハッシュ検査、`rag-subject-role-review`の`rows.map(JSON.stringify)`を同じ結果のアロー関数に）。サーバーのテストは2357件が通り、1件はスキップ。
 - 固定した記録: `docs/RAG_*_RESULTS.json`などの`sourceHashes`は移行前の`.js`のハッシュのまま（履歴として残した）。そのため、移行前のソースが変わっていないことを確かめるテストは、`rag-paired-task-planner-request.test`のハッシュ比較を外し、`rag-prompt-baseline`は凍結した`answer-policy.ts`を移行前のバイトのまま置いて通した。`baselines/…/manifest.json`は`sources[].path`だけ`.ts`にし、ハッシュはそのまま（移行後は「変更あり」と報告される）。
-- **未解決（D1マイグレーションの番号）**: mainの`0006_legacy_standard_accounts.sql`・`0007_moderation.sql`と、RAGの`0006_rag.sql`・`0007_rag_context.sql`の番号が重なっている。本番・stagingに適用済みの履歴を確認し、番号の付け替えか適用順の決定をしてからでないと、RAGをmainへ入れない。
+- **未解決（D1マイグレーションの番号）**: mainの`0006_legacy_standard_accounts.sql`・`0007_moderation.sql`と、RAGの`0020_rag.sql`・`0021_rag_context.sql`の番号が重なっている。本番・stagingに適用済みの履歴を確認し、番号の付け替えか適用順の決定をしてからでないと、RAGをmainへ入れない。
 - 主な残件: Swiftのビルドとテスト（取り込みで衝突を解消した13ファイル）、RAGの経路にmainのAI入口の制限（アカウントごとの1分の回数・購読確認）が掛かるか。
 
 ## Step5-B完了：処理済み台帳の有限整理（2026-10-19、最新）
@@ -164,7 +164,7 @@ RAG_LICENSE_REVIEW_20261019.mdとRAG_LICENSE_INVENTORY_20261019.json、計画を
 
 ## Step 2調査完了：staging実状態（2026-10-19、最新）
 
-read-only照会とDashboardで現状確認。studiquo-mcp-staging現在version83/660d8caa-f695-4dd0-bddb-4a4aad50995b、100%、2026-10-18 14:42:42 JST。AI_PROVIDER_APPROVED false、RAG flagsなし、AI/Vectorize/RAG rate/private bindingなし。Container一覧0。ADMIN_DBは設定staging DBと一致。schema/既存migration SELECTのrows_written0/changed_db false。未適用0008_rag_control〜0013。remoteにはこの基底にない0006_legacy_standard_accounts/0007_moderationの履歴があるため、後の配備前に別系統更新/remoteソースを照合し保持する。履歴数字で適用済みを推測しない。
+read-only照会とDashboardで現状確認。studiquo-mcp-staging現在version83/660d8caa-f695-4dd0-bddb-4a4aad50995b、100%、2026-10-18 14:42:42 JST。AI_PROVIDER_APPROVED false、RAG flagsなし、AI/Vectorize/RAG rate/private bindingなし。Container一覧0。ADMIN_DBは設定staging DBと一致。schema/既存migration SELECTのrows_written0/changed_db false。未適用0022_rag_control〜0013。remoteにはこの基底にない0006_legacy_standard_accounts/0007_moderationの履歴があるため、後の配備前に別系統更新/remoteソースを照合し保持する。履歴数字で適用済みを推測しない。
 
 Workers Paid契約済み（月$5＋使用量）を現在のプラン表示で確認、公式Containers料金も確認。プラン/設定変更、DB書込、backup、Container起動、deploy/有料LLMなし。D1 migrations listは内部でtable初期化するため使用せずSELECTのみ。初回sandbox通信失敗のエラーJSONは成功/空一覧と区別し、正規権限の再照会成功結果を記録。CLI disk log/telemetry off、連絡先/秘密値は非保存。
 
@@ -205,7 +205,7 @@ RAG_STAGING_PREFLIGHT_20261019.md/jsonと計画更新。固定374 source hash不
 
 ## 停止再試行・集計と次の正式採用設計（2026-10-18、最新）
 
-- 続行指示でfull High/独立Planner→実装→Code/Security観点レビュー。0013_rag_pdf_job_recovery.sql、rag/pdf-job-recovery.ts、専用test、docs/RAG_PDF_RECOVERY.mdを追加。各DB段階/停止RPC候補最大10件、pass10秒、cancel待機2秒、lease30秒、最大3試行/固定backoff。期限切れをstop_requestedへ、未claimだけ安全に0精算。claimedはremote ackでも枠/units保持、元executor精算後だけdoneへ。遅いRPCから台帳更新/精算を再開しない。監視は集計だけ。
+- 続行指示でfull High/独立Planner→実装→Code/Security観点レビュー。0027_rag_pdf_job_recovery.sql、rag/pdf-job-recovery.ts、専用test、docs/RAG_PDF_RECOVERY.mdを追加。各DB段階/停止RPC候補最大10件、pass10秒、cancel待機2秒、lease30秒、最大3試行/固定backoff。期限切れをstop_requestedへ、未claimだけ安全に0精算。claimedはremote ackでも枠/units保持、元executor精算後だけdoneへ。遅いRPCから台帳更新/精算を再開しない。監視は集計だけ。
 - 専用13/全サーバー1,825成功（fail/skip0、全体50.468秒）。DB claim SQLの10秒停止/遅い完了、件数上限、競合lease、失敗backoff/上限、遅いRPC、不正ack、executor精算競合を検証。独立Code/Security観点レビューに未解決所見なし（独立再実行なし）。全test process完了、今回実行中なし。ログprivate tmp: studiquo-recovery-focused.log / studiquo-recovery-final-full.log。実D1/VMは未検証。
 - reaperは内部未接続。公開route/scheduler/binding設定なし。0010〜0013 remote未適用、token紛失/ローカル停止不明のclaimed自動解放とretentionは未実装。物理台帳削除/attempt巻戻しによる復旧はしない。rollbackは入口を閉じ台帳保持。
 - 正常区切りに続いて独立Plannerで次の新Notebook採用を調査し、RAG_PDF_ADOPTION_DESIGN.mdへ設計のみ記録。次の実装は本文保存を増やさないmetadata/receipt/原子的registry移行＋合成状態試験。intake document IDとNotebook.ragDocumentIDを固定、trusted manifest/text hashをbind、registry INSERTのintake取消triggerを維持し移行後は文書/receipt guardへ切替。receiptとregistryの片側成功をDB内でabortする。既存LibrarySyncの通常prepareで別世代へ上書きしない受渡しも必要。
@@ -224,7 +224,7 @@ RAG_STAGING_PREFLIGHT_20261019.md/jsonと計画更新。固定374 source hash不
 
 ## Step1〜2のjob/admission基盤（2026-10-18）
 
-- 計画通りの継続指示でfull High/独立Planner・Code・Security観点レビュー。新0012_rag_pdf_jobs.sql、rag/pdf-jobs.ts、専用testを追加。intake一意job、owner/global active/memory/day件数/unitsを単一SQLで予約。server policy必須、64MiB/件の保守的weight（heap実測保証なし）、UTC日窓、保存済み予約/精算値で計算。
+- 計画通りの継続指示でfull High/独立Planner・Code・Security観点レビュー。新0026_rag_pdf_jobs.sql、rag/pdf-jobs.ts、専用testを追加。intake一意job、owner/global active/memory/day件数/unitsを単一SQLで予約。server policy必須、64MiB/件の保守的weight（heap実測保証なし）、UTC日窓、保存済み予約/精算値で計算。
 - reserve retryはID/stateのみ、receive claim勝者だけexecution token（DBはhash）、同token dispatch CAS一度/ever_dispatched不可逆。intake取消/差替え/失効→stop_requested、期限も停止要求のみ。未停止active枠は窓を越えても保持。未claimはstop後0でclose、claim済みはtrusted executor token＋実停止確認で精算（未dispatch0/dispatch済みfullreserve）、再精算冪等。既存AI credits/実請求は変更なし。
 - job17＋既存PDF52=関連69test成功、独立review残指摘なし。サーバー全体回帰1,792件成功（失敗/skip 0）。今回テストprocessは全て完了、実行中なし。独立再テストなし。実D1・実VM・heap測定は未実施。0010/0011/0012すべてremote未適用。
 - 次はこの状態機械を使う有限受信/verify/明示cancelの内部orchestratorと実停止契約の接続。公開前にintake予約API自体の行数/rate上限、reaper/cleanup retry、停止不明/token紛失の証拠付き復旧、retention、memory/実費policy校正が必要。今回をStep1/2全体完成としない。Docling実dispatch/iPad/採用は続く工程。
@@ -241,7 +241,7 @@ RAG_STAGING_PREFLIGHT_20261019.md/jsonと計画更新。固定374 source hash不
 
 ## 新規PDFのintake予約・bytes同一性を実装（2026-10-18）
 
-- 前工程に続きfull手順/独立Planner・Code・Security観点レビューを実施。新0011_rag_pdf_intakes.sql、rag/pdf-intake.ts、専用testを追加。text hash前の新規Notebook用に別intake owner/doc/current generation/server UUID/request/rawSHA256/bytes長/両同意epoch/10分期限を保存し、本文・PDF・タイトルは保存しない。
+- 前工程に続きfull手順/独立Planner・Code・Security観点レビューを実施。新0025_rag_pdf_intakes.sql、rag/pdf-intake.ts、専用testを追加。text hash前の新規Notebook用に別intake owner/doc/current generation/server UUID/request/rawSHA256/bytes長/両同意epoch/10分期限を保存し、本文・PDF・タイトルは保存しない。
 - prepare CASと厳密current request retry（期限延長なし）、flags offでも取消、単一SQL再認可とbytes copy/長さ/signature/実SHA256/再認可を実装。既存rag_documentsは予約できず、同table変更やraw同意・account失効でpendingを取り消しdigest/長さを消す。intake世代はtext文書世代とは別。行を破棄して世代を巻き戻さない。
 - 関連52test成功（intake21＋認可18＋preflight13）。独立reviewに未解決所見なし。全体回帰1,775件成功（失敗/skip 0）。今回テストprocessは全て完了、実行中なし。実D1のtrigger連鎖/競合・実PDF/実iPadは未検証。
 - reader接続を含めず、verifierは有限readerの後だけを想定。admission未完成なのでbody reader/公開route/Doclingへ未接続。snapshotはlease/費用予約/once-only claimではなく同時verify成功を防がない。過去全request ID履歴は保存せず元期待世代の再送拒否を保証。TTLは自動DB物理消去ではない。
@@ -251,7 +251,7 @@ RAG_STAGING_PREFLIGHT_20261019.md/jsonと計画更新。固定374 source hash不
 
 ## 原PDFの永続同意・文書認可を実装（2026-10-18）
 
-- 前回の次工程をfull手順で継続し、独立Planner/Code/Securityレビューを実施。0010_rag_raw_pdf_consent.sqlとrag/pdf-authorization.ts、専用テストを追加。認証済みsession.subからcanonical ownerを計算、raw同意のCAS epochと親RAG epochへのbind、既存登録文書のsource ID/generation/text hash/両同意epochを単一SQLで確認する。
+- 前回の次工程をfull手順で継続し、独立Planner/Code/Securityレビューを実施。0024_rag_raw_pdf_consent.sqlとrag/pdf-authorization.ts、専用テストを追加。認証済みsession.subからcanonical ownerを計算、raw同意のCAS epochと親RAG epochへのbind、既存登録文書のsource ID/generation/text hash/両同意epochを単一SQLで確認する。
 - RAG同意変更/削除とaccount tombstoneのtriggerにより、旧Worker経由でもraw同意を原子的に無効化する。削除の途中失敗→再開や同意ABAで復活させない。safe integer最大epochは再付与不可、失効は可能。raw撤回で既存text RAGや索引は消さない。任意owner入力は拒否、payload/proofは非同期処理前コピー、DB例外は固定エラーにする。
 - 対象30件成功、Security独立18件成功、独立レビュー未解決指摘なし。全サーバー回帰1,752件成功（失敗/skip 0）。全体runの開始後に追加した2件は最終対象30件の方で成功、実装コードは同一。今回テストprocessは全て完了、実行中なし。実D1の競合/trigger運用は未確認。新0010はファイルとローカルSQLiteのみでremote適用なし。
 - このguardは既存registered文書に対するSQL時点snapshotのみ。新規Notebookでは解析前のtext sourceHashがないので、そのまま接続不可。次は新規intake文書/generation/rawPDF digestの予約と同一性確認、admission/費用予約/job取消削除、送信/採用前再認可の順で設計・実装する。公開routes/binding/iPad/Docling実送信は未接続、JWT検証は将来の呼出元で既存realSessionを使う。
@@ -338,7 +338,7 @@ Docling2.139.0で構造を抽出し、本文(text/paragraph)だけに意味境�
 | 範囲 | 主な場所 | 状態 |
 | --- | --- | --- |
 | 構造解析/分割/metadata/export | tools/docling/ | 固定localモデルで合成PDFの実解析確認 |
-| 構造索引/metadata保存・出典 | mcp-server/src/rag/、migrations/0009_rag_metadata.sql | optional strict入力、D1 metadata_json、旧形式互換。remote migration未適用 |
+| 構造索引/metadata保存・出典 | mcp-server/src/rag/、migrations/0023_rag_metadata.sql | optional strict入力、D1 metadata_json、旧形式互換。remote migration未適用 |
 | iPad構造import/保存/索引/出典 | RAGStructuredDocument/Attachment、RAGIndexingService/LibrarySync、Notebook、RAGCitationMetadata等 | 原PDF hash一致prepared import、暗号化保管・編集失効・capability確認、ページ出典。実機/iCloud移行未確認 |
 | 有限Python runner/HTTP | services/docling-processor/ | 10MiB/20page/期限/取消/清掃、localとcontainer入口を分離 |
 | private Container制御 | services/docling-worker/ | default flag false、public404、単発DO、期限/取消/破棄確認後返却、本文非保存。既存MCPへ未binding |

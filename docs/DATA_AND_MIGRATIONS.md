@@ -112,9 +112,9 @@ Folder移行と一覧metadata再構築には`try? context.save()`があり、保
 | 0003 | `0003_announcements.sql` | `announcements`、`announcement_translations` |
 | 0004 | `0004_announcement_push.sql` | お知らせのpush状態・cursor・集計・日時の列追加 |
 | 0005 | `0005_privacy_retention.sql` | 報告の`account_key`、診断関連の`last_seen_at`、削除済み顧客hashテーブルとindex |
-| 0006 | `0006_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
-| 0007 | `0007_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
-| 0008 | `0008_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
+| 0006 | `0020_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
+| 0007 | `0021_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
+| 0008 | `0022_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
 
 D1の主要な日時列はUnix epochの**ミリ秒**。一方、Worker tokenの発行時刻は秒、Swiftの標準Codable `Date`は別の基準である。境界で明示的に変換し、数字だけを無条件にコピーしない。
 
@@ -262,7 +262,7 @@ UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、
 
 ### RAG構造metadata用追加migration（2026-10-17、未配備）
 
-`mcp-server/migrations/0009_rag_metadata.sql`はrag_chunks.metadata_json TEXTを追加する。既存行はNULLで読み取り可能。新形式登録のみ列を必須とし、未適用DBへのlegacy入力は継続する。共通文書情報もchunk列内に保持し、既存source/account削除と共に除去する。位置情報だけの変更でも新lease chunkIDを発行、folder cloneはmetadataも複製する。source共通行へ新たな本文/metadataを残さない。remote migrationは未適用。公開順・停止・旧Workerへの切戻し条件は [RAG_STRUCTURED_INGESTION.md](RAG_STRUCTURED_INGESTION.md)。
+`mcp-server/migrations/0023_rag_metadata.sql`はrag_chunks.metadata_json TEXTを追加する。既存行はNULLで読み取り可能。新形式登録のみ列を必須とし、未適用DBへのlegacy入力は継続する。共通文書情報もchunk列内に保持し、既存source/account削除と共に除去する。位置情報だけの変更でも新lease chunkIDを発行、folder cloneはmetadataも複製する。source共通行へ新たな本文/metadataを残さない。remote migrationは未適用。公開順・停止・旧Workerへの切戻し条件は [RAG_STRUCTURED_INGESTION.md](RAG_STRUCTURED_INGESTION.md)。
 
 
 ## iPadの構造索引・出典接続（2026-10-17、ローカル実装）
@@ -276,17 +276,17 @@ UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、
 
 ## 原PDF同意の永続状態（2026-10-18、未適用）
 
-追加migration `0010_rag_raw_pdf_consent.sql`はrawPDF専用の同意epoch/enabled、親RAG同意epoch、同意版のみを保存する。既存ユーザーの同意backfillや本文/PDF保存はしない。RAG同意変更/削除とaccount tombstoneのtriggerで原子的に失効し、削除途中失敗からaccount再開しても旧同意を復活させない。世代は単調増加、safe integer上限到達は再許可不可（失効は維持）。migration0006〜0009後の追加ファイルとしてローカルSQLiteで検証し、remoteには未適用。guardは未接続で、既存Workerのschema要件を変更しない。適用後は表/trigger/失効epochを削除するrollbackを行わない。詳細: [原PDF自動解析設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
+追加migration `0024_rag_raw_pdf_consent.sql`はrawPDF専用の同意epoch/enabled、親RAG同意epoch、同意版のみを保存する。既存ユーザーの同意backfillや本文/PDF保存はしない。RAG同意変更/削除とaccount tombstoneのtriggerで原子的に失効し、削除途中失敗からaccount再開しても旧同意を復活させない。世代は単調増加、safe integer上限到達は再許可不可（失効は維持）。migration0006〜0009後の追加ファイルとしてローカルSQLiteで検証し、remoteには未適用。guardは未接続で、既存Workerのschema要件を変更しない。適用後は表/trigger/失効epochを削除するrollbackを行わない。詳細: [原PDF自動解析設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
 
 ## 新規原PDF intake（2026-10-18、0011未適用）
 
-`0011_rag_pdf_intakes.sql`は解析前の受付をtext用rag_documentsから分離する。owner/documentごとに現在行と単調増加generationを残し、server UUID、request ID、rawPDF SHA256/長さ、両同意epoch、10分のserver期限、pending/cancelledだけを保持。本文・PDF・タイトルは保存しない。取消/同意失効/既存文書登録・変更・削除/account削除はtriggerでpendingを取り消しdigest/長さをNULL化する。期限切れは認可時に拒否し、時刻到達での物理削除/消去はまだない。
+`0025_rag_pdf_intakes.sql`は解析前の受付をtext用rag_documentsから分離する。owner/documentごとに現在行と単調増加generationを残し、server UUID、request ID、rawPDF SHA256/長さ、両同意epoch、10分のserver期限、pending/cancelledだけを保持。本文・PDF・タイトルは保存しない。取消/同意失効/既存文書登録・変更・削除/account削除はtriggerでpendingを取り消しdigest/長さをNULL化する。期限切れは認可時に拒否し、時刻到達での物理削除/消去はまだない。
 
 再送は元の期待世代・current request・metadata・両同意epoch一致の場合だけ同じID/期限を返す。旧世代の予約は上書き後に再送不可。全request履歴や過去request IDの永久重複禁止は保証せず、世代tombstoneを削除して再利用させない。retention・受付数制限はadmissionとともに公開前に整備する。既存rag_documentsのあるIDは新規intake不可。0010/0011はローカルSQLite検証のみ、remote未適用。rollback時も追加表/triggerをdropせず未接続を維持。
 
 ## PDF job admission（2026-10-18、0012未適用）
 
-`0012_rag_pdf_jobs.sql`にowner/intake一意のjob、文書世代/両epoch、状態、execution token hash、不可逆dispatch印、UTC日窓、予約/精算units、memory weight、policy版、期限を追加。本文/原PDF/digest/タイトル/生tokenは保存しない。intake失効/差替え/削除triggerでstop_requestedへ進め、停止未確認のactive枠は解放しない。reserved→receivingのclaim勝者だけがtokenを得て、同tokenでdispatchは一度だけ。期限を延長する再予約やtoken再発行はない。
+`0026_rag_pdf_jobs.sql`にowner/intake一意のjob、文書世代/両epoch、状態、execution token hash、不可逆dispatch印、UTC日窓、予約/精算units、memory weight、policy版、期限を追加。本文/原PDF/digest/タイトル/生tokenは保存しない。intake失効/差替え/削除triggerでstop_requestedへ進め、停止未確認のactive枠は解放しない。reserved→receivingのclaim勝者だけがtokenを得て、同tokenでdispatchは一度だけ。期限を延長する再予約やtoken再発行はない。
 
 信頼済みserver policyは必須、job作成時のunits/weight/窓を保存する。単位はDocling受付のshadow budgetで実請求/既存AI creditsではない。未dispatchは停止確認後0、dispatch済みは予約全unitsを保守的に消費。未claimだけはstop後token不要で閉じられ、claim済みはtrusted executor token/停止確認で精算、再精算は冪等。物理削除・保持期限・停止不明時の手動復旧は未実装で、台帳dropによるrollbackは禁止。remote適用なし。
 
@@ -294,7 +294,7 @@ UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、
 
 ## PDF停止再試行台帳（2026-10-18、0013未適用）
 
-`0013_rag_pdf_job_recovery.sql`はjob IDだけを参照し、attempt数、次試行時刻、CAS lease、固定outcome/状態、remote停止確認時刻を保存する。owner/digest/本文/tokenは追加保存しない。最大3回、固定backoff、各DB段階と停止RPC候補は最大10件、pass最大10秒。未claimのstop_requestedだけ0精算し、claimedはremote停止確認後もmemory/unitsを保持。元executor精算後にdoneへ整理する。table/job/intakeを物理削除するretentionは未実装。
+`0027_rag_pdf_job_recovery.sql`はjob IDだけを参照し、attempt数、次試行時刻、CAS lease、固定outcome/状態、remote停止確認時刻を保存する。owner/digest/本文/tokenは追加保存しない。最大3回、固定backoff、各DB段階と停止RPC候補は最大10件、pass最大10秒。未claimのstop_requestedだけ0精算し、claimedはremote停止確認後もmemory/unitsを保持。元executor精算後にdoneへ整理する。table/job/intakeを物理削除するretentionは未実装。
 
 内部reaper/集計のみで公開route/schedulerへ未接続。旧Worker動作は変更せず、利用時に0012→0013が必要。migration0010〜0013はいずれもremote未適用。rollbackはreaper呼出しを止め、台帳を残す。詳細: [停止と復旧](RAG_PDF_RECOVERY.md)。
 
@@ -354,7 +354,7 @@ private DOのv2 stateへrpcVersion/notAfterを追加する未接続部品を実�
 
 ## Step5-D2a v2接続（2026-10-20）
 
-0018_rag_pdf_rpc_v2.sqlを追加（remote未適用）。既存jobはrpc_version=1・追加値NULLのまま。v2の単一dispatch CASでrpc_version=2/rpc_pdf_sha256/rpc_not_after=deadlineを保存し、triggerで不正な初期設定・改変・NULL化・期限延長・downgradeを拒否。追加tableなし、0015/17の親purge・FK cascade・floor契約は維持。digestは取消時に消えるintakeの値と別で、停止不明/未精算とpurge未接続中は残り、既存の精算済親jobの整理時に一緒に削除する。匿名情報ではない。新migrationを削除するrollbackはせず、新規受付OFF＋v2停止コード/schemaを維持する。
+0032_rag_pdf_rpc_v2.sqlを追加（remote未適用）。既存jobはrpc_version=1・追加値NULLのまま。v2の単一dispatch CASでrpc_version=2/rpc_pdf_sha256/rpc_not_after=deadlineを保存し、triggerで不正な初期設定・改変・NULL化・期限延長・downgradeを拒否。追加tableなし、0015/17の親purge・FK cascade・floor契約は維持。digestは取消時に消えるintakeの値と別で、停止不明/未精算とpurge未接続中は残り、既存の精算済親jobの整理時に一緒に削除する。匿名情報ではない。新migrationを削除するrollbackはせず、新規受付OFF＋v2停止コード/schemaを維持する。
 
 詳細: [接続検証](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
 
@@ -371,9 +371,34 @@ D2b-Bは設計のみ。既存jobへ独立start_protocolとnullableな消費metad
 
 ## D2b-C1：開始許可のDB部品（2026-10-20）
 
-0019_rag_pdf_start_gate.sql追加（remote未適用）。jobsへ独立start_protocol/start_claim_id/start_claimed_at、既存行legacy/NULL。新専用dispatch CASのみprotocol設定、初回grantだけ消費、reset/変更/REPLACEを拒否。新protocol親DELETE保留、eligible viewをlegacyに限定しmixedcursor前進を維持。既存0014〜18を編集せず、新tableなし。新start metadataは有限削除未対応で保持が続く。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。
+0033_rag_pdf_start_gate.sql追加（remote未適用）。jobsへ独立start_protocol/start_claim_id/start_claimed_at、既存行legacy/NULL。新専用dispatch CASのみprotocol設定、初回grantだけ消費、reset/変更/REPLACEを拒否。新protocol親DELETE保留、eligible viewをlegacyに限定しmixedcursor前進を維持。既存0014〜18を編集せず、新tableなし。新start metadataは有限削除未対応で保持が続く。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。
 
 
 ## PDF処理のTS移植（2026-10-21）
 
 `codex/rag-start-ts`で未統合の停止証拠/v2 RPC/開始許可をTSへ移植。最新アカウント削除のgeneration/alias保護とhashed完了markerを維持し、legacy deletedの自動再開は保留する。guard待機後・nested recoveryでも所有確認と外側期限を維持し、timer発火後の新しい開始CASをclosedで拒否する。詳しくは[RAG_TS_PDF_PORT_REPORT](RAG_TS_PDF_PORT_REPORT.md)。開始gateのprivate接続C2とremote migration/番号衝突照合は未完、実config未変更。
+
+## RAGのmigration番号の付け替え(2026-10-24)
+
+main側の `0006_legacy_standard_accounts`・`0007_moderation`・`0008_subscriber_transaction` と、RAG側の `0006_rag`・`0007_rag_context`・`0008_rag_control` が同じ番号を使っていた。mainの3件は本番に適用済みで名前を変えられないため、**RAG側の14件を、順序を保ったまま 0020〜0033 に付け替えた**。内容は変えていない(ファイル名だけ)。以降の新しい番号は 0034 から。
+
+| 旧い名前 | 新しい名前 |
+|---|---|
+| `0006_rag.sql` | `0020_rag.sql` |
+| `0007_rag_context.sql` | `0021_rag_context.sql` |
+| `0008_rag_control.sql` | `0022_rag_control.sql` |
+| `0009_rag_metadata.sql` | `0023_rag_metadata.sql` |
+| `0010_rag_raw_pdf_consent.sql` | `0024_rag_raw_pdf_consent.sql` |
+| `0011_rag_pdf_intakes.sql` | `0025_rag_pdf_intakes.sql` |
+| `0012_rag_pdf_jobs.sql` | `0026_rag_pdf_jobs.sql` |
+| `0013_rag_pdf_job_recovery.sql` | `0027_rag_pdf_job_recovery.sql` |
+| `0014_rag_pdf_retention.sql` | `0028_rag_pdf_retention.sql` |
+| `0015_rag_pdf_purge.sql` | `0029_rag_pdf_purge.sql` |
+| `0016_rag_pdf_stop_evidence.sql` | `0030_rag_pdf_stop_evidence.sql` |
+| `0017_rag_pdf_evidence_retention.sql` | `0031_rag_pdf_evidence_retention.sql` |
+| `0018_rag_pdf_rpc_v2.sql` | `0032_rag_pdf_rpc_v2.sql` |
+| `0019_rag_pdf_start_gate.sql` | `0033_rag_pdf_start_gate.sql` |
+
+- **本番**: RAG側は未適用だったので、影響はない。
+- **ステージング**: RAG側を旧い名前で適用済みだったため、D1の適用履歴(`d1_migrations`)の名前を、新しい名前に書き換えた(0030〜0033 に当たる旧0016〜0019は、未適用のまま)。
+- 日付つきの過去の記録(`RAG_STAGING_PREFLIGHT_20261019.*`、`RAG_VERIFICATION_BASELINE_20261019.json`、各種 `*_RESULTS.json`、`docs/releases/` など)には、旧い名前が残っている。上の表で読み替える。

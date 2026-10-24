@@ -15,7 +15,7 @@ const reject=(fn,code)=>assert.rejects(fn,e=>{assert.equal(e.message,code);retur
 function setup({migrate=true,enabled=true}={}){
  const env=qualityEnvironment(),db=env.ADMIN_DB.db;let now=BASE;
  db.function('strftime',(_format,_at)=>String(Math.floor(now/1000)));
- for(const name of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql','0014_rag_pdf_retention.sql',...(migrate?['0015_rag_pdf_purge.sql']:[])])
+ for(const name of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql','0028_rag_pdf_retention.sql',...(migrate?['0029_rag_pdf_purge.sql']:[])])
   db.exec(readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
  // Include RETURNING in the SQLite D1 fixture's batch results, as actual D1 does.
  env.ADMIN_DB.prepare=sql=>({bind(...args){const get=()=>db.prepare(sql);return {

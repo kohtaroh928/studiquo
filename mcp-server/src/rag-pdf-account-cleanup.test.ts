@@ -19,8 +19,8 @@ const policy={perOwnerActive:1,globalActive:2,globalMemoryBytes:96*1024*1024,per
 async function setup({claim='legacy',binding=true}={}){
  const e=qualityEnvironment(),db=e.ADMIN_DB.db;
  e.RAG_AUTO_INDEX_ENABLED=e.AI_PROVIDER_APPROVED=e.RAG_PDF_PROCESSING_ENABLED=e.RAG_PDF_STOP_EVIDENCE_ENABLED='true';
- for(const name of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql',
-  '0014_rag_pdf_retention.sql','0015_rag_pdf_purge.sql','0016_rag_pdf_stop_evidence.sql','0017_rag_pdf_evidence_retention.sql'])
+ for(const name of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql',
+  '0028_rag_pdf_retention.sql','0029_rag_pdf_purge.sql','0030_rag_pdf_stop_evidence.sql','0031_rag_pdf_evidence_retention.sql'])
   db.exec(readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
  const key=await accountKey(sub);await updateConsent(e,key,{enabled:true,expectedEpoch:0});
  await updateRawPDFConsent(e,session,{enabled:true,expectedEpoch:0,consentEpoch:1,consentVersion:'raw-pdf-docling-v1'});

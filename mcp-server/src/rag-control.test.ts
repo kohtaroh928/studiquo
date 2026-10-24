@@ -6,7 +6,7 @@ import { qualityEnvironment } from './rag-quality-fixture.ts';
 import { controlAvailable, readControl, updateConsent, prepareDocument, invalidateDocument, invalidateSourceControl, invalidateAccountControl, cleanupPending } from './rag/control.ts';
 async function env() {
  const e=qualityEnvironment();
- if (!e.ADMIN_DB.db.prepare("SELECT name FROM sqlite_master WHERE name='rag_controls'").get()) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0008_rag_control.sql',import.meta.url),'utf8'));
+ if (!e.ADMIN_DB.db.prepare("SELECT name FROM sqlite_master WHERE name='rag_controls'").get()) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0022_rag_control.sql',import.meta.url),'utf8'));
  e.RAG_AUTO_INDEX_ENABLED='true'; await updateConsent(e,'owner',{enabled:true,expectedEpoch:0}); return e;
 }
 const req=(p={})=>({documentId:'document-a',requestId:'request-a',expectedGeneration:0,consentEpoch:1,sourceHash:'a'.repeat(64),title:'Synthetic document',folderId:'folder-a',totalPages:100,...p});
@@ -69,7 +69,7 @@ test('schema absence differs from database outage',async()=>{
 });
 test('initial consent invalidates legacy rows only for the canonical owner',async()=>{
  const e=qualityEnvironment();
- if (!e.ADMIN_DB.db.prepare("SELECT name FROM sqlite_master WHERE name='rag_controls'").get()) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0008_rag_control.sql',import.meta.url),'utf8'));
+ if (!e.ADMIN_DB.db.prepare("SELECT name FROM sqlite_master WHERE name='rag_controls'").get()) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0022_rag_control.sql',import.meta.url),'utf8'));
  e.RAG_AUTO_INDEX_ENABLED='true';source(e,'legacy');source(e,'foreign','other');
  await updateConsent(e,'owner',{enabled:true,expectedEpoch:0});
  assert.equal(e.ADMIN_DB.db.prepare('SELECT deleted FROM rag_sources WHERE source_id=?').get('legacy').deleted,1);

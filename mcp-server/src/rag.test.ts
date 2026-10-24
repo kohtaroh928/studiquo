@@ -22,11 +22,11 @@ function database() {
   const db = new DatabaseSync(":memory:");
   db.exec(
     readFileSync(
-      new URL("../migrations/0006_rag.sql", import.meta.url),
+      new URL("../migrations/0020_rag.sql", import.meta.url),
       "utf8",
     ),
   );
-  db.exec(readFileSync(new URL("../migrations/0007_rag_context.sql", import.meta.url), "utf8"));
+  db.exec(readFileSync(new URL("../migrations/0021_rag_context.sql", import.meta.url), "utf8"));
   const prepare = (sql) => ({
     bind(...args) {
       return {

@@ -34,7 +34,7 @@ try{
  };
  const settle=async s=>{await s.scope.sealAndRecord();await confirmRawPDFRemoteStop(env,s.contract.jobId);await settleRawPDFJobFromEvidence(env,s.contract.jobId);};
  const get=s=>db.prepare('SELECT * FROM rag_pdf_jobs WHERE job_id=?').bind(s.contract.jobId).first();
- const old=await prepare('legacy',false),before=await get(old);await apply('0019_rag_pdf_start_gate.sql');assert.equal(count,21);
+ const old=await prepare('legacy',false),before=await get(old);await apply('0033_rag_pdf_start_gate.sql');assert.equal(count,21);
  const after=await get(old);for(const k of Object.keys(before))assert.deepEqual(after[k],before[k]);assert.equal(after.start_protocol,'legacy');
  await assert.rejects(()=>claimRawPDFStart(env,old.contract,crypto.randomUUID()));await settle(old);
  const fresh=await prepare('new',true),id=crypto.randomUUID();

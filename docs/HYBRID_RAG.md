@@ -38,8 +38,8 @@ Create metadata indexes **before any upsert**. Vectors indexed before metadata
 index creation need re-upserting. Bindings: `AI` (Workers AI), `RAG_VECTORIZE`
 (Vectorize), existing `ADMIN_DB` (D1), `RATE_LIMIT_RAG_INDEX` and
 `RATE_LIMIT_RAG_SEARCH` (account-keyed limits). The additive migration is
-`mcp-server/migrations/0006_rag.sql` and additive
-`0007_rag_context.sql`; applied migrations are unchanged. 0006 has been applied
+`mcp-server/migrations/0020_rag.sql` and additive
+`0021_rag_context.sql`; applied migrations are unchanged. 0006 has been applied
 to staging; 0007 was applied on 2026-10-09. The staging Vectorize index and
 all four metadata indexes have also been created. See
 [RAG_STAGING_VALIDATION_REPORT.md](RAG_STAGING_VALIDATION_REPORT.md) for the
@@ -472,7 +472,7 @@ See [answer-style implementation report](RAG_ANSWER_STYLE_IMPLEMENTATION_REPORT.
 
 ## Automatic-library safety foundation (2026-10-11, local only)
 
-Migration `0008_rag_control.sql` adds permanent managed-account consent epochs, stable document eligibility and generation CAS, source cleanup jobs and a vector write-ahead journal. `RAG_AUTO_INDEX_ENABLED=false` is the initial setting in production and staging configuration. No additional binding, secret, model or Vectorize index is required. The existing account-keyed registration rate binding also limits the new control APIs.
+Migration `0022_rag_control.sql` adds permanent managed-account consent epochs, stable document eligibility and generation CAS, source cleanup jobs and a vector write-ahead journal. `RAG_AUTO_INDEX_ENABLED=false` is the initial setting in production and staging configuration. No additional binding, secret, model or Vectorize index is required. The existing account-keyed registration rate binding also limits the new control APIs.
 
 New authenticated APIs (all under `/api/rag/`):
 

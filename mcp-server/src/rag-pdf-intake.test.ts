@@ -14,8 +14,8 @@ const rejection=(fn,code)=>assert.rejects(fn,e=>{assert.equal(e.message,code);re
 const cancellation=p=>({documentId:p.documentId,intakeId:p.intakeId,generation:p.generation});
 async function setup({migrate=true}={}) {
  const e=qualityEnvironment(); e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED='true';
- e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0010_rag_raw_pdf_consent.sql',import.meta.url),'utf8'));
- if(migrate)e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0011_rag_pdf_intakes.sql',import.meta.url),'utf8'));
+ e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0024_rag_raw_pdf_consent.sql',import.meta.url),'utf8'));
+ if(migrate)e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0025_rag_pdf_intakes.sql',import.meta.url),'utf8'));
  const key=await accountKey(session.sub);
  await updateConsent(e,key,{enabled:true,expectedEpoch:0});
  await updateRawPDFConsent(e,session,{enabled:true,expectedEpoch:0,consentEpoch:1,consentVersion:'raw-pdf-docling-v1'});

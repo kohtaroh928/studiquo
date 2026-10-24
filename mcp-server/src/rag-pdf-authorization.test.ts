@@ -14,7 +14,7 @@ const reg = changes => ({ documentId:'doc-a', requestId:'request-a', expectedGen
 async function setup({ migrated = true } = {}) {
   const e = qualityEnvironment();
   e.AI_PROVIDER_APPROVED = e.RAG_AUTO_INDEX_ENABLED = e.RAG_PDF_PROCESSING_ENABLED = 'true';
-  if (migrated) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0010_rag_raw_pdf_consent.sql',import.meta.url),'utf8'));
+  if (migrated) e.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0024_rag_raw_pdf_consent.sql',import.meta.url),'utf8'));
   const key = await accountKey(session.sub);
   await updateConsent(e, key, { enabled:true, expectedEpoch:0 });
   const d = await prepareDocument(e, key, reg());

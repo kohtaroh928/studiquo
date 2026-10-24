@@ -16,7 +16,7 @@ async function sample(){
  const records=await Promise.all(texts.map(async(text,i)=>({text,metadata:{documentNamespace,kind:'text',elementId:`e${i}`,localId:`c${i}`,idSource:'docling_self_ref',pageNumbers:[1],provenanceScope:'element',provenance:[{pageNumber:1,bbox:{l:i,t:0,r:2,b:2,coordOrigin:'TOPLEFT'},charspan:[0,text.length]}],coordinateState:'known',headingPath:{state:'unknown',reason:'no_explicit_heading',items:[]},contextRefs:[],review:{needsReview:false,needsOCR:false,reviewRequired:false,oversized:false},source:{start:0,end:Array.from(text).length,offsetUnit:'unicode_codepoint',textSha256:await sha256Hex(text)}}})));
  return qualitySource({kind:'pdf',structure:{version:1,documentNamespace,document},pages:[{pageNumber:1,text:texts.join('\n\n'),structured:{version:1,records}}]});
 }
-function environment(){const env=qualityEnvironment();env.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0009_rag_metadata.sql',import.meta.url),'utf8'));return env;}
+function environment(){const env=qualityEnvironment();env.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0023_rag_metadata.sql',import.meta.url),'utf8'));return env;}
 const question={query:'光合成を説明して',scope:{type:'page',sourceId:'quality-source',pageNumber:1}};
 test('structured retrieval carries authorized neighbor elements separately',async()=>{
  const env=environment();try{

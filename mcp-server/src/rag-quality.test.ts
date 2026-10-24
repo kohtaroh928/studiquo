@@ -129,7 +129,7 @@ test('0006-only index is rejected before mutation; legacy retrieval/deletion wor
   const env=qualityEnvironment({legacy:true}),key=await accountKey('synthetic-user');
   await assert.rejects(indexSource(env,key,qualitySource()),/index_upgrade_required/);
   assert.equal(env.ADMIN_DB.db.prepare('SELECT count(*) AS n FROM rag_accounts').get().n,0);
-  env.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0007_rag_context.sql',import.meta.url),'utf8'));
+  env.ADMIN_DB.db.exec(readFileSync(new URL('../migrations/0021_rag_context.sql',import.meta.url),'utf8'));
   await indexSource(env,key,qualitySource());
   env.ADMIN_DB.db.exec("UPDATE rag_pages SET index_version=1,context_hash=''; UPDATE rag_chunks SET index_version=1,embedding_hash='';");
   const before=env.calls.length;await indexSource(env,key,qualitySource());
