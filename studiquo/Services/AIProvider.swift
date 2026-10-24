@@ -28,6 +28,19 @@ protocol AIProvider {
         onDelta: @escaping (String) -> Void
     ) async throws
 
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws
+
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onRAGStatus: @escaping (RAGRetrievalStatus) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws
+
     /// Derives the marking scheme before the student's work is looked at.
     func buildRubric(for submission: ProofSubmission) async throws -> ProofRubric
 
@@ -43,6 +56,30 @@ protocol AIProvider {
 
 extension AIProvider {
     func usage() async -> AIUsage? { nil }
+}
+
+extension AIProvider {
+    /// Providers without retrieval status preserve their existing chat behavior.
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onRAGStatus: @escaping (RAGRetrievalStatus) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws {
+        try await streamChat(turns: turns, noteContext: noteContext, images: images,
+                             expectsImages: expectsImages, ragScope: ragScope,
+                             onCitations: onCitations, onDelta: onDelta)
+    }
+
+    /// Older providers and test doubles keep their existing behavior.
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws {
+        try await streamChat(turns: turns, noteContext: noteContext, images: images,
+                             expectsImages: expectsImages, onDelta: onDelta)
+    }
 }
 
 /// The Worker's `/api/ai/review` result: whether the question was worth
@@ -207,6 +244,29 @@ final class WorkerAIProvider: AIProvider {
         expectsImages: Bool = false,
         onDelta: @escaping (String) -> Void
     ) async throws {
+        try await streamChat(turns: turns, noteContext: noteContext, images: images,
+                             expectsImages: expectsImages, ragScope: nil,
+                             onCitations: { _ in }, onDelta: onDelta)
+    }
+
+    @MainActor
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws {
+        try await streamChat(turns: turns, noteContext: noteContext, images: images,
+                             expectsImages: expectsImages, ragScope: ragScope,
+                             onCitations: onCitations, onRAGStatus: { _ in }, onDelta: onDelta)
+    }
+
+    @MainActor
+    func streamChat(
+        turns: [AITurn], noteContext: String, images: [UIImage], expectsImages: Bool,
+        ragScope: RAGSearchScope?, onCitations: @escaping ([RAGCitation]) -> Void,
+        onRAGStatus: @escaping (RAGRetrievalStatus) -> Void,
+        onDelta: @escaping (String) -> Void
+    ) async throws {
         let encodedImages = images.compactMap(Self.encoded)
         if expectsImages && encodedImages.count != images.count {
             throw ProviderError.imageEncodingFailed
@@ -214,24 +274,31 @@ final class WorkerAIProvider: AIProvider {
         if expectsImages && encodedImages.isEmpty {
             throw ProviderError.imageEncodingFailed
         }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "messages": turns.map { ["role": $0.role.rawValue, "text": $0.text] },
             "noteContext": noteContext,
             "images": encodedImages,
             "requiresImage": expectsImages,
             "model": AIModelCatalog.defaultModel.rawValue,
         ]
-        let request = try request(path: "api/ai/chat", body: payload)
+        if let ragScope, RAGConsent.isGranted {
+            payload["rag"] = ["scope": ragScope.payload]
+        }
+        let ragRequested = payload["rag"] != nil
+        var request = try request(path: "api/ai/chat", body: payload)
+        if payload["rag"] != nil {
+            request.setValue(RAGConsent.version, forHTTPHeaderField: "X-Studiquo-RAG-Consent")
+        }
 
         do {
             let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
+            defer { stream.task.cancel() } // Also stops an oversized, invalid or abandoned response.
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
             guard 200..<300 ~= http.statusCode else {
-                var raw = Data()
-                for try await byte in stream { raw.append(byte) }
-                throw httpError(status: http.statusCode, message: message(from: raw))
+                let raw = try await BoundedAIStreamBody.read(stream)
+                throw httpError(status: http.statusCode, message: String(message(from: raw).prefix(512)))
             }
             if expectsImages,
                let received = http.value(forHTTPHeaderField: "X-Studiquo-Images-Received"),
@@ -240,19 +307,29 @@ final class WorkerAIProvider: AIProvider {
             }
             // The Worker normalises the provider's event envelope down to
             // `data: {"text": "..."}`, so there is only one shape to parse.
-            for try await line in stream.lines {
+            for try await line in try BoundedAIStreamLines(stream) {
                 guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
                 guard line.hasPrefix("data:") else { continue }
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 guard !payload.isEmpty,
                       let data = payload.data(using: .utf8),
-                      let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let text = event["text"] as? String else { continue }
-                onDelta(text)
+                      let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                if let citations = RAGCitation.decodeEvent(data), ragRequested && RAGConsent.isGranted {
+                    onCitations(citations)
+                }
+                if let status = RAGRetrievalStatus.decodeEvent(data, acceptingRAG: ragRequested && RAGConsent.isGranted) {
+                    onRAGStatus(status)
+                }
+                if let text = event["text"] as? String { onDelta(text) }
             }
+        } catch is BoundedAIStreamError {
+            throw ProviderError.malformedResponse
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as ProviderError {
             throw error
         } catch {
+            if Task.isCancelled { throw CancellationError() }
             throw ProviderError.transport(error.localizedDescription)
         }
     }
@@ -312,16 +389,16 @@ final class WorkerAIProvider: AIProvider {
 
         do {
             let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
+            defer { stream.task.cancel() } // Also stops an oversized, invalid or abandoned response.
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
             guard 200..<300 ~= http.statusCode else {
-                var raw = Data()
-                for try await byte in stream { raw.append(byte) }
-                throw httpError(status: http.statusCode, message: message(from: raw))
+                let raw = try await BoundedAIStreamBody.read(stream)
+                throw httpError(status: http.statusCode, message: String(message(from: raw).prefix(512)))
             }
 
-            for try await line in stream.lines {
+            for try await line in try BoundedAIStreamLines(stream) {
                 guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
                 guard line.hasPrefix("data:") else { continue }
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
@@ -330,7 +407,7 @@ final class WorkerAIProvider: AIProvider {
                     continue
                 }
                 if let failure = event["error"] as? String {
-                    throw httpError(status: 502, message: failure)
+                    throw httpError(status: 502, message: String(failure.prefix(512)))
                 }
                 guard let result = event["result"] else { continue } // A heartbeat.
                 let encoded = try JSONSerialization.data(withJSONObject: result)
@@ -341,9 +418,14 @@ final class WorkerAIProvider: AIProvider {
             }
             // The stream closed without ever sending a result.
             throw ProviderError.malformedResponse
+        } catch is BoundedAIStreamError {
+            throw ProviderError.malformedResponse
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as ProviderError {
             throw error
         } catch {
+            if Task.isCancelled { throw CancellationError() }
             throw ProviderError.transport(error.localizedDescription)
         }
     }
