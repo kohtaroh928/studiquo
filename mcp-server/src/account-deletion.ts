@@ -1,3 +1,5 @@
+import { cleanupAccountRawPDF } from './rag/pdf-account-cleanup.ts';
+import { deleteAccountRAG } from "./rag/index.ts";
 import { sha256Hex } from "./auth.ts";
 import { queueRevenueCatDeletion } from "./privacy-retention.ts";
 import { roomMembershipKey } from "./document-room-store.ts";
@@ -9,20 +11,20 @@ import type { Device } from "./devices.ts";
 import type { LinkedIdentity } from "./oauth-links.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
-import type { ChatUser, DeletionJob, DeletionState, IssueReportRecord, PasskeyRecord, SessionRecord } from "./records.ts";
+import type { ChatUser, DeletionJob, DeletionState, IssueReportRecord, PasskeyRecord, SessionRecord, PDFCleanupPhase } from "./records.ts";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
 const ACCOUNT_GENERATION_RETIREMENT_SECONDS = 7 * 86_400;
 
 // Once accepted, cleanup survives session revocation and request timeouts.
-export async function startAccountDeletion(env: Env, canonicalSub: string) {
+export async function startAccountDeletion(env: Env, canonicalSub: string): Promise<{deleted: boolean; cleanupPending?: boolean; externalDeletionPending?: boolean}> {
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(canonicalSub)}`, "json");
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now(), generation: generationOf(state) }));
   try {
-    await deleteAccount(env, canonicalSub);
-    return { deleted: true, externalDeletionPending: true };
+    const result = await deleteAccount(env, canonicalSub);
+    return result.deleted ? { deleted: true, externalDeletionPending: true } : result;
   } catch {
     return { deleted: false, cleanupPending: true };
   }
@@ -137,7 +139,7 @@ function linkedIdentityKey(identity: LinkedIdentity) {
  * different account. The aliases left alone for having begun a new account
  * are returned, so the caller can keep them out of the provider-side erasure.
  */
-async function markAliases(env: Env, canonicalSub: string, identityKeys: Set<string>, state: { status: string; of: string; }) {
+async function markAliases(env: Env, canonicalSub: string, identityKeys: Set<string>, state: { status: string; of?: string; }) {
   const beganNewAccount = new Set<string>();
   for (const identity of identityKeys) {
     if (identity === canonicalSub) continue;
@@ -153,11 +155,74 @@ async function markAliases(env: Env, canonicalSub: string, identityKeys: Set<str
   return beganNewAccount;
 }
 
+// Only the owning deleting generation may run this phase. Never establish an
+// owner-wide fence for an alias that has already begun a new account.
+async function pdfPhase(env: Env, canonicalSub: string, generation: number, identities: Iterable<string>, previous?: PDFCleanupPhase): Promise<PDFCleanupPhase> {
+  let tracked = previous?.tracked === true, pending = false;
+  const isCurrent = () => sha256Hex(canonicalSub).then(hash=>stillDeleting(env, `account-deletion:${hash}`, generation));
+  const ownedIdentities = [...identities];
+  const expectedHashes = (await Promise.all(ownedIdentities.map(sha256Hex))).sort();
+  for (const identity of ownedIdentities) {
+    if (!await isCurrent()) return {version:1,tracked,pending:true};
+    const alias = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(identity)}`, "json");
+    if (!await isCurrent()) return {version:1,tracked,pending:true};
+    // Alias markers are written before the canonical marker. A crash between
+    // them must be resumable, without treating somebody else's marker as ours.
+    if (identity !== canonicalSub && alias?.status === "deleted" && alias.generation === generation &&
+        alias.pdfCleanup?.version === 1 && alias.pdfCleanup.pending === false &&
+        Array.isArray(alias.identityHashes) && JSON.stringify([...alias.identityHashes].sort()) === JSON.stringify(expectedHashes)) continue;
+    if (alias?.status === "active" || (identity !== canonicalSub &&
+        (alias?.status !== "deleting" || alias.of !== canonicalSub))) {
+      if (env.ADMIN_DB) {
+        try { if ((await env.ADMIN_DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='rag_pdf_jobs'").bind().all()).results.length !== 0) pending = true; }
+        catch { pending = true; }
+      }
+      continue;
+    }
+    const ownsIdentity = async () => {
+      if (!await isCurrent()) return false;
+      if (identity === canonicalSub) return true;
+      const current = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(identity)}`, "json");
+      return current?.status === "deleting" && current.of === canonicalSub && await isCurrent();
+    };
+    const phase = await cleanupAccountRawPDF(env, identity, { requireSchema: tracked, isCurrent: ownsIdentity });
+    tracked ||= phase.tracked;
+    pending ||= phase.pending;
+  }
+  return { version: 1, tracked, pending };
+}
+
+async function finishDeletion(env: Env, canonicalSub: string, deletionStateKey: string,
+    identityKeys: Set<string>, generation: number, pdfCleanup: PDFCleanupPhase) {
+  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  const finished = { status: "deleted", generation, ...(pdfCleanup.tracked ? {pdfCleanup} : {}),
+    identityHashes: await Promise.all([...identityKeys].map(sha256Hex)) };
+  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  await markAliases(env, canonicalSub, identityKeys, finished);
+  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(finished));
+  const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
+  const queuedJob = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
+  if (!queuedJob || generationOf(queuedJob) <= generation) await env.STUDIQUO_DATA.delete(jobKey);
+  return { deleted: true };
+}
+
 export async function deleteAccount(env: Env, canonicalSub: string) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
   let previousState: Partial<DeletionState> | null = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   if (previousState?.status === "deleted") {
+    // Legacy completed markers cannot be reopened: sign-in may have advanced
+    // this account to a new generation. Hash-only aliases cannot be recovered
+    // as RAG owner keys either. Hold for separate compatibility reconciliation.
+    if (!previousState.pdfCleanup && !env.ADMIN_DB) return { deleted: false, cleanupPending: true };
+    if (!previousState.pdfCleanup && env.ADMIN_DB) {
+      try {
+        const schema = await env.ADMIN_DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='rag_pdf_jobs'").bind().all();
+        if (schema.results.length !== 0) return { deleted: false, cleanupPending: true };
+      } catch { return { deleted: false, cleanupPending: true }; }
+    }
+    if (previousState.pdfCleanup?.pending) return { deleted: false, cleanupPending: true };
     await env.STUDIQUO_DATA.delete(jobKey);
     return { deleted: true };
   }
@@ -192,6 +257,16 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   }
   const generation = generationOf(previousState);
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now(), generation }));
+  if (previousState?.status === "deleting" && previousState.independentCleanupComplete === true) {
+    if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+    const identities = new Set([canonicalSub, ...(previousState.identityKeys ?? [])]);
+    const phase = await pdfPhase(env, canonicalSub, generation, identities, previousState.pdfCleanup);
+    if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleting", generation,
+      identityKeys: [...identities], pdfCleanup: phase, independentCleanupComplete: true }));
+    if (phase.pending) return { deleted: false, cleanupPending: true };
+    return finishDeletion(env, canonicalSub, deletionStateKey, identities, generation, phase);
+  }
   const checkpointKeys = new Set(previousState?.deletionKeys ?? []);
   let checkpoint = { ...previousState, status: "deleting", generation, deletionKeys: [...checkpointKeys] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
@@ -255,11 +330,20 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   // this account even though those session rows are already gone.
   // The writes just below replace the account's state, so the check comes
   // first: after them the state always reads "deleting" again, whatever it was.
-  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
-  checkpoint = { status: "deleting", generation, deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
+  checkpoint = { ...checkpoint, status: "deleting", generation, pdfCleanup: { version: 1, tracked: checkpoint.pdfCleanup?.tracked === true, pending: true }, deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
   const activeAliases = await markAliases(env, canonicalSub, identityKeys, { status: "deleting", of: canonicalSub });
   await deleteKeys(env, ownedSessionKeys);
+  // Independent of RAG_ENABLED: disabling retrieval must never disable erasure.
+  for (const identity of identityKeys) {
+    if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
+    if (!activeAliases.has(identity)) await deleteAccountRAG(env, identity);
+  }
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
+  checkpoint.pdfCleanup = await pdfPhase(env, canonicalSub, generation, identityKeys, checkpoint.pdfCleanup);
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
 
   const accountKeys = [];
   for (const identity of identities) {
@@ -515,25 +599,10 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   // one since (app.ts rechecks too; this closes what is left).
   await eraseLibraryIDs();
 
-  // The finished marker keeps only hashes of the identities: an email address
-  // must not outlive the account it belonged to (sign-in only needs the hashes
-  // to clear this account's provider records, see mintSession).
-  const finishedState = JSON.stringify({
-    status: "deleted", generation,
-    identityHashes: await Promise.all([...identityKeys].map(sha256Hex)),
-  });
-  // Another run may have finished first and the person signed in again; its
-  // "active" state (or job) belongs to the new account and is left as it is.
-  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
-  // The other identities get the same marker, so whichever sign-in method the
-  // person comes back with finds it. They go first and the canonical marker
-  // last: if this is cut short, the canonical state is still "deleting", the
-  // job is still queued, and the retry writes them all again.
-  await markAliases(env, canonicalSub, identityKeys, JSON.parse(finishedState));
-  await env.STUDIQUO_DATA.put(deletionStateKey, finishedState);
-  // Only this life's job is cleared; a newer request (a higher generation, from
-  // after the person signed in again) stays queued.
-  const queuedJob = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
-  if (!queuedJob || generationOf(queuedJob) <= generation) await env.STUDIQUO_DATA.delete(jobKey);
-  return { deleted: true };
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
+  const phase = checkpoint.pdfCleanup!;
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleting", generation,
+    identityKeys: [...identityKeys], pdfCleanup: phase, independentCleanupComplete: true }));
+  if (phase.pending) return { deleted: false, cleanupPending: true };
+  return finishDeletion(env, canonicalSub, deletionStateKey, identityKeys, generation, phase);
 }

@@ -88,7 +88,7 @@ enum PushDeviceService {
 /// that path never displays the system prompt.
 @MainActor
 enum PushNotificationRegistration {
-    private static let tokenDefaultsKey = "studiquoAPNsDeviceToken"
+    private static let tokenDefaultsKey = LaunchStoreEnvironment.namespaced("studiquoAPNsDeviceToken")
 
     struct Dependencies {
         var authorizationStatus: () async -> UNAuthorizationStatus

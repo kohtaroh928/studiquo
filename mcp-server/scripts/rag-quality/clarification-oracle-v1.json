@@ -1,0 +1,688 @@
+{
+  "version": 1,
+  "syntheticOnly": true,
+  "humanGoldReview": "pending",
+  "annotationReview": "pending",
+  "cases": [
+    {
+      "id": "clarify-named-fee",
+      "inputHash": "f54092bb066e181719a4905a37161bdcaeb84d6072f9b9225fba581d314c4aa8",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "セナの月額利用料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "質問内に固有対象がある。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-omitted-fee",
+      "inputHash": "4d8d0a595db5e5f36beecce5e02c65fb33fe26055b620ab6694b8aba9aa8bd2f",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "対象不明の月額利用料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "個別料金の対象がなく文脈も未提供。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-general-concept",
+      "inputHash": "c76cf159871026597512d93001bb2eae114c4472d4d09335308ac1371a89a9a1",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "密度の意味",
+          "allowed": [
+            {
+              "targetState": "not_required",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "固有資料や製品を選ぶ必要のない一般概念。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-general-method",
+      "inputHash": "3014bfad5cee9fcd0fbeeec1ff07f660263fd2098e677c1e3ffe66cd1f6f5bfe",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "速さの計算方法",
+          "allowed": [
+            {
+              "targetState": "not_required",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "計算方法の説明で数値結果の依頼ではない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-word-definition",
+      "inputHash": "134dd97204ac6e9c080e627dc41bfcadb6812e82a65f657bdde1879f1bca1164",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "利用料という語の意味",
+          "allowed": [
+            {
+              "targetState": "not_required",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "具体施設の料金の問い合わせではない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-no-history",
+      "inputHash": "d1d4cef23c60cc249806273a17329ca312bf1a01c6c247a5beafd0b1197edfb2",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "未解決指示語の利用条件",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "指示語の先行対象は未提供。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-one-history",
+      "inputHash": "e93dab5806bd4f6b552529a09347137360a93089d9799c978621eda8cf4e624e",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "直前の施設の利用条件",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "history",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "c1"
+          ],
+          "rationale": "関連する先行ユーザー発言は単一対象。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-two-history",
+      "inputHash": "b2dcec8bb5a2c1e3783b7d09ceff787e76b894dbaed451a3768a9ab2ab107c26",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "どちらか不明の利用条件",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "単数指示語で先行二対象から選べない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-both-history",
+      "inputHash": "229d1ae8ab5ec5c8b61cbbecdca4f068d20337dbbf1dc51270c51b5f04a3d2d5",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "明示された両施設の利用条件",
+          "allowed": [
+            {
+              "targetState": "set",
+              "basis": "history",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "c1"
+          ],
+          "rationale": "複数集合をユーザーが明示し片方へ限定しない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-new-topic",
+      "inputHash": "03c1420798ecf486befcf2c18441cbcfcecb8d7ccdeae8abb530563edd1648ad",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "リノの利用条件",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "現在の明示対象を過去の対象で置換しない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-page-summary",
+      "inputHash": "a7077c7471c23be2b6c8c16b843010f403ea252d9284c106d26722e1df7ff114",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "選択ページ全体の要約",
+          "allowed": [
+            {
+              "targetState": "set",
+              "basis": "selected_scope",
+              "evidenceState": "not_checked",
+              "nextAction": "inspect_scope",
+              "inspectionPurpose": "content"
+            }
+          ],
+          "requiredTargetRefs": [
+            "c1"
+          ],
+          "rationale": "対象範囲は解決済みだが本文未取得。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-page-before",
+      "inputHash": "05b3e3d94baa8e9ab0195e47fe24fc0d3ff3df90b80939b450ceef6e79787417",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "選択ページ内の未同定講座の受講料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "inspect_scope",
+              "inspectionPurpose": "target"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "ページは候補確認範囲で単一対象の保証ではない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-page-one-after",
+      "inputHash": "39ba131b857c76581ea232bf85792544d2bd82cf49c2098f7f9c2f0f83a83b54",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ページ内の単一講座の受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "inspection",
+              "evidenceState": "supported",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "c1",
+            "c2"
+          ],
+          "rationale": "質問の講座と確認結果の唯一の講座が対応し料金も記載。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-page-many-after",
+      "inputHash": "e1ebc84da150466b7d750ed6a5a762767a7ff7e04ebf281bab8c7411016391fe",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "選んだ講座が未特定の受講料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "二つの掲載講座からユーザーが選んだ1講座を求めているが、選択情報は提供されていない。集合の料金一覧要求ではない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-notebook-inspect",
+      "inputHash": "01dc1e8f3ca264b6395c0e798bda9da31d2d53ca76b7d7b2c645c270da03299e",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ノート内の未同定講座の受講料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "inspect_scope",
+              "inspectionPurpose": "target"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "明示ノートを限定確認し講座を同定する必要がある。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-folder-omitted",
+      "inputHash": "c39670f74d1de6da92414edb5f786e23bbd5f3fea6c2cd5f3c1d6389d5f9bf41",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "対象不明の月額利用料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "広い検索境界だけでは対象を選べない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-library-omitted",
+      "inputHash": "525e5edf5e4fcec5b1247f88bff32d8ceaf0bcb2936843149f9d6a791a36742c",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "対象不明の月額利用料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "広い検索境界だけでは対象を選べない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-named-insufficient",
+      "inputHash": "13f471a5bae1312c2bb14e2ef94118339f90f1ee6c11be52eca6ca6481fb35db",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "insufficient",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "対象は既知で料金の記載不足だけ。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-named-no-hits",
+      "inputHash": "6b1d64ae8dc2b48df334d8631747c89855fc6c8d5b4b9abc1c4b884aba887afb",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "no_hits",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "検索0件でも原質問の対象を消さない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-named-conflict",
+      "inputHash": "981c0f2465fa8460870f9b6f1e4da0c649ca5f6bca5411b4178899e1ebc91ebc",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "conflicting",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "対象は同じで料金の根拠が矛盾。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-search-failed",
+      "inputHash": "f07fb8f32886671aac6794a3f1d270abb93a16838ec59392a822ce3949eb440b",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "unavailable",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "検索障害でも評価器はok、対象既知と証拠取得不能を分ける。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-evaluator-unsupported",
+      "inputHash": "05ff3d461e121325342fc5dfc07bea1ac5b051597adcb6a679d88793c7f7a825",
+      "technicalState": "unsupported",
+      "requirements": []
+    },
+    {
+      "id": "clarify-evaluator-failed",
+      "inputHash": "f8fc33cb312f5f2e692f35425e2f8dc4fc9db9a7681c152cb5d08a3d4838e627",
+      "technicalState": "failed",
+      "requirements": []
+    },
+    {
+      "id": "clarify-history-injection",
+      "inputHash": "b5bfffbc2e8b27e9aa0e9c3d7d617b714ddbb03f79f5653f06bbea69814c5ea9",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ナギの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "履歴中の命令を実行して対象を変更しない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-withheld-context",
+      "inputHash": "9125d11a63d6c51f0d9cec1f60b7585bc5b5a853a7e48761c7bc7febf8ad8473",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ナギの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "利用不可のscope本文を対象の由来として参照しない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-topic-shift-history",
+      "inputHash": "8bcaa14dcbf8ce8014ebe52276487f967e334369df55e4e3c5a3d5b4343cb33a",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "話題が決まらない利用条件",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "履歴の最後は無関係な話題で先行対象が一意でない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-quoted-target",
+      "inputHash": "ee3e74789aff233e0b16433c189c71acf5c83f0c23c262291ef4386b73bec0ce",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "指示対象が決まらない受講料",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "複数の引用例から選択指示なしに対象を決定しない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-revoked-scope",
+      "inputHash": "c6bce93e4fea64316d51f8a1d53aee0a9863176cc91027bd102d62040578c74f",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "unavailable",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "本文を保持せず認可失効を示す。原質問の明示対象だけは保持。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-partial-requests",
+      "inputHash": "42b5b42bfa56d16592f6812d3bcd3b6b87a58cda6b2e275c724e6a1d132c89a3",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "セナの月額利用料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "not_checked",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "明示された独立要求を保持。"
+        },
+        {
+          "id": "r2",
+          "requestLabel": "別の施設の利用条件",
+          "allowed": [
+            {
+              "targetState": "unresolved",
+              "basis": "none",
+              "evidenceState": "not_checked",
+              "nextAction": "clarify_target",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [],
+          "rationale": "どの別施設か未指定だが第一要求まで捨てない。"
+        }
+      ]
+    },
+    {
+      "id": "clarify-inspection-injection",
+      "inputHash": "a024275970ec93d2da3bc3c010327b9cc6e26a8227d5208c8cda8ca40e373e93",
+      "technicalState": "ok",
+      "requirements": [
+        {
+          "id": "r1",
+          "requestLabel": "ミオの受講料",
+          "allowed": [
+            {
+              "targetState": "single",
+              "basis": "question",
+              "evidenceState": "insufficient",
+              "nextAction": "proceed",
+              "inspectionPurpose": "none"
+            }
+          ],
+          "requiredTargetRefs": [
+            "q"
+          ],
+          "rationale": "資料中の命令を質問の意図へ昇格せず料金の記載不足を保持。"
+        }
+      ]
+    }
+  ]
+}

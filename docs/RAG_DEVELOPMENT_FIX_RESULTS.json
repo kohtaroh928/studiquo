@@ -1,0 +1,424 @@
+{
+  "date": "2026-10-14",
+  "method": "fixed synthetic answer layer plus mocked production request/clarification regression tests; not actual Cloudflare or iPad",
+  "finalPolicy": "basic r1; unsuccessful r2/r3 context-forcing additions removed",
+  "currentCodeTests": {
+    "targetPass": 47,
+    "workerPass": 1244,
+    "fail": 0,
+    "skip": 0
+  },
+  "independentReview": "Code/query/selector and final diagnostic/control reviewed; independent 47 tests passed; no remaining High/Medium",
+  "liveEvaluationDispatches": 26,
+  "todayDispatches": 14,
+  "originalDevelopmentDispatches": 60,
+  "oldDevelopmentPreserved": true,
+  "holdoutDispatches": 0,
+  "usage": {
+    "input": 79539,
+    "output": 4012,
+    "reasoning": 2494,
+    "total": 83551
+  },
+  "uncachedStandardEstimateUSD": 0.0099599,
+  "estimatedNotInvoice": true,
+  "reservationUSD": 0.13312000000000002,
+  "combinedWithOriginalReservationUSD": 0.44032,
+  "runs": [
+    {
+      "run": "studiquo-rag-e50-fix-20261013-01",
+      "suiteId": "studiquo-rag-e50-2026-10-13",
+      "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+      "requestHashes": {
+        "e50-math-01:explain": "79b2265a80adb572d40a41f10067dee379ddeac35eadd88294f29d7a3da46c87",
+        "e50-math-01:source_only": "1620921c8d1596e241e7670b5cc00f4c70c5c16716761cd0ff8c0bbcbc5bd1b1",
+        "e50-versions-03:source_only": "49f1b8ebeade59ad6d7f8801f3f7ea1383e5d041bec860a6c10b4a96f33cfdfb",
+        "e50-versions-03:explain": "a48c811e8d04116bae4c0270b78893fbf78d82911bea65a6f4798b3646a85ae0",
+        "e50-context_time-01:explain": "9ef541cd01653d684f85378d7a9df6f37e69a2322051448348dce9448431d8be",
+        "e50-context_time-01:source_only": "ee9a52a7647914ee7436d0b6fba59a243d0e857876f5d821e7339b824e8c4669"
+      },
+      "completed": 6,
+      "usage": {
+        "input": 17861,
+        "output": 1275,
+        "reasoning": 851,
+        "total": 19136
+      },
+      "reservationUSD": 0.03072,
+      "rows": [
+        {
+          "id": "e50-math-01:explain",
+          "usage": {
+            "input": 3108,
+            "output": 168,
+            "reasoning": 81,
+            "total": 3276
+          },
+          "elapsedMs": 3308
+        },
+        {
+          "id": "e50-math-01:source_only",
+          "usage": {
+            "input": 2891,
+            "output": 145,
+            "reasoning": 59,
+            "total": 3036
+          },
+          "elapsedMs": 2435
+        },
+        {
+          "id": "e50-versions-03:source_only",
+          "usage": {
+            "input": 2881,
+            "output": 204,
+            "reasoning": 136,
+            "total": 3085
+          },
+          "elapsedMs": 3346
+        },
+        {
+          "id": "e50-versions-03:explain",
+          "usage": {
+            "input": 3098,
+            "output": 585,
+            "reasoning": 482,
+            "total": 3683
+          },
+          "elapsedMs": 8495
+        },
+        {
+          "id": "e50-context_time-01:explain",
+          "usage": {
+            "input": 3050,
+            "output": 92,
+            "reasoning": 62,
+            "total": 3142
+          },
+          "elapsedMs": 2061
+        },
+        {
+          "id": "e50-context_time-01:source_only",
+          "usage": {
+            "input": 2833,
+            "output": 81,
+            "reasoning": 31,
+            "total": 2914
+          },
+          "elapsedMs": 1693
+        }
+      ]
+    },
+    {
+      "run": "studiquo-rag-e50-fix-20261013-02",
+      "suiteId": "studiquo-rag-e50-2026-10-13",
+      "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+      "requestHashes": {
+        "e50-math-01:explain": "02e38664e171bc561da7d01bf1e1a37d174c04468971ffd97eadc9f3402ae519",
+        "e50-math-01:source_only": "d9e39fad85ea0a34eb1f01abb0472464897e785470a41493721ee6e1fd79634e",
+        "e50-versions-03:source_only": "7fa7e750f99494e75db1a4b38683cac7ca94c754fcae5d10c2d1ca01ad9a72f2",
+        "e50-versions-03:explain": "82374458174306fa26974798be521211ef16a18265be94a61fcd4ce8b4cc4b94",
+        "e50-context_time-01:explain": "a132c3962d5b7857c21aba39a2ad7a0b347721d78d56c36c61264ba8cc9ab131",
+        "e50-context_time-01:source_only": "f7317643ba74c4558bd6cbc0a1a263602a2e0a352f2f3d7c3cfa7ef83fd92d53"
+      },
+      "completed": 6,
+      "usage": {
+        "input": 18581,
+        "output": 948,
+        "reasoning": 580,
+        "total": 19529
+      },
+      "reservationUSD": 0.03072,
+      "rows": [
+        {
+          "id": "e50-math-01:explain",
+          "usage": {
+            "input": 3228,
+            "output": 139,
+            "reasoning": 52,
+            "total": 3367
+          },
+          "elapsedMs": 3187
+        },
+        {
+          "id": "e50-math-01:source_only",
+          "usage": {
+            "input": 3011,
+            "output": 146,
+            "reasoning": 59,
+            "total": 3157
+          },
+          "elapsedMs": 6081
+        },
+        {
+          "id": "e50-versions-03:source_only",
+          "usage": {
+            "input": 3001,
+            "output": 136,
+            "reasoning": 103,
+            "total": 3137
+          },
+          "elapsedMs": 3681
+        },
+        {
+          "id": "e50-versions-03:explain",
+          "usage": {
+            "input": 3218,
+            "output": 342,
+            "reasoning": 242,
+            "total": 3560
+          },
+          "elapsedMs": 20150
+        },
+        {
+          "id": "e50-context_time-01:explain",
+          "usage": {
+            "input": 3170,
+            "output": 91,
+            "reasoning": 51,
+            "total": 3261
+          },
+          "elapsedMs": 1973
+        },
+        {
+          "id": "e50-context_time-01:source_only",
+          "usage": {
+            "input": 2953,
+            "output": 94,
+            "reasoning": 73,
+            "total": 3047
+          },
+          "elapsedMs": 2215
+        }
+      ]
+    },
+    {
+      "run": "studiquo-rag-e50-fix-20261014-03",
+      "suiteId": "studiquo-rag-e50-2026-10-13",
+      "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+      "requestHashes": {
+        "e50-math-01:explain": "c85a2769790e958b47d977f6066343f3bb5d6aeb64bbc34b23f7a7a03df5427a",
+        "e50-math-01:source_only": "954c23d08ade83881d684c01f8359cc1bd159cff77b4e9684d630e1fc5cfab1e",
+        "e50-versions-03:source_only": "08283331fda519bdcffc020b7ea7e6ed204761410757836aae24e7d73003d84a",
+        "e50-versions-03:explain": "cb853678ecb6f64f559dbd6c9e2a918db29e4519fb6180c26254dc8b15494475",
+        "e50-context_time-01:explain": "fc2d9df9292a4260f8f4a63c3201190a7170c6cda1a5ffebede40ab2f4444c0f",
+        "e50-context_time-01:source_only": "bf8efb66a37b1d11b5f0f7dc4b32b4826943600be20a3cd845860d9e0791d317"
+      },
+      "completed": 6,
+      "usage": {
+        "input": 19175,
+        "output": 1170,
+        "reasoning": 791,
+        "total": 20345
+      },
+      "reservationUSD": 0.03072,
+      "rows": [
+        {
+          "id": "e50-math-01:explain",
+          "usage": {
+            "input": 3327,
+            "output": 155,
+            "reasoning": 62,
+            "total": 3482
+          },
+          "elapsedMs": 3689
+        },
+        {
+          "id": "e50-math-01:source_only",
+          "usage": {
+            "input": 3110,
+            "output": 156,
+            "reasoning": 69,
+            "total": 3266
+          },
+          "elapsedMs": 2569
+        },
+        {
+          "id": "e50-versions-03:source_only",
+          "usage": {
+            "input": 3100,
+            "output": 358,
+            "reasoning": 299,
+            "total": 3458
+          },
+          "elapsedMs": 5225
+        },
+        {
+          "id": "e50-versions-03:explain",
+          "usage": {
+            "input": 3317,
+            "output": 373,
+            "reasoning": 301,
+            "total": 3690
+          },
+          "elapsedMs": 4392
+        },
+        {
+          "id": "e50-context_time-01:explain",
+          "usage": {
+            "input": 3269,
+            "output": 66,
+            "reasoning": 27,
+            "total": 3335
+          },
+          "elapsedMs": 1896
+        },
+        {
+          "id": "e50-context_time-01:source_only",
+          "usage": {
+            "input": 3052,
+            "output": 62,
+            "reasoning": 33,
+            "total": 3114
+          },
+          "elapsedMs": 1317
+        }
+      ]
+    },
+    {
+      "run": "studiquo-rag-e50-explicit-diagnostic-20261014",
+      "suiteId": "studiquo-rag-e50-2026-10-13-explicit-old-rule-diagnostic",
+      "bankHash": "e879e5d21c7d6069add81c815817884b3d9c5a02110159b46bfaebe991964a0a",
+      "requestHashes": {
+        "e50-versions-03:source_only": "747e2bfb93183ed1e6c88dd611f7d35aaf6a168a6c9a7360a4fd08c78bb7a60b",
+        "e50-versions-03:explain": "3f889a22100b3a7fe7dd31e91e2e2fd8d06078050e7be57457be4ddb62989128"
+      },
+      "completed": 2,
+      "usage": {
+        "input": 6081,
+        "output": 204,
+        "reasoning": 127,
+        "total": 6285
+      },
+      "reservationUSD": 0.01024,
+      "rows": [
+        {
+          "id": "e50-versions-03:source_only",
+          "usage": {
+            "input": 2932,
+            "output": 100,
+            "reasoning": 58,
+            "total": 3032
+          },
+          "elapsedMs": 2384
+        },
+        {
+          "id": "e50-versions-03:explain",
+          "usage": {
+            "input": 3149,
+            "output": 104,
+            "reasoning": 69,
+            "total": 3253
+          },
+          "elapsedMs": 2095
+        }
+      ]
+    },
+    {
+      "run": "studiquo-rag-e50-fix-control-20261014",
+      "suiteId": "studiquo-rag-e50-2026-10-13",
+      "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+      "requestHashes": {
+        "e50-versions-01:source_only": "71b033481e0d597837408c73fa2485e6c8d4c4fcab19c77093a0a4234b8705c3",
+        "e50-versions-01:explain": "1450b3ff6192756f1b3c631e160eff1826dcffbd630c98f253fc39028e39e369",
+        "e50-versions-02:explain": "ab00ab3e12044ac05d789758f1b3fa3fb56c6ec694b4f4c17ff3578e73f7996f",
+        "e50-versions-02:source_only": "89c0fe3b5018a77e7c8e3c2b8760985430c16f244c22a6fbb063829e01e44d97",
+        "e50-pages_tables-01:explain": "974ac1dd80f74049c63106c02be36a40991bf156759f83a3dce8328fa7b63399",
+        "e50-pages_tables-01:source_only": "cbf885a99cfe35e34bdb93d822882fd87abe251d9a6cd12e892381998288c3ac"
+      },
+      "completed": 6,
+      "usage": {
+        "input": 17841,
+        "output": 415,
+        "reasoning": 145,
+        "total": 18256
+      },
+      "reservationUSD": 0.03072,
+      "rows": [
+        {
+          "id": "e50-versions-01:source_only",
+          "usage": {
+            "input": 2877,
+            "output": 55,
+            "reasoning": 26,
+            "total": 2932
+          },
+          "elapsedMs": 1927
+        },
+        {
+          "id": "e50-versions-01:explain",
+          "usage": {
+            "input": 3094,
+            "output": 51,
+            "reasoning": 0,
+            "total": 3145
+          },
+          "elapsedMs": 2476
+        },
+        {
+          "id": "e50-versions-02:explain",
+          "usage": {
+            "input": 3074,
+            "output": 113,
+            "reasoning": 60,
+            "total": 3187
+          },
+          "elapsedMs": 3675
+        },
+        {
+          "id": "e50-versions-02:source_only",
+          "usage": {
+            "input": 2857,
+            "output": 110,
+            "reasoning": 59,
+            "total": 2967
+          },
+          "elapsedMs": 1998
+        },
+        {
+          "id": "e50-pages_tables-01:explain",
+          "usage": {
+            "input": 3078,
+            "output": 43,
+            "reasoning": 0,
+            "total": 3121
+          },
+          "elapsedMs": 1627
+        },
+        {
+          "id": "e50-pages_tables-01:source_only",
+          "usage": {
+            "input": 2861,
+            "output": 43,
+            "reasoning": 0,
+            "total": 2904
+          },
+          "elapsedMs": 1165
+        }
+      ]
+    }
+  ],
+  "findings": {
+    "confirmedImprovement": [
+      "usage-condition unresolved referent is detected before retrieval in tested library/notebook paths",
+      "clarification request and full symbol/unit descriptions in live target probes",
+      "control contradictory applicability remains unresolved",
+      "control payment conditions stay Japanese"
+    ],
+    "unresolved": [
+      "original old-rule question has author-gold disagreement and implicit target/period ambiguity; human adjudication pending"
+    ],
+    "diagnostic": [
+      "explicit same-target and old period produces two-day answer in both styles; not scored as original question success"
+    ],
+    "controlCoverageCandidate": "versions01 source_only gives correct price but does not independently explain event-date applicability"
+  },
+  "limitations": [
+    "one output per style per revision; no stability or broad accuracy claim",
+    "full live production prompt/search/citations not evaluated",
+    "current-page contextual override unchanged",
+    "limited lexical reference detector; not universal pronoun resolution",
+    "human gold review pending",
+    "iOS not rerun"
+  ],
+  "pricingRevalidatedOn": "2026-10-14"
+}

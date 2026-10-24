@@ -293,3 +293,109 @@ final class RichTextParserTests: XCTestCase {
         XCTAssertLessThan(ms, 20)
     }
 }
+
+/// A link in an AI reply opens only for an allowed site, in the allowed shape: a note or a
+/// document can plant a link whose address carries other text, and opening it would send
+/// that text away.
+final class RichReplyLinkTests: XCTestCase {
+    private let wiki = [AILinkPolicy.AllowedSite(domain: "wikipedia.org", pathPrefix: "/wiki/")]
+
+    private func opens(_ link: String?, _ sites: [AILinkPolicy.AllowedSite]? = nil) -> Bool {
+        AILinkPolicy.openableURL(link, allowedSites: sites ?? wiki) != nil
+    }
+
+    func testAnAllowedPageOpensOnTheSiteAndItsSubdomains() {
+        XCTAssertEqual(AILinkPolicy.openableURL("https://wikipedia.org/wiki/Cell", allowedSites: wiki)?.absoluteString, "https://wikipedia.org/wiki/Cell")
+        XCTAssertTrue(opens("https://ja.wikipedia.org/wiki/%E7%B4%B0%E8%83%9E"))          // 細胞
+        XCTAssertTrue(opens("HTTPS://JA.Wikipedia.ORG/wiki/Cell_(biology)"))
+        XCTAssertTrue(opens("https://en.wikipedia.org:443/wiki/Cell"))
+        XCTAssertTrue(opens("https://en.m.wikipedia.org/wiki/Cell"))
+        XCTAssertTrue(opens("https://wikipedia.org/wiki/Cell%41"), "a valid escape at the very end opens")
+    }
+
+    func testOtherSitesStayText() {
+        for link in ["https://example.com/wiki/Cell", "https://evil.example/?d=secret", "https://google.com/search?q=x"] {
+            XCTAssertFalse(opens(link), link)
+        }
+        XCTAssertNil(AILinkPolicy.openableURL("https://wikipedia.org/wiki/Cell", allowedSites: []), "an empty list opens nothing")
+        XCTAssertNil(AILinkPolicy.openableURL(nil, allowedSites: wiki))
+        XCTAssertNil(AILinkPolicy.openableURL("", allowedSites: wiki))
+    }
+
+    func testOnlyAPlainPageNameOpensOnAnAllowedSite() {
+        // Query, fragment, other paths, namespaces and escaped delimiters can only carry data.
+        for link in [
+            "https://wikipedia.org/wiki/Cell?d=secret", "https://wikipedia.org/wiki/Cell?", "https://wikipedia.org/wiki/Cell#section",
+            "https://wikipedia.org/wiki/Cell#@evil.example", "https://wikipedia.org/?d=secret", "https://wikipedia.org/",
+            "https://wikipedia.org/w/index.php?title=Cell", "https://wikipedia.org/wiki/", "https://wikipedia.org/wiki",
+            "https://wikipedia.org/wiki/Cell/Sub", "https://wikipedia.org/wiki/Special:Search", "https://wikipedia.org/wiki/Special%3ASearch",
+            "https://wikipedia.org/wiki/Special%3asearch/x", "https://wikipedia.org/wiki/User:Someone", "https://wikipedia.org/wiki/%E7%89%B9%E5%88%A5:%E6%A4%9C%E7%B4%A2",
+            "https://wikipedia.org/wiki/Cell%2Fx", "https://wikipedia.org/wiki/Cell%3Fd=1", "https://wikipedia.org/wiki/Cell%23x",
+            "https://wikipedia.org/wiki/..", "https://wikipedia.org/wiki/.", "https://wikipedia.org/wiki/%2e%2e", "https://wikipedia.org/wiki/Cell%00",
+            "https://wikipedia.org/wiki/Cell%5Cx", "https://wikipedia.org/wiki/%ZZ", "https://wikipedia.org/wiki/Cell%", "https://wikipedia.org/wiki/Cell%4", "https://wikipedia.org/wiki/%4G",
+        ] {
+            XCTAssertFalse(opens(link), link)
+        }
+    }
+
+    func testLookAlikeHostsAreRefused() {
+        for link in [
+            "https://evilwikipedia.org/wiki/X",                  // ends the same, is another site
+            "https://wikipedia.org.evil.example/wiki/X",         // starts the same, is another site
+            "https://wikipedia.org@evil.example/wiki/X",         // user name, host is evil.example
+            "https://user:pass@wikipedia.org/wiki/X",            // credentials in the address
+            "https://wikipedia.org:8443/wiki/X",                 // another port
+            "https://wikipedia.org./wiki/X",                     // trailing dot
+            "https://xn--wikipedi-a1b.org/wiki/X", "https://xn--x.wikipedia.org/wiki/X",  // punycode
+            "https://wikipediа.org/wiki/X",                      // Cyrillic а
+            "https://wikipedia.org%2eevil.example/wiki/X",       // escaped dot in the host
+            "https://wikipedia.org\\@evil.example/wiki/X",       // backslash
+            "https://wikipedia.org evil.example/wiki/X",         // space
+            "https://-.wikipedia.org/wiki/X", "https://a-.wikipedia.org/wiki/X", "https://evil.example;.wikipedia.org/wiki/X",
+            "https://a!b.wikipedia.org/wiki/X", "https://a_b.wikipedia.org/wiki/X", "https://a,b.wikipedia.org/wiki/X",
+            "https://..wikipedia.org/wiki/X", "https://.wikipedia.org/wiki/X", "https://a..wikipedia.org/wiki/X",
+            "https://１２７.0.0.1/wiki/X", "https://127.0.0.1/wiki/X", "https://[::1]/wiki/X", "https://localhost/wiki/X",
+            "https://wikipedia.org#@evil.example/wiki/X", "https://wikipedia.org?@evil.example/wiki/X",
+        ] {
+            XCTAssertFalse(opens(link), link)
+        }
+    }
+
+    func testOnlyHTTPSOpens() {
+        for link in ["http://wikipedia.org/wiki/X", "javascript:alert(1)", "tel:0312345678", "mailto:a@wikipedia.org",
+                     "file:///etc/hosts", "studiquo://x", "//wikipedia.org/wiki/X", "wikipedia.org/wiki/X", "not a url",
+                     "https:wikipedia.org/wiki/X", "https:/wikipedia.org/wiki/X", "https:///wikipedia.org/wiki/X", "https:\\wikipedia.org/wiki/X"] {
+            XCTAssertFalse(opens(link), link)
+        }
+    }
+
+    func testTheLengthLimitIsExact() {
+        let head = "https://wikipedia.org/wiki/"
+        XCTAssertTrue(opens(head + String(repeating: "a", count: AILinkPolicy.maxLength - head.count)), "exactly the limit opens")
+        XCTAssertFalse(opens(head + String(repeating: "a", count: AILinkPolicy.maxLength - head.count + 1)), "one over does not")
+        XCTAssertFalse(opens(head + String(repeating: "a", count: 400)))
+    }
+
+    func testTheListEntryIsMatchedWhateverItsCase() {
+        let upper = [AILinkPolicy.AllowedSite(domain: "Wikipedia.ORG", pathPrefix: "/wiki/")]
+        XCTAssertTrue(opens("https://ja.wikipedia.org/wiki/Cell", upper))
+        XCTAssertFalse(opens("https://ja.wikipedia.org/other/Cell", upper), "a different path shape is not opened")
+    }
+
+    func testTheListShippedWithTheAppIsShortAndHasNoSharedHosting() {
+        XCTAssertLessThanOrEqual(AILinkPolicy.allowedSites.count, 10)
+        let shared = ["github.io", "googleusercontent.com", "docs.google.com", "drive.google.com", "bit.ly", "t.co", "tinyurl.com",
+                      "notion.site", "notion.so", "herokuapp.com", "vercel.app", "netlify.app", "pages.dev", "workers.dev", "web.app", "firebaseapp.com"]
+        for site in AILinkPolicy.allowedSites {
+            XCTAssertFalse(shared.contains { site.domain == $0 || site.domain.hasSuffix("." + $0) }, site.domain)
+            XCTAssertTrue(site.pathPrefix.hasPrefix("/") && site.pathPrefix.hasSuffix("/") && site.pathPrefix != "/", "every site is narrowed to a path prefix")
+        }
+    }
+
+    func testTheViewSwitchStillTurnsEveryLinkOff() {
+        XCTAssertNil(RichInlineText.openableURL("https://wikipedia.org/wiki/Cell", allowLinks: false))
+        XCTAssertNotNil(RichInlineText.openableURL("https://wikipedia.org/wiki/Cell", allowLinks: true))
+        XCTAssertNil(RichInlineText.openableURL("https://example.com/", allowLinks: true))
+        XCTAssertNil(RichInlineText.openableURL("https://wikipedia.org/wiki/Cell?d=1", allowLinks: true))
+    }
+}

@@ -100,7 +100,12 @@ enum PaywallConfiguration {
 /// The key below is the "Public app-specific API key" of the `studiquo (App
 /// Store)` app in the RevenueCat dashboard (API keys → Public API keys).
 enum RevenueCatConfiguration {
-    static let publicAPIKey = "appl_vVZTDpluttzBVtyfnYdYaklHPGc"
+    static var publicAPIKey: String? {
+        guard let key = StudiquoRuntimeEnvironment.revenueCatPublicAPIKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
 }
 
 @MainActor
@@ -131,7 +136,11 @@ final class SubscriptionStore: ObservableObject {
         #if DEBUG
         Purchases.logLevel = .warn
         #endif
-        Purchases.configure(withAPIKey: RevenueCatConfiguration.publicAPIKey)
+        guard let key = RevenueCatConfiguration.publicAPIKey else {
+            assertionFailure("RevenueCat public API key is required for this build")
+            return
+        }
+        Purchases.configure(withAPIKey: key)
     }
 
     let paywallEnabled: Bool
@@ -146,7 +155,7 @@ final class SubscriptionStore: ObservableObject {
     /// someone else even if sign-out cleanup did not run. Only a
     /// paid-or-better answer is kept: a stale "free" must never lock anyone
     /// out. Also cleared on sign-out.
-    static let cachedServerPlanKey = "cachedServerPlan"
+    static var cachedServerPlanKey: String { StudiquoRuntimeEnvironment.namespaced("cachedServerPlan") }
     private let accountIDProvider: () -> String?
     private var cachedAccountID: String?
 

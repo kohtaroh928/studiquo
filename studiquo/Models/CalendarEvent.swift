@@ -97,6 +97,18 @@ final class AIChatThread {
 
 @Model
 final class AIChatMessage {
+    var ragCitationsData: Data?
+    var ragStatusRawValue: String?
+
+    var ragStatus: RAGRetrievalStatus? {
+        get { ragStatusRawValue.flatMap(RAGRetrievalStatus.init(rawValue:)) }
+        set { ragStatusRawValue = newValue?.rawValue }
+    }
+
+    var ragCitations: [RAGCitation] {
+        get { ragCitationsData.flatMap { try? JSONDecoder().decode([RAGCitation].self, from: $0) } ?? [] }
+        set { ragCitationsData = try? JSONEncoder().encode(newValue) }
+    }
     var text: String = ""
     var createdAt: Date = Date.now
     var roleRawValue: String = AIChatRole.user.rawValue

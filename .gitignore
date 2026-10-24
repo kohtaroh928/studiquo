@@ -30,3 +30,4 @@ xcuserdata/
 
 # Local Workers runtime cache (test data is never persisted).
 /.wrangler/
+Configuration/Staging.local.xcconfig

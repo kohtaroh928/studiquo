@@ -12,8 +12,6 @@ import Foundation
 /// edits to an existing paragraph's text. See `CollabSheet`'s doc comment in
 /// TextDocumentView.swift for how the editor surfaces that boundary.
 enum DocumentCollabService {
-    private static let endpoint = URL(string: WorkerAIProvider.defaultEndpoint)!
-
     struct Block: Codable {
         var order: Int
         var kind: String
@@ -126,6 +124,7 @@ enum DocumentCollabService {
     private static func request<Response: Decodable, Body: Encodable>(
         path: String, method: String, body: Body?
     ) async throws -> Response {
+        guard let endpoint = MCPCloudCredentials.configuredEndpoint() else { throw URLError(.badURL) }
         var request = URLRequest(url: endpoint.appending(path: path))
         request.httpMethod = method
         request.timeoutInterval = 20

@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-13",
+  "syntheticOnly": true,
+  "method": "production handleAI + fixed local synthetic retrieval + real OpenAI; moderation disabled for fixed synthetic probes only",
+  "originalQueryRestored": true,
+  "queryWasUnchangedInLiveCheck": true,
+  "dispatches": 2,
+  "completed": 2,
+  "rows": [
+    {
+      "id": "learning-heat-symbolic-v4",
+      "style": "explain",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "calls": [
+        {
+          "httpStatus": 200,
+          "elapsedMs": 4931,
+          "requestedModel": "gpt-6-luna",
+          "returnedModel": "gpt-6-luna",
+          "completionStatus": "completed",
+          "usage": {
+            "input": 2836,
+            "output": 317,
+            "reasoning": 166,
+            "total": 3153
+          },
+          "error": null
+        }
+      ],
+      "inputHash": "5e6669e7417a70caf912718dc37ee1db1c66d6268f7e3c197b7c5044ba5d4bd4",
+      "referenceHash": "0afcafe367a97acfd00a02bdb8b9dfed6cbf8c7fb8ff7c8169f3c11706d8167d",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "elapsedMs": 4944
+    },
+    {
+      "id": "learning-heat-symbolic-v4",
+      "style": "source_only",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "calls": [
+        {
+          "httpStatus": 200,
+          "elapsedMs": 3622,
+          "requestedModel": "gpt-6-luna",
+          "returnedModel": "gpt-6-luna",
+          "completionStatus": "completed",
+          "usage": {
+            "input": 2680,
+            "output": 254,
+            "reasoning": 103,
+            "total": 2934
+          },
+          "error": null
+        }
+      ],
+      "inputHash": "5e6669e7417a70caf912718dc37ee1db1c66d6268f7e3c197b7c5044ba5d4bd4",
+      "referenceHash": "0afcafe367a97acfd00a02bdb8b9dfed6cbf8c7fb8ff7c8169f3c11706d8167d",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "elapsedMs": 3634
+    }
+  ],
+  "usage": {
+    "input": 5516,
+    "output": 571,
+    "reasoning": 269,
+    "total": 6087
+  },
+  "estimatedUSD": 0.0008371000000000001,
+  "billingConfirmed": false,
+  "tests": {
+    "target": 108,
+    "allWorker": 1212,
+    "independentNew": 22
+  },
+  "genericAccuracy": null,
+  "conditionsObservedBoth": true,
+  "conditionsStabilityResolved": false,
+  "limitations": [
+    "single subject with explicit symbolic substitution and recognized quantity clause only",
+    "original adjacent safe symbol definition in same paragraph required",
+    "one live trial per style",
+    "not real Cloudflare/PDF/OCR/iPad"
+  ]
+}

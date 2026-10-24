@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { takeParsedBody } from "./ai-body.ts";
-import { aiPrivacyRejection, AI_CONSENT_VERSION } from "./ai-privacy.ts";
+import { aiPrivacyRejection, ragPrivacyRejection, AI_CONSENT_VERSION } from "./ai-privacy.ts";
 import { partialEnv, type Untyped } from "./test-env.ts";
 
 const APPROVED = partialEnv({ AI_PROVIDER_APPROVED: "true", PAYWALL_ENABLED: "true" });
@@ -48,4 +48,19 @@ test("an empty or padded model name is treated like the handler treats it", asyn
   assert.equal(await aiPrivacyRejection(request({ model: "" }), APPROVED), null);
   assert.equal(await aiPrivacyRejection(request({ model: " openai-luna " }), APPROVED), null);
   assert.equal((await aiPrivacyRejection(request({ model: 5 }), APPROVED))!.status, 403);
+});
+for(const [path,body] of [['/api/rag/index',{}],['/api/rag/documents/prepare',{}],['/api/rag/consent',{enabled:true}],['/api/rag/documents/synthetic/state',{state:'eligible'}]] as [string, object][]) {
+ test(`RAG send enabling ${path} requires renewed provider consent and age`,async()=>{
+  const create=(rag='rag-openai-v1',ai='openai-v1',age='adult')=>new Request('https://example.test'+path,{method:'POST',headers:{'X-Studiquo-RAG-Consent':rag,'X-Studiquo-AI-Consent':ai,'X-Studiquo-Age':age},body:JSON.stringify(body)});
+  assert.equal(await ragPrivacyRejection(create(),APPROVED,path),null);
+  assert.equal((await ragPrivacyRejection(create('rag-v1'),APPROVED,path))!.status,403);
+  assert.equal((await ragPrivacyRejection(create('rag-openai-v1','google-v2'),APPROVED,path))!.status,403);
+  assert.equal((await ragPrivacyRejection(create('rag-openai-v1','openai-v1',''),APPROVED,path))!.status,403);
+ });
+}
+test('RAG revoke, lock, cleanup and delete remain accessible without provider consent',async()=>{
+ for(const [path,method,body] of [['/api/rag/consent','POST',{enabled:false}],['/api/rag/documents/synthetic/state','POST',{state:'locked'}],['/api/rag/cleanup','POST',{}],['/api/rag/sources/synthetic','DELETE',null]] as [string, string, object | null][]) {
+  const req=new Request('https://example.test'+path,{method,...(body?{body:JSON.stringify(body)}:{})});
+  assert.equal(await ragPrivacyRejection(req,partialEnv({}),path),null);
+ }
 });

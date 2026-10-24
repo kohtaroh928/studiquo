@@ -1,0 +1,495 @@
+{
+  "date": "2026-10-08T04:39:59.316Z",
+  "method": "Cloudflare REST API from local machine; no deployed Worker or Vectorize",
+  "syntheticOnly": true,
+  "childEstimatedTokens": [
+    420,
+    414,
+    417,
+    400,
+    400,
+    406,
+    400,
+    407,
+    414,
+    410,
+    420,
+    417,
+    400,
+    418,
+    418,
+    410
+  ],
+  "samples": [
+    {
+      "case": "query_embedding",
+      "run": 1,
+      "status": 200,
+      "elapsedMs": 360,
+      "success": true,
+      "neurons": "0.01",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        1,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "query_embedding",
+      "run": 2,
+      "status": 200,
+      "elapsedMs": 281,
+      "success": true,
+      "neurons": "0.01",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        1,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "query_embedding",
+      "run": 3,
+      "status": 200,
+      "elapsedMs": 186,
+      "success": true,
+      "neurons": "0.01",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        1,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "query_embedding",
+      "run": 4,
+      "status": 200,
+      "elapsedMs": 180,
+      "success": true,
+      "neurons": "0.01",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        1,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "query_embedding",
+      "run": 5,
+      "status": 200,
+      "elapsedMs": 233,
+      "success": true,
+      "neurons": "0.01",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        1,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "index_embedding_16",
+      "run": 1,
+      "status": 200,
+      "elapsedMs": 371,
+      "success": true,
+      "neurons": "5.45",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        16,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "index_embedding_16",
+      "run": 2,
+      "status": 200,
+      "elapsedMs": 418,
+      "success": true,
+      "neurons": "5.45",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        16,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "index_embedding_16",
+      "run": 3,
+      "status": 200,
+      "elapsedMs": 801,
+      "success": true,
+      "neurons": "5.45",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        16,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "index_embedding_16",
+      "run": 4,
+      "status": 200,
+      "elapsedMs": 389,
+      "success": true,
+      "neurons": "5.45",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        16,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "index_embedding_16",
+      "run": 5,
+      "status": 200,
+      "elapsedMs": 901,
+      "success": true,
+      "neurons": "5.45",
+      "model": "@cf/baai/bge-m3",
+      "shape": [
+        16,
+        1024
+      ],
+      "valid": true
+    },
+    {
+      "case": "rerank_short_3",
+      "run": 1,
+      "status": 200,
+      "elapsedMs": 249,
+      "success": true,
+      "neurons": "0.04",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.9117127656936646
+        },
+        {
+          "id": 2,
+          "score": 3.730964454007335e-05
+        },
+        {
+          "id": 1,
+          "score": 3.7284284189809114e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_short_3",
+      "run": 2,
+      "status": 200,
+      "elapsedMs": 336,
+      "success": true,
+      "neurons": "0.04",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.9117127656936646
+        },
+        {
+          "id": 2,
+          "score": 3.730964454007335e-05
+        },
+        {
+          "id": 1,
+          "score": 3.7284284189809114e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_short_3",
+      "run": 3,
+      "status": 200,
+      "elapsedMs": 278,
+      "success": true,
+      "neurons": "0.04",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.9117127656936646
+        },
+        {
+          "id": 2,
+          "score": 3.730964454007335e-05
+        },
+        {
+          "id": 1,
+          "score": 3.7284284189809114e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_short_3",
+      "run": 4,
+      "status": 200,
+      "elapsedMs": 258,
+      "success": true,
+      "neurons": "0.04",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.9117127656936646
+        },
+        {
+          "id": 2,
+          "score": 3.730964454007335e-05
+        },
+        {
+          "id": 1,
+          "score": 3.7284284189809114e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_short_3",
+      "run": 5,
+      "status": 200,
+      "elapsedMs": 345,
+      "success": true,
+      "neurons": "0.04",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.9117127656936646
+        },
+        {
+          "id": 2,
+          "score": 3.730964454007335e-05
+        },
+        {
+          "id": 1,
+          "score": 3.7284284189809114e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_15_children",
+      "run": 1,
+      "status": 200,
+      "elapsedMs": 423,
+      "success": true,
+      "neurons": "1.40",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.02941053733229637
+        },
+        {
+          "id": 2,
+          "score": 3.7415826227515936e-05
+        },
+        {
+          "id": 7,
+          "score": 3.74121154891327e-05
+        },
+        {
+          "id": 9,
+          "score": 3.741175896720961e-05
+        },
+        {
+          "id": 4,
+          "score": 3.7405156035674736e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_15_children",
+      "run": 2,
+      "status": 200,
+      "elapsedMs": 414,
+      "success": true,
+      "neurons": "1.40",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.02941053733229637
+        },
+        {
+          "id": 2,
+          "score": 3.7415826227515936e-05
+        },
+        {
+          "id": 7,
+          "score": 3.74121154891327e-05
+        },
+        {
+          "id": 9,
+          "score": 3.741175896720961e-05
+        },
+        {
+          "id": 4,
+          "score": 3.7405156035674736e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_15_children",
+      "run": 3,
+      "status": 200,
+      "elapsedMs": 483,
+      "success": true,
+      "neurons": "1.40",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.02941053733229637
+        },
+        {
+          "id": 2,
+          "score": 3.7415826227515936e-05
+        },
+        {
+          "id": 7,
+          "score": 3.74121154891327e-05
+        },
+        {
+          "id": 9,
+          "score": 3.741175896720961e-05
+        },
+        {
+          "id": 4,
+          "score": 3.7405156035674736e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_15_children",
+      "run": 4,
+      "status": 200,
+      "elapsedMs": 877,
+      "success": true,
+      "neurons": "1.40",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.02941053733229637
+        },
+        {
+          "id": 2,
+          "score": 3.7415826227515936e-05
+        },
+        {
+          "id": 7,
+          "score": 3.74121154891327e-05
+        },
+        {
+          "id": 9,
+          "score": 3.741175896720961e-05
+        },
+        {
+          "id": 4,
+          "score": 3.7405156035674736e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    },
+    {
+      "case": "rerank_15_children",
+      "run": 5,
+      "status": 200,
+      "elapsedMs": 521,
+      "success": true,
+      "neurons": "1.40",
+      "model": "@cf/baai/bge-reranker-base",
+      "resultKeys": [
+        "response",
+        "usage"
+      ],
+      "ranking": [
+        {
+          "id": 0,
+          "score": 0.02941053733229637
+        },
+        {
+          "id": 2,
+          "score": 3.7415826227515936e-05
+        },
+        {
+          "id": 7,
+          "score": 3.74121154891327e-05
+        },
+        {
+          "id": 9,
+          "score": 3.741175896720961e-05
+        },
+        {
+          "id": 4,
+          "score": 3.7405156035674736e-05
+        }
+      ],
+      "valid": true,
+      "relevantFirst": true
+    }
+  ]
+}

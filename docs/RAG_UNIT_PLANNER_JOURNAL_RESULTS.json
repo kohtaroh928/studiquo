@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-15",
+  "scope": "unit_v4_offline_journal_retained_review_artifact_gate",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/unit-task-planner-journal.mjs": "fa7420fbc753797d2de16176501b6ed4b069f159325925631e8a9e7c09ae250b",
+    "mcp-server/scripts/rag-quality/unit-task-planner-artifact.mjs": "977dbab28bc41a84030bc56bfd251f605aeaf59cdb4c12b4cd52282d9bd7b73c",
+    "mcp-server/scripts/rag-quality/unit-task-planner-review.mjs": "23f9b2a4c599e95c516e625257de5753e5b8591e962e72c909ec7ad365dfeac7",
+    "mcp-server/src/rag-unit-task-planner-journal.test.js": "1eab5d5b25835520f379090aae959abf4b07af80ac545fb0ac93c7342bd5b96d"
+  },
+  "tests": {
+    "targetPassed": 21,
+    "workerPassed": 1497,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-unit-journal-all.log"
+  },
+  "independentCodeReview": "passed_21",
+  "independentSecurityReview": "passed_21",
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "transportAttached": false,
+  "modelQuality": "not_evaluated",
+  "oracleHumanReview": "pending",
+  "releaseAccepted": false,
+  "frozenV3SourceHashesMatch": true,
+  "frozenV3JournalHash": "70edfaabd3ebeb5ad8d51f1ba139fa1291b66505badf71f1350b5e2e06d26cd4",
+  "failedLocksRetained": 4,
+  "transportMatrixComplete": false,
+  "next": "bounded_v4_transport_with_decoded_secret_guard_then_independent_gate"
+}

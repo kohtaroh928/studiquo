@@ -14,6 +14,7 @@
 // Nothing here may ever fail or slow a login: callers hand these promises to
 // ctx.waitUntil, and every failure is only logged.
 import { sha256Hex } from "./auth.ts";
+import { tagged } from "./environment.ts";
 import { countAndAlert } from "./ops-alerts.ts";
 import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
@@ -131,7 +132,7 @@ async function sendSignInNotice(env: Env, email: string, context: { key?: string
     body: JSON.stringify({
       from: env.RESEND_FROM_EMAIL ?? "Studiquo <onboarding@resend.dev>",
       to: email,
-      subject: "Studiquoに新しい環境からログインがありました",
+      subject: tagged(env, "Studiquoに新しい環境からログインがありました"),
       text: [
         "お使いのStudiquoアカウントに、これまでと異なる環境からログインがありました。",
         "",

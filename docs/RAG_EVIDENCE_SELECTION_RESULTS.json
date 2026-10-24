@@ -1,0 +1,570 @@
+{
+  "schemaVersion": 1,
+  "labelStatus": "agent-authored synthetic draft; human review pending; holdout authored alongside implementation, not independently blind",
+  "method": "Local selector replay with fixed ranked candidates; reserves assumed authorized. Not a retrieval, Gemini answer, Cloudflare latency or billing evaluation.",
+  "dev": {
+    "before": {
+      "cases": 8,
+      "factCoverage": 0.8666666666666667,
+      "fullyCoveredCases": 6,
+      "meanSelectorCitationPrecision": 1,
+      "duplicateReferences": 7,
+      "selectorContextCharacters": 314,
+      "detailGateAcceptedCases": 6,
+      "localSelectionMs": 0.004374000000005651,
+      "additionalModelCalls": 0
+    },
+    "after": {
+      "cases": 8,
+      "factCoverage": 0.9333333333333333,
+      "fullyCoveredCases": 7,
+      "meanSelectorCitationPrecision": 1,
+      "duplicateReferences": 0,
+      "selectorContextCharacters": 228,
+      "detailGateAcceptedCases": 7,
+      "localSelectionMs": 1.5879980000000025,
+      "additionalModelCalls": 0
+    }
+  },
+  "holdout": {
+    "before": {
+      "cases": 8,
+      "factCoverage": 0.8823529411764706,
+      "fullyCoveredCases": 6,
+      "meanSelectorCitationPrecision": 0.875,
+      "duplicateReferences": 11,
+      "selectorContextCharacters": 379,
+      "detailGateAcceptedCases": 6,
+      "localSelectionMs": 0.003289999999999793,
+      "additionalModelCalls": 0
+    },
+    "after": {
+      "cases": 8,
+      "factCoverage": 1,
+      "fullyCoveredCases": 8,
+      "meanSelectorCitationPrecision": 0.9375,
+      "duplicateReferences": 0,
+      "selectorContextCharacters": 236,
+      "detailGateAcceptedCases": 7,
+      "localSelectionMs": 0.5702499999999979,
+      "additionalModelCalls": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "comparison-duplicate",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 3,
+        "selectorContextCharacters": 74,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0025420000000018206,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          5
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 32,
+        "detailGateAccepted": true,
+        "selectionMs": 0.49866600000000005,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "price-model-reserve",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requiredFacts": 1,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 4,
+        "selectorContextCharacters": 70,
+        "detailGateAccepted": false,
+        "selectionMs": 0.0002920000000017353,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          6,
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 26,
+        "detailGateAccepted": true,
+        "selectionMs": 0.2821250000000006,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "condition",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 37,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0006669999999999732,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 37,
+        "detailGateAccepted": true,
+        "selectionMs": 0.03945799999999977,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "negation",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 33,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0002080000000006521,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 33,
+        "detailGateAccepted": true,
+        "selectionMs": 0.49704200000000043,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "formula",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 23,
+        "detailGateAccepted": true,
+        "selectionMs": 0.00012500000000059686,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 23,
+        "detailGateAccepted": true,
+        "selectionMs": 0.1632080000000009,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "mechanism-distributed",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 41,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0002080000000006521,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 41,
+        "detailGateAccepted": true,
+        "selectionMs": 0.02383299999999977,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "independent-sources",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 1,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 22,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0001660000000001105,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 1,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 22,
+        "detailGateAccepted": true,
+        "selectionMs": 0.009624999999999773,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "missing-price",
+      "split": "dev",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 0,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 14,
+        "detailGateAccepted": false,
+        "selectionMs": 0.0001660000000001105,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 0,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 14,
+        "detailGateAccepted": false,
+        "selectionMs": 0.07404100000000113,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "energy-duplicate",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 3,
+        "selectorContextCharacters": 75,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0009579999999971278,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          5
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 30,
+        "detailGateAccepted": true,
+        "selectionMs": 0.10675000000000168,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "device-reserve",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requiredFacts": 1,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 4,
+        "selectorContextCharacters": 70,
+        "detailGateAccepted": false,
+        "selectionMs": 0.0007500000000000284,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          6,
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 26,
+        "detailGateAccepted": true,
+        "selectionMs": 0.22679199999999966,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "remote-qualifier",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 35,
+        "detailGateAccepted": true,
+        "selectionMs": 0.00037500000000179057,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 35,
+        "detailGateAccepted": true,
+        "selectionMs": 0.058332999999997526,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "formula-layout",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 28,
+        "detailGateAccepted": true,
+        "selectionMs": 0.00029100000000070736,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 28,
+        "detailGateAccepted": true,
+        "selectionMs": 0.06691700000000012,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "novel-price",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 24,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0003339999999987242,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          2
+        ],
+        "requiredFacts": 2,
+        "totalFacts": 2,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 24,
+        "detailGateAccepted": true,
+        "selectionMs": 0.06616599999999906,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "conditions-year",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requiredFacts": 0,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 0,
+        "duplicateReferences": 4,
+        "selectorContextCharacters": 90,
+        "detailGateAccepted": false,
+        "selectionMs": 0.00029100000000070736,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1,
+          6
+        ],
+        "requiredFacts": 1,
+        "totalFacts": 1,
+        "selectorCitationPrecision": 0.5,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 36,
+        "detailGateAccepted": false,
+        "selectionMs": 0.03295800000000071,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "long-form",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 39,
+        "detailGateAccepted": true,
+        "selectionMs": 0.0001660000000001105,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 39,
+        "detailGateAccepted": true,
+        "selectionMs": 0.007708999999998412,
+        "additionalModelCalls": 0
+      }
+    },
+    {
+      "id": "unknown-question",
+      "split": "holdout",
+      "before": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 18,
+        "detailGateAccepted": true,
+        "selectionMs": 0.00012500000000059686,
+        "additionalModelCalls": 0
+      },
+      "after": {
+        "pages": [
+          1
+        ],
+        "requiredFacts": 3,
+        "totalFacts": 3,
+        "selectorCitationPrecision": 1,
+        "duplicateReferences": 0,
+        "selectorContextCharacters": 18,
+        "detailGateAccepted": true,
+        "selectionMs": 0.004625000000000767,
+        "additionalModelCalls": 0
+      }
+    }
+  ]
+}

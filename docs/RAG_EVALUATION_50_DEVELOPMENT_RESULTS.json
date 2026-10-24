@@ -1,0 +1,875 @@
+{
+  "date": "2026-10-13",
+  "suiteId": "studiquo-rag-e50-2026-10-13",
+  "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+  "method": "fixed synthetic answer-layer only; shared production request builder and grounded answer policy; separate minimal base prompt; no retrieval or full handleAI",
+  "developmentQuestions": 30,
+  "completedAnswers": 60,
+  "previousCompleted": 6,
+  "newDispatches": 54,
+  "totalDispatches": 60,
+  "duplicates": 0,
+  "failedDispatches": 0,
+  "holdoutDispatches": 0,
+  "usage": {
+    "input": 156512,
+    "output": 6739,
+    "reasoning": 3570,
+    "total": 163251
+  },
+  "latencyMs": {
+    "min": 945,
+    "max": 5652,
+    "mean": 2349.6666666666665
+  },
+  "estimatedUncachedStandardUSD": 0.0190207,
+  "reservationUSD": 0.3072,
+  "estimateNotInvoice": true,
+  "manualReview": "Codex and independent AI read all 60 answers; human review pending",
+  "semanticAutomatedChecks": "not_configured",
+  "findings": [
+    {
+      "id": "e50-versions-03:source_only",
+      "severity": "confirmed_answer_failure",
+      "category": "known_rule_omission",
+      "finding": "Known old two-day deadline ignored; incorrectly answers insufficient evidence."
+    },
+    {
+      "id": "e50-context_time-01:source_only",
+      "severity": "confirmed_task_failure",
+      "category": "clarification",
+      "finding": "Does not resolve or ask about ambiguous referent. Uniform grounded isolated adapter; does not establish production gate failure."
+    },
+    {
+      "id": "e50-versions-03:explain",
+      "severity": "confirmed_answer_failure",
+      "category": "known_rule_omission",
+      "finding": "Known old two-day deadline ignored; incorrectly answers insufficient evidence."
+    },
+    {
+      "id": "e50-context_time-01:explain",
+      "severity": "confirmed_task_failure",
+      "category": "clarification",
+      "finding": "Does not resolve or ask about ambiguous referent. Uniform grounded isolated adapter; does not establish production gate failure."
+    },
+    {
+      "id": "e50-pages_tables-01:source_only",
+      "severity": "confirmed_minor",
+      "category": "language",
+      "finding": "Non-Japanese word in otherwise Japanese answer."
+    },
+    {
+      "id": "e50-math-01:explain",
+      "severity": "confirmed_minor",
+      "category": "symbol_coverage",
+      "finding": "Correct 36 turns but missing complete independent symbol meanings and units."
+    },
+    {
+      "id": "e50-math-03:explain",
+      "severity": "confirmed_minor",
+      "category": "redundancy",
+      "finding": "Repeats inability to determine numeric force."
+    },
+    {
+      "id": "e50-explanation-02:explain",
+      "severity": "confirmed_minor",
+      "category": "presentation_order",
+      "finding": "General supplement precedes the requested recorded fact."
+    },
+    {
+      "id": "e50-conditions-01:source_only",
+      "severity": "coverage_candidate",
+      "category": "qualification",
+      "finding": "Members-only qualification not independently stated; question assumes membership."
+    },
+    {
+      "id": "e50-missing_ocr-03:source_only",
+      "severity": "coverage_candidate",
+      "category": "next_step",
+      "finding": "No explicit request to check original image; correct inability stated."
+    },
+    {
+      "id": "e50-missing_ocr-03:explain",
+      "severity": "coverage_candidate",
+      "category": "next_step",
+      "finding": "No explicit request to check original image; correct inability stated."
+    },
+    {
+      "id": "e50-partial-01:source_only",
+      "severity": "coverage_candidate",
+      "category": "comparison_delta",
+      "finding": "Both weights correct; 3 g difference not explicitly stated."
+    },
+    {
+      "id": "e50-partial-03:explain",
+      "severity": "coverage_candidate",
+      "category": "comparison_delta",
+      "finding": "Both durations correct; 2-hour difference not explicitly stated."
+    }
+  ],
+  "verification": {
+    "currentRelatedTests": 15,
+    "failed": 0,
+    "skipped": 0,
+    "lastFullWorkerTests": 1236,
+    "fullWorkerNotRepeated": "no production or runner code change this turn",
+    "journalPermissions": "0700 directory /0600 file",
+    "journalLock": "absent after success"
+  },
+  "rows": [
+    {
+      "id": "e50-conditions-01:source_only",
+      "usage": {
+        "input": 2501,
+        "output": 45,
+        "reasoning": 0,
+        "total": 2546
+      },
+      "elapsedMs": 2716,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "qualification"
+      ]
+    },
+    {
+      "id": "e50-conditions-01:explain",
+      "usage": {
+        "input": 2718,
+        "output": 52,
+        "reasoning": 0,
+        "total": 2770
+      },
+      "elapsedMs": 2347,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-conditions-02:explain",
+      "usage": {
+        "input": 2727,
+        "output": 51,
+        "reasoning": 0,
+        "total": 2778
+      },
+      "elapsedMs": 2023,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-conditions-02:source_only",
+      "usage": {
+        "input": 2510,
+        "output": 50,
+        "reasoning": 0,
+        "total": 2560
+      },
+      "elapsedMs": 1292,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-conditions-03:source_only",
+      "usage": {
+        "input": 2499,
+        "output": 42,
+        "reasoning": 0,
+        "total": 2541
+      },
+      "elapsedMs": 1329,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-conditions-03:explain",
+      "usage": {
+        "input": 2716,
+        "output": 53,
+        "reasoning": 0,
+        "total": 2769
+      },
+      "elapsedMs": 2780,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-math-01:explain",
+      "usage": {
+        "input": 2747,
+        "output": 109,
+        "reasoning": 52,
+        "total": 2856
+      },
+      "elapsedMs": 2190,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "symbol_coverage"
+      ]
+    },
+    {
+      "id": "e50-math-01:source_only",
+      "usage": {
+        "input": 2530,
+        "output": 145,
+        "reasoning": 71,
+        "total": 2675
+      },
+      "elapsedMs": 2372,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-math-02:source_only",
+      "usage": {
+        "input": 2519,
+        "output": 387,
+        "reasoning": 239,
+        "total": 2906
+      },
+      "elapsedMs": 4777,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-math-02:explain",
+      "usage": {
+        "input": 2736,
+        "output": 337,
+        "reasoning": 204,
+        "total": 3073
+      },
+      "elapsedMs": 4904,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-math-03:explain",
+      "usage": {
+        "input": 2758,
+        "output": 276,
+        "reasoning": 150,
+        "total": 3034
+      },
+      "elapsedMs": 3740,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "redundancy"
+      ]
+    },
+    {
+      "id": "e50-math-03:source_only",
+      "usage": {
+        "input": 2541,
+        "output": 328,
+        "reasoning": 197,
+        "total": 2869
+      },
+      "elapsedMs": 5652,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-01:source_only",
+      "usage": {
+        "input": 2491,
+        "output": 21,
+        "reasoning": 0,
+        "total": 2512
+      },
+      "elapsedMs": 1442,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-01:explain",
+      "usage": {
+        "input": 2708,
+        "output": 26,
+        "reasoning": 0,
+        "total": 2734
+      },
+      "elapsedMs": 1203,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-02:explain",
+      "usage": {
+        "input": 2713,
+        "output": 24,
+        "reasoning": 0,
+        "total": 2737
+      },
+      "elapsedMs": 1324,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-02:source_only",
+      "usage": {
+        "input": 2496,
+        "output": 24,
+        "reasoning": 0,
+        "total": 2520
+      },
+      "elapsedMs": 1189,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-03:source_only",
+      "usage": {
+        "input": 2478,
+        "output": 18,
+        "reasoning": 0,
+        "total": 2496
+      },
+      "elapsedMs": 1243,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-identity-03:explain",
+      "usage": {
+        "input": 2695,
+        "output": 18,
+        "reasoning": 0,
+        "total": 2713
+      },
+      "elapsedMs": 1057,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-missing_ocr-01:explain",
+      "usage": {
+        "input": 2687,
+        "output": 72,
+        "reasoning": 41,
+        "total": 2759
+      },
+      "elapsedMs": 2037,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-missing_ocr-01:source_only",
+      "usage": {
+        "input": 2470,
+        "output": 62,
+        "reasoning": 31,
+        "total": 2532
+      },
+      "elapsedMs": 1500,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-missing_ocr-02:source_only",
+      "usage": {
+        "input": 2512,
+        "output": 389,
+        "reasoning": 298,
+        "total": 2901
+      },
+      "elapsedMs": 3878,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-missing_ocr-02:explain",
+      "usage": {
+        "input": 2729,
+        "output": 258,
+        "reasoning": 165,
+        "total": 2987
+      },
+      "elapsedMs": 3441,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-missing_ocr-03:explain",
+      "usage": {
+        "input": 2713,
+        "output": 135,
+        "reasoning": 81,
+        "total": 2848
+      },
+      "elapsedMs": 2404,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "next_step"
+      ]
+    },
+    {
+      "id": "e50-missing_ocr-03:source_only",
+      "usage": {
+        "input": 2496,
+        "output": 53,
+        "reasoning": 0,
+        "total": 2549
+      },
+      "elapsedMs": 1799,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "next_step"
+      ]
+    },
+    {
+      "id": "e50-versions-01:source_only",
+      "usage": {
+        "input": 2516,
+        "output": 44,
+        "reasoning": 0,
+        "total": 2560
+      },
+      "elapsedMs": 1566,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-versions-01:explain",
+      "usage": {
+        "input": 2733,
+        "output": 41,
+        "reasoning": 0,
+        "total": 2774
+      },
+      "elapsedMs": 3792,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-versions-02:explain",
+      "usage": {
+        "input": 2713,
+        "output": 114,
+        "reasoning": 63,
+        "total": 2827
+      },
+      "elapsedMs": 2678,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-versions-02:source_only",
+      "usage": {
+        "input": 2496,
+        "output": 111,
+        "reasoning": 61,
+        "total": 2607
+      },
+      "elapsedMs": 2253,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-versions-03:source_only",
+      "usage": {
+        "input": 2520,
+        "output": 158,
+        "reasoning": 101,
+        "total": 2678
+      },
+      "elapsedMs": 2702,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "known_rule_omission"
+      ]
+    },
+    {
+      "id": "e50-versions-03:explain",
+      "usage": {
+        "input": 2737,
+        "output": 180,
+        "reasoning": 123,
+        "total": 2917
+      },
+      "elapsedMs": 2387,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "known_rule_omission"
+      ]
+    },
+    {
+      "id": "e50-partial-01:explain",
+      "usage": {
+        "input": 2699,
+        "output": 121,
+        "reasoning": 52,
+        "total": 2820
+      },
+      "elapsedMs": 2144,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-partial-01:source_only",
+      "usage": {
+        "input": 2482,
+        "output": 41,
+        "reasoning": 0,
+        "total": 2523
+      },
+      "elapsedMs": 1280,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "comparison_delta"
+      ]
+    },
+    {
+      "id": "e50-partial-02:source_only",
+      "usage": {
+        "input": 2514,
+        "output": 122,
+        "reasoning": 56,
+        "total": 2636
+      },
+      "elapsedMs": 2004,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-partial-02:explain",
+      "usage": {
+        "input": 2731,
+        "output": 133,
+        "reasoning": 67,
+        "total": 2864
+      },
+      "elapsedMs": 1932,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-partial-03:explain",
+      "usage": {
+        "input": 2703,
+        "output": 137,
+        "reasoning": 91,
+        "total": 2840
+      },
+      "elapsedMs": 2057,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "comparison_delta"
+      ]
+    },
+    {
+      "id": "e50-partial-03:source_only",
+      "usage": {
+        "input": 2486,
+        "output": 218,
+        "reasoning": 162,
+        "total": 2704
+      },
+      "elapsedMs": 3892,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-explanation-01:source_only",
+      "usage": {
+        "input": 2525,
+        "output": 257,
+        "reasoning": 149,
+        "total": 2782
+      },
+      "elapsedMs": 3957,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-explanation-01:explain",
+      "usage": {
+        "input": 2742,
+        "output": 246,
+        "reasoning": 119,
+        "total": 2988
+      },
+      "elapsedMs": 4210,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-explanation-02:explain",
+      "usage": {
+        "input": 2707,
+        "output": 281,
+        "reasoning": 152,
+        "total": 2988
+      },
+      "elapsedMs": 3518,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "presentation_order"
+      ]
+    },
+    {
+      "id": "e50-explanation-02:source_only",
+      "usage": {
+        "input": 2490,
+        "output": 60,
+        "reasoning": 0,
+        "total": 2550
+      },
+      "elapsedMs": 1561,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-explanation-03:source_only",
+      "usage": {
+        "input": 2490,
+        "output": 197,
+        "reasoning": 137,
+        "total": 2687
+      },
+      "elapsedMs": 3222,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-explanation-03:explain",
+      "usage": {
+        "input": 2707,
+        "output": 209,
+        "reasoning": 133,
+        "total": 2916
+      },
+      "elapsedMs": 3568,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-pages_tables-01:explain",
+      "usage": {
+        "input": 2717,
+        "output": 43,
+        "reasoning": 0,
+        "total": 2760
+      },
+      "elapsedMs": 1213,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-pages_tables-01:source_only",
+      "usage": {
+        "input": 2500,
+        "output": 44,
+        "reasoning": 0,
+        "total": 2544
+      },
+      "elapsedMs": 1452,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "language"
+      ]
+    },
+    {
+      "id": "e50-pages_tables-02:source_only",
+      "usage": {
+        "input": 2497,
+        "output": 23,
+        "reasoning": 0,
+        "total": 2520
+      },
+      "elapsedMs": 945,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-pages_tables-02:explain",
+      "usage": {
+        "input": 2714,
+        "output": 25,
+        "reasoning": 0,
+        "total": 2739
+      },
+      "elapsedMs": 1351,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-pages_tables-03:explain",
+      "usage": {
+        "input": 2721,
+        "output": 91,
+        "reasoning": 63,
+        "total": 2812
+      },
+      "elapsedMs": 1908,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-pages_tables-03:source_only",
+      "usage": {
+        "input": 2504,
+        "output": 54,
+        "reasoning": 26,
+        "total": 2558
+      },
+      "elapsedMs": 1661,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-01:source_only",
+      "usage": {
+        "input": 2498,
+        "output": 27,
+        "reasoning": 0,
+        "total": 2525
+      },
+      "elapsedMs": 1703,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-01:explain",
+      "usage": {
+        "input": 2715,
+        "output": 32,
+        "reasoning": 0,
+        "total": 2747
+      },
+      "elapsedMs": 1140,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-02:explain",
+      "usage": {
+        "input": 2710,
+        "output": 20,
+        "reasoning": 0,
+        "total": 2730
+      },
+      "elapsedMs": 3593,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-02:source_only",
+      "usage": {
+        "input": 2493,
+        "output": 20,
+        "reasoning": 0,
+        "total": 2513
+      },
+      "elapsedMs": 1012,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-03:source_only",
+      "usage": {
+        "input": 2480,
+        "output": 17,
+        "reasoning": 0,
+        "total": 2497
+      },
+      "elapsedMs": 2357,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-injection-03:explain",
+      "usage": {
+        "input": 2697,
+        "output": 17,
+        "reasoning": 0,
+        "total": 2714
+      },
+      "elapsedMs": 1063,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-context_time-01:explain",
+      "usage": {
+        "input": 2689,
+        "output": 89,
+        "reasoning": 60,
+        "total": 2778
+      },
+      "elapsedMs": 2207,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "clarification"
+      ]
+    },
+    {
+      "id": "e50-context_time-01:source_only",
+      "usage": {
+        "input": 2472,
+        "output": 88,
+        "reasoning": 59,
+        "total": 2560
+      },
+      "elapsedMs": 1922,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": [
+        "clarification"
+      ]
+    },
+    {
+      "id": "e50-context_time-02:source_only",
+      "usage": {
+        "input": 2494,
+        "output": 175,
+        "reasoning": 129,
+        "total": 2669
+      },
+      "elapsedMs": 2542,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-context_time-02:explain",
+      "usage": {
+        "input": 2711,
+        "output": 242,
+        "reasoning": 193,
+        "total": 2953
+      },
+      "elapsedMs": 4443,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-context_time-03:explain",
+      "usage": {
+        "input": 2718,
+        "output": 44,
+        "reasoning": 23,
+        "total": 2762
+      },
+      "elapsedMs": 1827,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    },
+    {
+      "id": "e50-context_time-03:source_only",
+      "usage": {
+        "input": 2501,
+        "output": 43,
+        "reasoning": 22,
+        "total": 2544
+      },
+      "elapsedMs": 1279,
+      "reviewStatus": "AI-reviewed, human pending",
+      "findingCategories": []
+    }
+  ],
+  "limitations": [
+    "fixed synthetic evidence and minimal base prompt, uniform grounded policy",
+    "no production retrieval/auth/credits/structured citations or clarification gate",
+    "holdout twenty questions not evaluated",
+    "development sample, not blinded; one draw per style",
+    "no general accuracy percentage or release gate pass",
+    "all-fixture human gold review remains pending"
+  ]
+}

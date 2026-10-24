@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "id": "fixed6-atomic-v1",
+  "baselineId": "20261014-policy-v1",
+  "contextsHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+  "note": "固定6ケースの根拠だけから作った採点項目。生成側へ渡さない。自動判定は表記ゆれに弱い予備判定で、not_detectedとreviewは人が回答を読んで確定する。",
+  "categories": {
+    "omission": "回答漏れ: 質問が求めた項目と、判断に不可欠な条件",
+    "grounding": "根拠: 資料にない値・優劣・差分を作らない、別対象を混ぜない、出典表記を本文に出さない",
+    "supplement": "補足説明: source_onlyは資料外の補足を足さない。explainは補足を表示で区別し、資料より後に置く",
+    "presentation": "表示: 結論の位置、不要なまとめ"
+  },
+  "common": [
+    {"id": "x-no-citation", "category": "grounding", "styles": ["source_only", "explain"], "forbid": ["e50-", "boundary-", "chunk", "出典[:：]", "\\[\\d+\\]", "p\\.\\s*1", "合成教材"], "severity": "major", "text": "出典ID・資料名・ページ番号を本文に書かない"},
+    {"id": "x-source-only-no-supplement", "category": "supplement", "styles": ["source_only"], "flag": ["補足", "一般的に", "一般に", "通常は", "背景として", "たとえば"], "severity": "major", "text": "source_onlyでは資料外の定義・背景・たとえを足さない（出現時は人が確認）"},
+    {"id": "x-explain-label-first", "category": "supplement", "styles": ["explain"], "labelBeforeCue": {"label": ["補足", "背景"], "cue": ["一般的に", "一般に", "通常は", "ふつう", "多くの場合", "たとえば"]}, "severity": "major", "text": "explainで一般知識を使うなら、最初の一般説明より前に補足の表示を置く"},
+    {"id": "x-no-summary", "category": "presentation", "styles": ["source_only", "explain"], "forbid": ["(^|\\n)[#*\\s]*(まとめ|結論)[:：]?\\s*(\\n|$)"], "severity": "minor", "text": "末尾に同じ内容のまとめを足さない"}
+  ],
+  "cases": {
+    "development:e50-versions-01": {
+      "question": "2027年2月12日の参加費",
+      "items": [
+        {"id": "v01-fee", "category": "omission", "all": ["1500円"], "severity": "critical", "text": "参加費1500円を答える"},
+        {"id": "v01-rule", "category": "grounding", "any": ["2月1日以降", "2027年2月1日"], "severity": "major", "text": "新版が2027年2月1日以降の開催に適用されることを根拠として示す"},
+        {"id": "v01-basis", "category": "omission", "all": ["開催日"], "severity": "major", "text": "申込日ではなく開催日で判定する条件を残す"},
+        {"id": "v01-no-old-fee", "category": "grounding", "forbid": ["参加費は1200円", "1200円です", "1200円となります"], "flag": ["1200円"], "severity": "critical", "text": "旧版1200円を答えにしない（旧版への言及は人が確認）"}
+      ]
+    },
+    "development:e50-pages_tables-02": {
+      "question": "北行きの出発時刻と料金",
+      "items": [
+        {"id": "pt-time", "category": "omission", "any": ["8:20", "8時20分"], "severity": "critical", "text": "北行きの出発8:20"},
+        {"id": "pt-fee", "category": "omission", "all": ["300円"], "severity": "critical", "text": "北行きの料金300円"},
+        {"id": "pt-no-south", "category": "grounding", "flag": ["9:10", "9時10分", "450円"], "severity": "minor", "text": "南行きの値を混ぜたり不要に並べたりしない（出現時は人が確認）"}
+      ]
+    },
+    "development:e50-partial-03": {
+      "question": "EとFの点灯時間と価格の比較、お得な方",
+      "items": [
+        {"id": "p3-e", "category": "omission", "all": ["5時間", "1600円"], "severity": "critical", "text": "Eの点灯5時間・価格1600円"},
+        {"id": "p3-f-time", "category": "omission", "all": ["7時間"], "severity": "critical", "text": "Fの点灯7時間"},
+        {"id": "p3-f-price-unknown", "category": "omission", "any": ["F[^。\\n]{0,25}(価格|値段)[^。\\n]{0,25}(記載|確認|不明|わかりません|分かりません|ない|ありません)", "(価格|値段)[^。\\n]{0,20}(記載|確認|不明)[^。\\n]{0,15}F"], "severity": "critical", "text": "Fの価格は資料で確認できないと述べる"},
+        {"id": "p3-delta", "category": "omission", "any": ["2時間(長|多)", "差は2時間", "2時間の差", "2時間ほど長", "2時間だけ長"], "severity": "major", "text": "点灯時間はFが2時間長いと差を明示する（過去の欠落項目）"},
+        {"id": "p3-no-verdict", "category": "omission", "any": ["(お得|割安|コスパ)[^。\\n]{0,40}(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)", "(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)[^。\\n]{0,30}(お得|割安|コスパ)"], "severity": "major", "text": "お得な方は判断できないと理由とともに答える"},
+        {"id": "p3-no-invented-price", "category": "grounding", "forbid": ["F[^。\\n]{0,12}(価格|値段)[^。\\n]{0,6}(は|が)?\\d+円"], "severity": "critical", "text": "Fの価格を作らない"},
+        {"id": "p3-no-winner", "category": "grounding", "forbid": ["(E|F)(の方|のほう)が[^。\\n]{0,10}(お得|割安|おすすめ)(です|と言え|になります)"], "severity": "critical", "text": "全体のお得さを確定しない"},
+        {"id": "p3-no-onesided-ratio", "category": "grounding", "forbid": ["円/時間", "円/h", "1時間あたり", "320円"], "severity": "major", "text": "片側だけの価格÷時間を参考値として足さない"}
+      ]
+    },
+    "boundary:boundary-explicit-metric": {
+      "question": "Kの価格÷点灯時間の値と単位、その意味、電気代を示すか",
+      "items": [
+        {"id": "k-value", "category": "omission", "any": ["300円/時間", "300円/h", "300円/時", "1時間あたり300円", "300円毎時"], "severity": "critical", "text": "300円/時間を単位付きで答える"},
+        {"id": "k-meaning", "category": "omission", "any": ["(購入|本体)[^。\\n]{0,10}(価格|代金)[^。\\n]{0,25}(点灯時間|時間)", "(点灯|1)時間あたり[^。\\n]{0,10}(購入|本体)"], "severity": "major", "text": "購入価格と点灯時間の比という意味を述べる"},
+        {"id": "k-condition", "category": "omission", "any": ["満充電", "連続点灯"], "severity": "minor", "text": "点灯時間が1回の満充電での連続点灯時間であることを残す"},
+        {"id": "k-not-electric", "category": "omission", "any": ["電気代[^。\\n]{0,25}(ではな|ではあり|示さ|表さ|含ま|異な|違|別)", "(ではな|ではあり|示さ|表さ|含ま)[^。\\n]{0,10}電気代"], "severity": "critical", "text": "電気代を示すものではないと答える"},
+        {"id": "k-no-invented-power", "category": "grounding", "forbid": ["\\d+(W|ワット|kWh)", "円/kWh"], "severity": "critical", "text": "消費電力や電気料金単価を作らない"}
+      ]
+    },
+    "boundary:boundary-equal-category": {
+      "question": "LとMの点灯時間・価格・使用場所の比較",
+      "items": [
+        {"id": "lm-values", "category": "omission", "all": ["6時間", "1800円"], "severity": "critical", "text": "両方6時間・1800円"},
+        {"id": "lm-same", "category": "omission", "any": ["同じ", "差はな", "差がな", "違いはな", "違いがな", "同一", "等し", "同額"], "severity": "major", "text": "点灯時間と価格に差がないと明示する"},
+        {"id": "lm-location", "category": "omission", "all": ["屋内", "屋外"], "severity": "critical", "text": "Lは屋内、Mは屋外"},
+        {"id": "lm-no-winner", "category": "grounding", "forbid": ["(L|M)(の方|のほう)が[^。\\n]{0,15}(お得|優れ|良い|長い|安い|おすすめ)"], "severity": "critical", "text": "どちらかを優れているとしない"},
+        {"id": "lm-no-inferred-spec", "category": "grounding", "styles": ["source_only"], "forbid": ["防水", "防滴", "耐候", "IP\\d"], "severity": "major", "text": "使用場所から防水などの仕様を推測しない"},
+        {"id": "lm-inferred-spec-labeled", "category": "supplement", "styles": ["explain"], "flag": ["防水", "防滴", "耐候", "IP\\d"], "severity": "major", "text": "explainで屋外向けの一般的な性質に触れるなら補足として区別する（出現時は人が確認）"}
+      ]
+    },
+    "boundary:boundary-different-conditions": {
+      "question": "NとPの点灯時間と価格の比較、時間と分の確認、お得な方",
+      "items": [
+        {"id": "np-values", "category": "omission", "all": ["6時間", "2時間", "2000円"], "severity": "critical", "text": "N 6時間・P 2時間・どちらも2000円"},
+        {"id": "np-minutes", "category": "omission", "all": ["360分", "120分"], "severity": "major", "text": "6時間=360分、2時間=120分の表記を確認する"},
+        {"id": "np-conditions", "category": "omission", "all": ["弱い明るさ", "強い明るさ"], "severity": "critical", "text": "Nは最も弱い明るさ、Pは最も強い明るさでの測定"},
+        {"id": "np-cannot-judge", "category": "omission", "any": ["(お得|性能|優劣|長持ち)[^。\\n]{0,40}(判断|比較|確定|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)", "(判断|比較|確定|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)[^。\\n]{0,30}(お得|性能|優劣)"], "severity": "critical", "text": "条件が違うため同条件での性能やお得さは判断できないと答える"},
+        {"id": "np-same-price", "category": "omission", "any": ["(価格|値段)[^。\\n]{0,15}(同じ|同額|差はな|差がな)", "どちらも2000円", "同じ2000円", "ともに2000円", "いずれも2000円"], "severity": "minor", "text": "価格は同じ2000円と述べる"},
+        {"id": "np-conclusion-first", "category": "presentation", "before": {"first": "np-cannot-judge", "then": ["6時間", "2時間"]}, "severity": "minor", "text": "比較できない結論を、値の列挙より先に示す"},
+        {"id": "np-no-delta", "category": "grounding", "forbid": ["4時間(長|多|の差)", "差は4時間", "3倍", "240分(長|多|の差)"], "severity": "critical", "text": "条件が違う値の時間差・倍率を出さない"},
+        {"id": "np-no-ratio", "category": "grounding", "forbid": ["円/時間", "円/分", "1時間あたり", "1分あたり", "333", "1000円/"], "severity": "critical", "text": "価格÷時間の比較指標を作らない"},
+        {"id": "np-no-winner", "category": "grounding", "forbid": ["(N|P)(の方|のほう)が[^。\\n]{0,15}(お得|割安|優れ|コスパ|おすすめ)"], "severity": "critical", "text": "お得な方を確定しない"}
+      ]
+    }
+  }
+}

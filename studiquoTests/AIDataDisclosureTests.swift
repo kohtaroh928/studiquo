@@ -29,6 +29,15 @@ final class AIDataDisclosureTests: XCTestCase {
     /// Covers both a brand-new install and an existing install updating to
     /// the version that first added this screen — neither has acknowledged
     /// anything yet, so both must see the disclosure.
+    func testOldGoogleConsentDoesNotAuthorizeOpenAI() {
+        AIDataDisclosure.defaults.set("google-v2", forKey: AIDataDisclosure.consentVersionDefaultsKey)
+        AIDataDisclosure.defaults.set("adult", forKey: AIDataDisclosure.ageBandDefaultsKey)
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
+    }
+    func testOpenAIConsentRequiresAgeBand() {
+        AIDataDisclosure.defaults.set("openai-v1", forKey: AIDataDisclosure.consentVersionDefaultsKey)
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
+    }
     func testAnUntouchedInstallHasNotAcknowledgedTheDisclosure() {
         XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
     }

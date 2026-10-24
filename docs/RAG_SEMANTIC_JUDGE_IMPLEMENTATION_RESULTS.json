@@ -1,0 +1,89 @@
+{
+ "date": "2026-10-22",
+ "code": "本コミット(意味の判定を追加。RAG_JUDGE の既定は off)",
+ "environment": "Workers AI REST(索引・リランク・判定とも実API)。D1／Vectorizeはローカル代替。判定はWorker内の束縛ではなくRESTで呼んだ(入力の形は同じ)",
+ "workerTests": {
+  "tests": 2403,
+  "pass": 2402,
+  "fail": 0,
+  "skipped": 1,
+  "newTests": 13
+ },
+ "shadow": {
+  "sets": "第2〜第6回(調整済みの質問)",
+  "judged": 73,
+  "outcomes": {
+   "ok": 73
+  },
+  "changedVersusNoJudge": [],
+  "negativeProbabilities(9 currently accepted)": [
+   0.052,
+   0.065,
+   0.067,
+   0.087,
+   0.1,
+   0.104,
+   0.157,
+   0.192,
+   0.237
+  ],
+  "positiveLowest8": [
+   0.624,
+   0.673,
+   0.719,
+   0.742,
+   0.753,
+   0.755,
+   0.758,
+   0.769
+  ],
+  "note": "結果は1問も変わらない。判定は73回すべて成功"
+ },
+ "on": {
+  "v3": {
+   "negatives": {
+    "n": 27,
+    "withoutJudge": 19,
+    "withJudge": 27
+   },
+   "positives": {
+    "n": 12,
+    "withoutJudge": 12,
+    "withJudge": 12
+   },
+   "stoppedByJudge": [
+    "v3-a6",
+    "v3-b2",
+    "v3-b3",
+    "v3-b4",
+    "v3-b5",
+    "v3-b6",
+    "v3-d1",
+    "v3-d4"
+   ]
+  },
+  "v5": {
+   "negatives": {
+    "n": 10,
+    "withoutJudge": 9,
+    "withJudge": 10
+   },
+   "positives": {
+    "n": 7,
+    "withoutJudge": 4,
+    "withJudge": 4
+   },
+   "stoppedByJudge": [
+    "v5-n9"
+   ]
+  }
+ },
+ "inSampleWarning": "しきい値(止める0.25、一部のみ0.5)は、これらの質問を見て決めた。汎化は未確認。v3-a6の確率は0.237で、しきい値0.25との差が小さい",
+ "notVerified": [
+  "Worker内のAI束縛からの呼び出し(RESTでのみ確認)",
+  "遅延(Macからの測定。束縛では速い見込み)",
+  "clef-flashの提供の安定性・版の固定",
+  "プライバシー文言とCloudflareの契約条項"
+ ],
+ "note": "質問・正解・本文は含まない。case idは質問IDのみ。"
+}

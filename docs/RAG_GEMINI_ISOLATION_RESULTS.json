@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "model": "gemini-3.6-flash",
+  "method": "Single-pass max6 calls,20sec each,no retry. Synthetic fixed inputs. A/B format differs; D/E differ only responseJsonSchema. B/C are not a schema-only causal comparison. Fixed error hints are message classifications, not proof. No raw text stored; no product changes.",
+  "requests": [
+    {
+      "id": "A_text_control",
+      "httpStatus": 200,
+      "outcome": "completed",
+      "elapsedMs": 1394,
+      "finishReason": "STOP",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 11,
+        "output": 5,
+        "thoughts": null,
+        "total": 16
+      },
+      "error": null,
+      "hint": null,
+      "controlValidity": {
+        "valid": true
+      },
+      "proposalValidity": null
+    },
+    {
+      "id": "B_tiny_schema",
+      "httpStatus": 200,
+      "outcome": "completed",
+      "elapsedMs": 2205,
+      "finishReason": "STOP",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 11,
+        "output": 5,
+        "thoughts": null,
+        "total": 16
+      },
+      "error": null,
+      "hint": null,
+      "controlValidity": {
+        "valid": true
+      },
+      "proposalValidity": null
+    },
+    {
+      "id": "C_proposal_tiny_input",
+      "httpStatus": 200,
+      "outcome": "completed",
+      "elapsedMs": 1800,
+      "finishReason": "STOP",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 327,
+        "output": 118,
+        "thoughts": null,
+        "total": 445
+      },
+      "error": null,
+      "hint": null,
+      "controlValidity": null,
+      "proposalValidity": {
+        "valid": true,
+        "reason": "structurally_valid"
+      }
+    },
+    {
+      "id": "D_full_without_schema",
+      "httpStatus": 200,
+      "outcome": "completed",
+      "elapsedMs": 2924,
+      "finishReason": "STOP",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1608,
+        "output": 452,
+        "thoughts": null,
+        "total": 2060
+      },
+      "error": null,
+      "hint": null,
+      "controlValidity": null,
+      "proposalValidity": {
+        "valid": false,
+        "reason": "invalid_span"
+      }
+    },
+    {
+      "id": "E_full_with_schema",
+      "httpStatus": 503,
+      "outcome": "http_error",
+      "elapsedMs": 2095,
+      "finishReason": null,
+      "modelVersion": null,
+      "usage": null,
+      "error": {
+        "status": "UNAVAILABLE",
+        "reason": null,
+        "quotas": [],
+        "retrySeconds": null
+      },
+      "hint": {
+        "capacityMentioned": true,
+        "schemaMentioned": false
+      },
+      "controlValidity": null,
+      "proposalValidity": null
+    },
+    {
+      "id": "F_post_control",
+      "httpStatus": 200,
+      "outcome": "completed",
+      "elapsedMs": 1049,
+      "finishReason": "STOP",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 11,
+        "output": 5,
+        "thoughts": null,
+        "total": 16
+      },
+      "error": null,
+      "hint": null,
+      "controlValidity": {
+        "valid": true
+      },
+      "proposalValidity": null
+    }
+  ],
+  "summary": {
+    "calls": 6,
+    "http200": 5,
+    "http503": 1,
+    "completedWithin5Seconds": 5,
+    "completedControlsValid": 3,
+    "proposalValid": 1,
+    "proposalInvalidSpan": 1,
+    "capacityHintOn503": true,
+    "observedPromptTokens": 1968,
+    "observedOutputTokens": 585,
+    "observedTotalTokens": 2553
+  },
+  "limitations": [
+    "No retries; each configuration sampled once. Schema and service-state causality are not established.",
+    "B/C differ in task and input as well as schema complexity. D/E differ in schema only but occur at different times.",
+    "Error hint is a keyword classification, not a full provider explanation. No raw message retained.",
+    "503 response usage and actual billing tier unknown. Valid proposal is a synthetic one-reference case, not a search-quality result."
+  ]
+}

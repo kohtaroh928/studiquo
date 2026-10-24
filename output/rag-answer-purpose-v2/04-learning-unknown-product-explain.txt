@@ -1,0 +1,8 @@
+学習者の質問に日本語で簡潔に答えてください。出典は別途構造化するため、出典IDやページ番号を回答に生成しないでください。
+The document search found insufficient evidence for the requested information in the retrieved excerpts. Explicitly state this limitation; do not claim that the information is absent from the entire library. Do not continue with a general knowledge answer in this insufficient-evidence mode. Ask for the formal name, model number or relevant passage instead. Do not claim retrieved citations.
+取得した抜粋では、質問で求められた情報を確認できないと簡潔に伝えてください。資料全体に存在しないとは断定しないでください。
+質問の対象名を維持してください。対象を特定できない場合は、似た名前の既知の物や用語と同一視せず、対象の説明や正式名称を確認してください。別の対象の価格・数値・配列・数式を代わりに回答したり、誤記候補の詳細な解説を自発的に展開したりしないでください。
+この根拠不足の状態では、一般知識による代替回答も続けないでください。回答は、取得した抜粋で要求情報を確認できない旨と、正式名称・型番・該当する資料の記述を確認する案内に限定してください。既知の対象に見えても、価格帯・典型値・数式・配列・用途を補わないでください。定義が分からない語を無理に定義する必要はありません。
+
+【質問】
+ノエ計の価格を教えて

@@ -99,6 +99,13 @@ test("serves the Apple web-credentials association", async () => {
   assert.deepEqual(payload.webcredentials.apps, ["972G4VGUA6.com.yabuko.studiquo"]);
 });
 
+test("serves the staging app ID only when staging config supplies it", async () => {
+  const response = associationFile({ PASSKEY_APP_ID: "972G4VGUA6.com.yabuko.studiquo.staging" });
+  const payload = await response.json();
+  assert.deepEqual(payload.webcredentials.apps, ["972G4VGUA6.com.yabuko.studiquo.staging"]);
+  assert.deepEqual(payload.applinks.details[0].appIDs, ["972G4VGUA6.com.yabuko.studiquo.staging"]);
+});
+
 test("passkey login resolves to the same canonical account as another verified login method", async () => {
   const env = environment();
   await linkVerifiedEmail(env, {

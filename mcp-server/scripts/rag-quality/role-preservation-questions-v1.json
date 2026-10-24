@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "syntheticOnly": true,
+  "split": "separate-development-role-preservation",
+  "modelEvaluated": false,
+  "cases": [
+    {
+      "id": "role-concept-conditions",
+      "question": "会員登録の成立条件と、代理申請の例外を教えてください。"
+    },
+    {
+      "id": "role-qualified-concept",
+      "question": "対象は施設利用補助です。年度途中の申請について、適用条件を教えてください。"
+    },
+    {
+      "id": "role-explain-across-units",
+      "question": "対象は温度計Rです。校正手順を説明してください。"
+    },
+    {
+      "id": "role-separate-attributes",
+      "question": "収納庫Jと計測器Kを調べています。収納庫Jの容積と計測器Kの質量を、それぞれ教えてください。"
+    },
+    {
+      "id": "role-compare-with-condition",
+      "question": "評価対象は保存媒体Lと保存媒体Mです。高温環境での読取速度を比較してください。"
+    },
+    {
+      "id": "role-calculate-with-operands",
+      "question": "対象は装置Nです。入力は12、出力は3です。変換比を計算してください。"
+    },
+    {
+      "id": "role-recommend-with-distractors",
+      "question": "昨日は受付で筆記用具を借りました。候補は収納棚Pと収納棚Qです。設置場所が狭い場合の選択を勧めてください。"
+    },
+    {
+      "id": "role-joint-summary",
+      "question": "対象は手順書Dと手順書Eです。連絡手順をまとめて要約してください。"
+    },
+    {
+      "id": "role-unnamed-target",
+      "question": "所要時間を教えてください。"
+    },
+    {
+      "id": "role-explicitly-unnamed",
+      "question": "固有の対象名はありません。所要時間だけを教えてください。"
+    },
+    {
+      "id": "role-operation-word-in-name",
+      "question": "対象は「比較室S」です。所在地を教えてください。"
+    },
+    {
+      "id": "role-background-not-target",
+      "question": "講義では方位磁針と地図を例にしました。質問の対象は水準器Tだけです。読み取り誤差を説明してください。"
+    }
+  ]
+}
