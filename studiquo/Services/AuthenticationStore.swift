@@ -449,6 +449,28 @@ final class AuthenticationStore: ObservableObject {
         }
     }
 
+    /// Removes every passkey of the account (the profile's "delete all"),
+    /// so a passkey a thief added with a stolen session can be undone. The
+    /// server asks for an established passkey first when there is one.
+    @discardableResult
+    func removeAllPasskeys() async -> Bool {
+        isPasskeyBusy = true
+        defer { isPasskeyBusy = false }
+        do {
+            try await PasskeyService.shared.removeAllPasskeys(token: MCPCloudCredentials.loadOrCreateToken())
+            needsPasskeyEnrollment = true
+            errorMessage = ""
+            return true
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch PasskeyError.cancelled {
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     /// Mails the code that confirms the mailbox before the first passkey.
     func sendPasskeyEmailCode() async {
         guard !email.isEmpty else { return }

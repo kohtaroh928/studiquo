@@ -293,6 +293,7 @@ struct StudiquoApp: App {
             AccountGateView()
                 .modelContainer(modelContainer)
                 .environmentObject(subscriptionStore)
+                .tint(Theme.Palette.accent)
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
                     VStack(spacing: 8) {
