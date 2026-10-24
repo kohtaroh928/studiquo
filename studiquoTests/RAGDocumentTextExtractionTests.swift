@@ -59,7 +59,7 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
    let service=RAGIndexingService(recognizer:{_ in
     if revoke { RAGConsent.revoke() } else { notebook.isLocked=true }
     return .init(lines:[],failed:false)
-   },transport:{request in
+   },accountPartition:{"synthetic"},transport:{request in
     if request.httpMethod != "GET" { uploads += 1 }
     return (Data("{\"enabled\":true}".utf8),HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
    })
@@ -76,7 +76,7 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   let service=RAGIndexingService(recognizer:{_ in
    recognized += 1
    return .init(lines:[.init(text:"Synthetic OCR page \(recognized)",confidence:0.8)],failed:false)
-  },transport:{request in
+  },accountPartition:{"synthetic"},transport:{request in
    if request.httpMethod != "GET" { batches.append(try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]) }
    return (Data("{\"enabled\":true}".utf8),HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
   })
@@ -95,7 +95,7 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
    let service=RAGIndexingService(recognizer:{_ in
     if changeAccount { account="synthetic-b" } else { notebook.encryptedContent=Data([0]) }
     return .init(lines:[],failed:false)
-   },accountPartition:{account},transport:{request in
+   },accountPartition:{account},accountPartition:{"synthetic"},transport:{request in
     if request.httpMethod != "GET" { uploads += 1 }
     return (Data("{\"enabled\":true}".utf8),HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
    })
@@ -110,7 +110,7 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   let task=Task { @MainActor in
    let service=RAGIndexingService(recognizer:{_ in
     withUnsafeCurrentTask { $0?.cancel() };return .init(lines:[],failed:false)
-   },transport:{request in
+   },accountPartition:{"synthetic"},transport:{request in
     if request.httpMethod != "GET" { uploads += 1 }
     return (Data("{\"enabled\":true}".utf8),HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:nil)!)
    })

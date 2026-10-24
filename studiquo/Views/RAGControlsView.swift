@@ -43,6 +43,10 @@ struct RAGControlsView: View {
             }
             }
             Section("検索範囲") {
+                if !RAGLibrarySyncService.shared.isManaged && RAGDeletionQueue.hasUnresolvedLegacyDeletions() {
+                    Text("以前の削除予約の送信先を確認できないため、資料検索を停止しています。予約は保持され、接続先を切り替えても自動で送信されません。データやアプリを削除せず、サポートにお問い合わせください。安全に復旧する操作は現在この画面にはありません。")
+                        .font(.footnote)
+                }
                 Picker("資料", selection: $selectedID) {
                     Text("資料を選択").tag("")
                     ForEach(eligible) { Text($0.title).tag($0.ragID) }
@@ -85,13 +89,15 @@ struct RAGControlsView: View {
                     cancelOperation()
                     registration = .unknown
                     busy = true
+                    let account = RAGDeletionQueue.accountPartition()
+                    let endpoint = WorkerAIProvider().baseURL
                     Task { @MainActor in
                         defer { busy = false }
                         let oldSource = selected.retireRAGSource()
                         store.ragScope = nil
                         selectedID = selected.ragID
-                        do { try await RAGIndexingService().delete(sourceId: oldSource); status = L("検索データを削除しました。") }
-                        catch { RAGDeletionQueue.enqueue(oldSource); status = L("削除を予約しました。通信回復後に再試行します。") }
+                        do { try await RAGIndexingService().delete(sourceId: oldSource, account: account, endpoint: endpoint); status = L("検索データを削除しました。") }
+                        catch { RAGDeletionQueue.enqueue(oldSource, account: account, endpoint: endpoint); status = L("削除を予約しました。通信回復後に再試行します。") }
                     }
                 }.disabled(busy || selected == nil)
                 if busy {
