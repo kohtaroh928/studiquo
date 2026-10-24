@@ -59,7 +59,7 @@ export async function evaluateCase(testCase: any, {apiKey, openaiFetch, model}: 
  Object.assign(env,{
   OPENAI_API_KEY:apiKey??'synthetic-test-key',
   STUDIQUO_DATA:{get:async(k: any,type: any)=>{const v=values.get(k);return type==='json'&&v?JSON.parse(v):v??null;},put:async(k: any,v: any)=>{values.set(k,v);}},
-  RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{}})},
+  RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{}, reserve: async () => ({ ok: true, windowEndsAt: 1 }), release: async () => true})},
  });
  env.OPENAI_LUNA_MODEL=model??'gpt-6-luna';env.AI_MODERATION='off';env.AI_RETRY_BASE_MS=0;
  const sourceId=`answer-${testCase.id}`;

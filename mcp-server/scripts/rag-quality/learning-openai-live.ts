@@ -67,7 +67,7 @@ export async function runOpenAIPilot({apiKey,fetchImpl=fetch,caseIds,styleOrder,
   if(gate.isStopped())break;
   const pair=learningPairs.find((p: any)=>p.id===id),env=qualityEnvironment(),pending: any[]=[],owner='synthetic-answer-owner',key=await accountKey(owner),sourceId=`answer-${id}`;
   Object.assign(env,{OPENAI_API_KEY:apiKey,OPENAI_LUNA_MODEL:'gpt-6-luna',AI_MODERATION:'off',AI_RETRY_BASE_MS:0,
-   RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:Date.now()+60000}),give:async()=>{}})}});
+   RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:Date.now()+60000}),give:async()=>{}, reserve: async () => ({ ok: true, windowEndsAt: Date.now()+60000 }), release: async () => true})}});
   const original=globalThis.fetch;let baseline: any;
   try {
    await indexSource(env,key,qualitySource({sourceId,title:'合成教材 最終回答評価',totalPages:pair.pages.length,pages:pair.pages.map((text: any,i: any)=>({pageNumber:i+1,text}))}));

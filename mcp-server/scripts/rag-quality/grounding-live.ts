@@ -28,7 +28,7 @@ export async function main() {
   for (const q of QUESTIONS) for (let i = 0; i < samples && !gate.isStopped(); i++) {
     const env = qualityEnvironment(), pending: any[] = [];
     Object.assign(env, { OPENAI_API_KEY: apiKey, OPENAI_LUNA_MODEL: 'gpt-6-luna', AI_MODERATION: 'off', AI_RETRY_BASE_MS: 0,
-      RATE_COUNTER: { getByName: () => ({ bump: async () => true, take: async () => ({ ok: true, windowEndsAt: Date.now() + 60000 }), give: async () => {} }) } });
+      RATE_COUNTER: { getByName: () => ({ bump: async () => true, take: async () => ({ ok: true, windowEndsAt: Date.now() + 60000 }), give: async () => {}, reserve: async () => ({ ok: true, windowEndsAt: Date.now() + 60000 }), release: async () => true }) } });
     await indexSource(env, await accountKey('g-owner'), qualitySource({ pages: [{ pageNumber: 1, text: PAGE }] }));
     let raw = '';
     const original = globalThis.fetch, log = console.log, events: any[] = [];

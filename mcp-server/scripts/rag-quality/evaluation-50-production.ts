@@ -66,7 +66,7 @@ export async function captureProductionProbe(suite='development') {
   const c=bank.cases.find((c: any)=>c.id===id),env=qualityEnvironment(),pending: any[]=[];
   const owner='synthetic-answer-owner',key=await accountKey(owner),sourceId=id;
   Object.assign(env,{OPENAI_API_KEY:'synthetic-capture-key',OPENAI_LUNA_MODEL:'gpt-6-luna',AI_MODERATION:'off',
-   RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{}})}});
+   RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{}, reserve: async () => ({ ok: true, windowEndsAt: 1 }), release: async () => true})}});
   let baseline;
   try {
    await indexSource(env,key,qualitySource({sourceId,title:'合成教材 最終回答評価',pages:c.pages,totalPages:c.pages.length}));

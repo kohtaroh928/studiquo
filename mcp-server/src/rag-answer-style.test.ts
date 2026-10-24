@@ -19,7 +19,7 @@ async function capturePair(c, styles = [undefined, 'source_only']) {
   STUDIQUO_DATA: {get: async (k, type) => {
    const v = values.get(k); return type === 'json' && v ? JSON.parse(v) : v ?? null;
   }, put: async (k, v) => {values.set(k, v);}},
-  RATE_COUNTER: {getByName: () => ({bump: async () => true, take: async () => ({ok:true,windowEndsAt:1}), give: async () => {}})},
+  RATE_COUNTER: {getByName: () => ({bump: async () => true, take: async () => ({ok:true,windowEndsAt:1}), give: async () => {}, reserve: async () => ({ok:true,windowEndsAt:1}), release: async () => true})},
  });
  const owner = 'synthetic-answer-owner';
  const key = await accountKey(owner);

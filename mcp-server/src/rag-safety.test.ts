@@ -152,7 +152,7 @@ test('ordinary OpenAI retries do not resend RAG data revoked during the first at
  const c=await managed();await indexSource(c.env,c.key,c.source);
  const values=new Map();Object.assign(c.env,{OPENAI_LUNA_MODEL: "gpt-test-luna", AI_MODERATION: "off", OPENAI_API_KEY:'synthetic-key',AI_RETRY_BASE_MS:'1',
   STUDIQUO_DATA:{get:async(k,type)=>type==='json'&&values.get(k)?JSON.parse(values.get(k)):values.get(k)??null,put:async(k,v)=>values.set(k,v)},
-  RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{}})}});
+  RATE_COUNTER:{getByName:()=>({bump:async()=>true,take:async()=>({ok:true,windowEndsAt:1}),give:async()=>{},reserve:async()=>({ok:true,windowEndsAt:1}),release:async()=>true})}});
  const original=globalThis.fetch;const bodies=[];
  try{
   globalThis.fetch=async(url,opts)=>{
