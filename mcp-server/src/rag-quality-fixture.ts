@@ -2,9 +2,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 export function qualityEnvironment({ legacy = false }: any = {}) {
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(new URL('../migrations/0006_rag.sql', import.meta.url) as any, 'utf8') as any);
-  if (!legacy) db.exec(readFileSync(new URL("../migrations/0007_rag_context.sql", import.meta.url) as any, "utf8") as any);
-  if (!legacy) db.exec(readFileSync(new URL("../migrations/0008_rag_control.sql", import.meta.url) as any, "utf8") as any);
+  db.exec(readFileSync(new URL('../migrations/0020_rag.sql', import.meta.url) as any, 'utf8') as any);
+  if (!legacy) db.exec(readFileSync(new URL("../migrations/0021_rag_context.sql", import.meta.url) as any, "utf8") as any);
+  if (!legacy) db.exec(readFileSync(new URL("../migrations/0022_rag_control.sql", import.meta.url) as any, "utf8") as any);
   const prepare = (sql: any) => ({ bind(...args: any[]) { return {
     first: async () => db.prepare(sql).get(...args) ?? null,
     all: async () => ({ results: db.prepare(sql).all(...args) }),

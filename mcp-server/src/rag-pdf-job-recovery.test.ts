@@ -15,7 +15,7 @@ const policy={perOwnerActive:1,globalActive:2,globalMemoryBytes:96*1024*1024,
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 async function setup({claim=true,dispatch=false,migration=true}={}){
  const e=qualityEnvironment();e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED='true';
- for(const file of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql',...(migration?['0013_rag_pdf_job_recovery.sql']:[])])
+ for(const file of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql',...(migration?['0027_rag_pdf_job_recovery.sql']:[])])
   e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${file}`,import.meta.url),'utf8'));
  let now=1000000,calls=0;const options={clock:()=>now,timeoutMs:15};
  const key=await accountKey(session.sub);await updateConsent(e,key,{enabled:true,expectedEpoch:0});

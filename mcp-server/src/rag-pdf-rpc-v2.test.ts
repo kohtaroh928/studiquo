@@ -27,7 +27,7 @@ function request(body=bytes,signal){return new Request('https://example.test/int
  headers:{'Content-Type':'application/pdf','X-Studiquo-AI-Consent':'openai-v1','X-Studiquo-Age':'adult','X-Studiquo-RAG-Consent':'rag-openai-v1','X-Studiquo-Raw-PDF-Consent':'raw-pdf-docling-v1'}});}
 async function setup({rpcMigration=true,v2=true}={}){
  const e=qualityEnvironment();e.RAG_PDF_RPC_V2_ENABLED=String(v2);e.RAG_PDF_STOP_EVIDENCE_ENABLED='true';e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED='true';
- for(const p of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql','0014_rag_pdf_retention.sql','0015_rag_pdf_purge.sql','0016_rag_pdf_stop_evidence.sql','0017_rag_pdf_evidence_retention.sql',...(rpcMigration?['0018_rag_pdf_rpc_v2.sql']:[])])e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${p}`,import.meta.url),'utf8'));
+ for(const p of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql','0028_rag_pdf_retention.sql','0029_rag_pdf_purge.sql','0030_rag_pdf_stop_evidence.sql','0031_rag_pdf_evidence_retention.sql',...(rpcMigration?['0032_rag_pdf_rpc_v2.sql']:[])])e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${p}`,import.meta.url),'utf8'));
  const key=await accountKey(session.sub);await updateConsent(e,key,{enabled:true,expectedEpoch:0});
  await updateRawPDFConsent(e,session,{enabled:true,expectedEpoch:0,consentEpoch:1,consentVersion:'raw-pdf-docling-v1'});
  const pdfSha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -120,7 +120,7 @@ test('late dispatch CAS cannot revive a stopped job and cancel-before-parse bloc
 
 test('0018 preserves legacy rows; v2 fields and deadline cannot change, clear or downgrade',async()=>{
  const s=await setup({rpcMigration:false,v2:false}),j=await reserveRawPDFJob(s.e,session,s.proof,limits);
- const db=s.e.ADMIN_DB.db,before=job(s);db.exec(readFileSync(new URL('../migrations/0018_rag_pdf_rpc_v2.sql',import.meta.url),'utf8'));
+ const db=s.e.ADMIN_DB.db,before=job(s);db.exec(readFileSync(new URL('../migrations/0032_rag_pdf_rpc_v2.sql',import.meta.url),'utf8'));
  const after=job(s);for(const k of Object.keys(before))assert.deepEqual(after[k],before[k]);assert.equal(after.rpc_version,1);
  const claim=await beginRawPDFStopEvidence(s.e,session,s.proof,j.jobId);
  assert.throws(()=>db.exec("UPDATE rag_pdf_jobs SET rpc_version=2"),/pdf_rpc_contract_invalid/u);

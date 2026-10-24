@@ -24,7 +24,7 @@ function request(body=bytes,signal){return new Request('https://example.test/int
  headers:{'Content-Type':'application/pdf','X-Studiquo-AI-Consent':'openai-v1','X-Studiquo-Age':'adult','X-Studiquo-RAG-Consent':'rag-openai-v1','X-Studiquo-Raw-PDF-Consent':'raw-pdf-docling-v1'}});}
 async function setup({lastMigration=true}={}){
  const e=qualityEnvironment();e.RAG_PDF_STOP_EVIDENCE_ENABLED='true';e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED='true';
- for(const p of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql','0014_rag_pdf_retention.sql','0015_rag_pdf_purge.sql','0016_rag_pdf_stop_evidence.sql',...(lastMigration?['0017_rag_pdf_evidence_retention.sql']:[])])e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${p}`,import.meta.url),'utf8'));
+ for(const p of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql','0028_rag_pdf_retention.sql','0029_rag_pdf_purge.sql','0030_rag_pdf_stop_evidence.sql',...(lastMigration?['0031_rag_pdf_evidence_retention.sql']:[])])e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${p}`,import.meta.url),'utf8'));
  const key=await accountKey(session.sub);await updateConsent(e,key,{enabled:true,expectedEpoch:0});
  await updateRawPDFConsent(e,session,{enabled:true,expectedEpoch:0,consentEpoch:1,consentVersion:'raw-pdf-docling-v1'});
  const pdfSha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -198,7 +198,7 @@ test('0017 preserves populated proof rows and job identity while disabling the p
  const s=await setup({lastMigration:false});assert.equal((await run(s)).consumed,true);
  const db=s.e.ADMIN_DB.db,beforeProof=evidence(s),beforeJob=job(s);
  db.exec('UPDATE rag_pdf_purge_control SET enabled=1,writer_fenced=1');
- db.exec(readFileSync(new URL('../migrations/0017_rag_pdf_evidence_retention.sql',import.meta.url),'utf8'));
+ db.exec(readFileSync(new URL('../migrations/0031_rag_pdf_evidence_retention.sql',import.meta.url),'utf8'));
  assert.deepEqual(evidence(s),beforeProof);assert.deepEqual(job(s),beforeJob);
  const control=db.prepare('SELECT * FROM rag_pdf_purge_control').get();
  assert.equal(control.enabled,0);assert.equal(control.writer_fenced,1);assert.equal(control.contract_version,'pre-adoption-stop-v2');

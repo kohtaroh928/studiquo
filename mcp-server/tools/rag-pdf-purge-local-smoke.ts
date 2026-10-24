@@ -13,7 +13,7 @@ const mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',cf:false,d1Pe
   compatibilityDate:'2026-08-27',d1Databases:['ADMIN_DB']}]}));
 try{
  const db=await mf.getD1Database('ADMIN_DB'),dir=new URL('../migrations/',import.meta.url);let files=0;
- for(const name of readdirSync(dir).filter(n=>/^00(?:0[1-9]|1[0-5])_.*\.sql$/u.test(n)).sort()){
+ for(const name of readdirSync(dir).filter(n=>/^00(?:0[1-9]|[12]\d)_.*\.sql$/u.test(n)).sort()){
   for(const sql of unstable_splitSqlQuery(readFileSync(new URL(name,dir),'utf8') as any))await db.prepare(sql).run();files++;
  }
  const DAY=86400000,n=Date.now(),today=Math.floor(n/DAY)*DAY;

@@ -13,13 +13,13 @@ import {claimRawPDFStart} from './rag/pdf-start-gate.ts';
 import {purgeSettledRawPDFJobs} from './rag/pdf-purge.ts';
 import {cleanupAccountRawPDF} from './rag/pdf-account-cleanup.ts';
 const session={sub:'synthetic-start-owner'},limits={perOwnerActive:1,globalActive:1,globalMemoryBytes:67108864,perOwnerDailyUnits:20,globalDailyUnits:20,reservationUnits:1,perOwnerDailyRequests:20,globalDailyRequests:20};
-const names=['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql','0014_rag_pdf_retention.sql','0015_rag_pdf_purge.sql','0016_rag_pdf_stop_evidence.sql','0017_rag_pdf_evidence_retention.sql','0018_rag_pdf_rpc_v2.sql'];
+const names=['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql','0028_rag_pdf_retention.sql','0029_rag_pdf_purge.sql','0030_rag_pdf_stop_evidence.sql','0031_rag_pdf_evidence_retention.sql','0032_rag_pdf_rpc_v2.sql'];
 const row=s=>s.db.prepare('SELECT * FROM rag_pdf_jobs WHERE job_id=?').get(s.contract.jobId);
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
 async function waitPhase(p){let timer;try{return await Promise.race([p,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('synthetic phase not reached')),1500);})]);}finally{clearTimeout(timer);}}
 async function setup({newSchema=true,oneShot=true}={}){
  const e=qualityEnvironment(),db=e.ADMIN_DB.db;let n=Date.now();const options={clock:()=>n};
- for(const name of [...names,...(newSchema?['0019_rag_pdf_start_gate.sql']:[])])db.exec(readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+ for(const name of [...names,...(newSchema?['0033_rag_pdf_start_gate.sql']:[])])db.exec(readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
  e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED=e.RAG_PDF_START_GATE_ENABLED=e.RAG_PDF_STOP_EVIDENCE_ENABLED=e.RAG_PDF_RPC_V2_ENABLED='true';
  e.DOCLING_PROCESSOR={cancelV2:async()=>({cancelled:true})};
  e.ADMIN_DB.prepare=sql=>({bind(...args){const st=()=>db.prepare(sql);return {first:async()=>st().get(...args)??null,all:async()=>({results:st().all(...args)}),run:async()=>st().columns().length?{results:st().all(...args)}:{results:[],meta:{changes:Number(st().run(...args).changes)}}};}});
@@ -53,7 +53,7 @@ test('two concurrent callers and a replicated nonce return only one permission',
 
 test('legacy rows survive migration unchanged and cannot be upgraded after dispatch or treated as unused',async()=>{
  const s=await setup({newSchema:false,oneShot:false}),before=row(s);
- s.db.exec(readFileSync(new URL('../migrations/0019_rag_pdf_start_gate.sql',import.meta.url),'utf8'));
+ s.db.exec(readFileSync(new URL('../migrations/0033_rag_pdf_start_gate.sql',import.meta.url),'utf8'));
  for(const k of Object.keys(before))assert.deepEqual(row(s)[k],before[k]);assert.equal(row(s).start_protocol,'legacy');
  await assert.rejects(()=>claim(s),/pdf_start_denied/u);
  assert.throws(()=>s.db.exec("UPDATE rag_pdf_jobs SET start_protocol='one-shot-v1'"),/pdf_start_invalid/u);

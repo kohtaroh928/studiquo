@@ -15,7 +15,7 @@ const limits={perOwnerActive:1,globalActive:2,globalMemoryBytes:96*1024*1024,
 const reject=(fn,code)=>assert.rejects(fn,e=>{assert.equal(e.message,code);return true;});
 async function setup({jobs=true}={}){
  const e=qualityEnvironment();e.AI_PROVIDER_APPROVED=e.RAG_AUTO_INDEX_ENABLED=e.RAG_PDF_PROCESSING_ENABLED='true';
- for(const path of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql',...(jobs?['0012_rag_pdf_jobs.sql']:[])])
+ for(const path of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql',...(jobs?['0026_rag_pdf_jobs.sql']:[])])
   e.ADMIN_DB.db.exec(readFileSync(new URL(`../migrations/${path}`,import.meta.url),'utf8'));
  let time=1000000;const options={clock:()=>time};
  async function intake(documentId,session=user,more={}){

@@ -15,11 +15,11 @@ const policy={perOwnerActive:1,globalActive:2,globalMemoryBytes:96*1024*1024,
  perOwnerDailyUnits:10,globalDailyUnits:20,reservationUnits:3,perOwnerDailyRequests:10,globalDailyRequests:20};
 const reject=(fn,code)=>assert.rejects(fn,e=>{assert.equal(e.message,code);return true;});
 const ddl=name=>readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8');
-const retentionDDL=()=>ddl('0014_rag_pdf_retention.sql');
+const retentionDDL=()=>ddl('0028_rag_pdf_retention.sql');
 async function setup({retention=true}={}){
  const env=qualityEnvironment(),db=env.ADMIN_DB.db;
  env.AI_PROVIDER_APPROVED=env.RAG_AUTO_INDEX_ENABLED=env.RAG_PDF_PROCESSING_ENABLED=env.RAG_PDF_RETENTION_ENABLED='true';
- for(const name of ['0010_rag_raw_pdf_consent.sql','0011_rag_pdf_intakes.sql','0012_rag_pdf_jobs.sql','0013_rag_pdf_job_recovery.sql'])db.exec(ddl(name));
+ for(const name of ['0024_rag_raw_pdf_consent.sql','0025_rag_pdf_intakes.sql','0026_rag_pdf_jobs.sql','0027_rag_pdf_job_recovery.sql'])db.exec(ddl(name));
  if(retention)db.exec(retentionDDL());
  const key=await accountKey(user.sub);await updateConsent(env,key,{enabled:true,expectedEpoch:0});
  await updateRawPDFConsent(env,user,{enabled:true,expectedEpoch:0,consentEpoch:1,consentVersion:'raw-pdf-docling-v1'});
