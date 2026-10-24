@@ -62,6 +62,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   SLACK_ISSUE_REPORT_WEBHOOK_URL?: string;
+  // "staging" on the staging Worker (marks Slack, push, e-mail and admin pages); unset on production.
+  ENVIRONMENT_LABEL?: string;
   APNS_TEAM_ID?: string;
   APNS_TOPIC?: string;
   APNS_SANDBOX_KEY_ID?: string;
