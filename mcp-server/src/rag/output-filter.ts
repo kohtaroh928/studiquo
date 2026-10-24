@@ -173,8 +173,6 @@ export function redactLinks(text: any) {
 }
 
 // A finished reply, filtered. When nothing had to be removed the model's own text is
-
-// A finished reply, filtered. When nothing had to be removed the model's own text is
 // returned unchanged (emoji sequences, Persian and Hindi joiners, variant forms intact).
 // When something was removed, the reply is the filtered view, so the invisible characters
 // of that one reply are lost with it: a reply that carried a link is not worth keeping

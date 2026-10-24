@@ -194,3 +194,5 @@ PR #14のマージ後に、レビュー未実施だった2コミットと待ち�
 
 - 実API: `mcp-server/scripts/rag-quality/injection-live.mjs`、`grounding-live.mjs`（`STUDIQUO_RAG_OPENAI_KEY_FILE`でキーの場所を渡す。1回の実行は最大24／6呼び出し）。
 - 実API使用の合計: 72呼び出し（動作確認12＋インジェクション評価48＋根拠確認12）、約27万トークン（`gpt-6-luna`）。
+
+注: この記録の `injection-live.mjs`・`grounding-live.mjs`・`latency-live.mjs`・`*.test.js` は当時の名前で、現在は同じ場所の `.ts` である。

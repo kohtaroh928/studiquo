@@ -844,3 +844,24 @@ test("a teen's partial reply is screened when the provider reports failed or inc
     }
   } finally { globalThis.fetch = original; }
 });
+
+test("when the moderation service is unavailable a teen's reply is let through without the 'flagged' notice", async () => {
+  const original = globalThis.fetch;
+  let moderationCalls = 0;
+  globalThis.fetch = async (url) => {
+    // The first call screens the student's question and note (let through); the one after the reply is
+    // the one that is unavailable.
+    if (String(url).includes("/moderations")) {
+      moderationCalls++;
+      return moderationCalls === 1 ? new Response(JSON.stringify({ results: [{ categories: {} }] })) : new Response("unavailable", { status: 503 });
+    }
+    return new Response(sse(["資料にもとづく回答です。"]));
+  };
+  try {
+    const result = await chat(env({ AI_MODERATION: undefined }), { messages: [{ role: "user", text: "質問" }], noteContext: "共有ノートの本文" }, { "X-Studiquo-Age": "teen" });
+    const texts = textEvents(result.text).map((e) => e.text);
+    assert.equal(texts[0], "資料にもとづく回答です。", "the reply itself is still delivered");
+    assert.ok(moderationCalls >= 2, "the reply was screened after the question was");
+    assert.ok(!texts.some((t) => /保護者や先生/.test(t)), "an unavailable screen is not a flag");
+  } finally { globalThis.fetch = original; }
+});
