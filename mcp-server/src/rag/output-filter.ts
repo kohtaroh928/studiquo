@@ -27,17 +27,24 @@ const URL_CHARS = "A-Za-z0-9\\-._~:/?#\\[\\]@!$&'*+,;=%\\\\";
 // A "$" followed by a space is a plain character, not the start of a math span.
 const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|[^\\x00-\\x7F\\s]+(?=[${URL_CHARS}\`]))+`;
 // "http:" or "https:". Browsers drop tabs and line breaks anywhere in an address, so
-// "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com". The
-// gap after the colon is accepted only when an address character follows, so a line that
-// merely ends in "https:" does not take the next line with it.
+// "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com", and so is
+// "https:\n$e.com" (the same as "https:$e.com", which a browser reads as a web address too).
+// Any run of tabs and line breaks (a lone CR included) is taken, between the letters and after the
+// colon, when something that is not a space or a sentence mark follows it. A line that ends in
+// "https:" therefore takes the next line's first word, and a blank line does not stop it: the
+// browser joins "https:\n\n$e.com" into one address, and any host character may start it ($ ! _ ~
+// % @, non-ASCII, ...), so the rule is "anything but a space or a sentence mark", not a list of
+// address characters. The price is that "https:" at the end of a paragraph takes the first word of
+// the next one (a heading mark, a list number, an English word, a Japanese sentence up to its mark).
+// A bare "https:" in the middle of a line, followed by a space, takes nothing.
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[A-Za-z0-9/\\\\]))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:[\\t\\r\\n]+(?!\`\`\`))?(?=[^\\s、。！？)）」』】])|[\\t\\r\\n]*[、。！？)）」』】](?=\\S))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
 // after "http(s):" up to a space or a sentence mark goes, whichever form it takes. A lone
 // "`" or "$" is a plain character here: it does not end the address.
-const URL_LOOSE_RE = new RegExp(`${HTTP}(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|\\$|\`|[^\\s、。！？)）」』】\`$])+`, "giu");
+const URL_LOOSE_RE = new RegExp(`${HTTP}(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|\\$|\`|[\\t\\r\\n]+(?=[/\\\\])|[^\\s、。！？)）」』】\`$])+`, "giu");
 // A target with any scheme (https:, javascript:, mailto:, tel:, data:, "https:e.com", ...),
 // a leading // or www. is a link; a plain "[0](添字)" is not.
 const LINK_TARGET_RE = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/|www\.)/iu;
@@ -116,15 +123,56 @@ function stripMarkdownLinks(text: any, depth = 0) {
   return out;
 }
 
+// "`https:`" written as a word in a sentence ("プロトコルは `https:` です") is a description, not an
+// address, and is left alone, provided the closing backtick ends the thought. Once the backticks
+// are gone, "`https:`//e.com" or "`https:`\n$e.com" reads as an address (browsers drop the line
+// break and the tab), so anything but a space or a sentence mark after the closing backtick, past any run of tabs and
+// line breaks, means it is not a description and is removed like any other.
+const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`/giu;
+// A scheme in backticks that is not a description takes the address after it (past any run of tabs and line breaks).
+const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:(?:[\t\r\n]+(?!```))?(?=[^\s、。！？)）」』】])|[\t\r\n]*[、。！？)）」』】](?=[!-_a-~])|[,.;:!?][\t\r\n]+(?=\S))?(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
+const AFTER_CODE = /[\t\r\n]*([^]?)([^]?)/uy;
+
+function endsTheThought(text: string, end: number) {
+  AFTER_CODE.lastIndex = end;
+  const [match, first, second] = AFTER_CODE.exec(text)!;
+  if (first === "") return true;
+  if (first === " ") return true;
+  // A closing fence on the next line is not part of an address.
+  const run = match.length - first.length - second.length;
+  if (first === "`" && run > 0 && text.startsWith("```", end + run)) return true;
+  // A sentence mark ends the thought unless an ASCII host character follows it right away
+  // ("`https:`、a.evil.com"); Japanese text behind it ("`http:`、`https:`の違い") is prose. The
+  // ASCII marks do not even take a line break ("`https:`,\na.evil.com"): browsers drop the break.
+  if (/[、。！？)）」』】]/u.test(first)) return !/[!-_a-~]/u.test(second);
+  if (/[,.;:!?]/u.test(first)) return second === "" || second === " ";
+  return false;
+}
+
+function protectSchemeInCode(text: string) {
+  const spans: string[] = [];
+  let mark: string | null = null;
+  for (let code = 0xe000; code <= 0xf8ff && mark === null; code++) if (!text.includes(String.fromCharCode(code))) mark = String.fromCharCode(code);
+  if (mark === null) return { text, restore: (value: string) => value };
+  const protectedText = text.replace(SCHEME_IN_CODE, (span, offset) => (endsTheThought(text, offset + span.length) ? `${mark}${spans.push(span) - 1}${mark}` : span));
+  if (spans.length === 0) return { text, restore: (value: string) => value };
+  const token = new RegExp(`${mark}(\\d+)${mark}`, "gu");
+  return { text: protectedText, restore: (value: string) => value.replace(token, (_: string, index: string) => spans[Number(index)] ?? "") };
+}
+
 // The links and identifiers removed from `text`, which must already be free of invisible
 // characters (or those characters must not matter).
 export function redactLinks(text: any) {
-  return stripMarkdownLinks(text)
+  const kept = protectSchemeInCode(text);
+  return kept.restore(stripMarkdownLinks(kept.text)
+    .replace(CODE_SCHEME_ADDRESS, REMOVED)
     .replace(URL_RE, REMOVED)
     .replace(URL_LOOSE_RE, REMOVED)
     .replace(ID_FIELD_RE, "")
-    .replace(HEX_ID_RE, "");
+    .replace(HEX_ID_RE, ""));
 }
+
+// A finished reply, filtered. When nothing had to be removed the model's own text is
 
 // A finished reply, filtered. When nothing had to be removed the model's own text is
 // returned unchanged (emoji sequences, Persian and Hindi joiners, variant forms intact).
