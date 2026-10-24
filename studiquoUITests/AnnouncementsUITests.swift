@@ -52,11 +52,8 @@ final class AnnouncementsUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [settled], timeout: 15), .completed, "お知らせの一覧も「ありません」の案内も出ません。")
         if empty.exists {
             let known = ["お知らせはまだありません。", "お知らせを取得できませんでした。通信状況を確認してください。"]
-            // 既知の不具合: `Text(String)` に翻訳キーを渡しているため、キーがそのまま表示される
-            // (`announcements.empty`)。直ったらこの宣言は「想定外の成功」として失敗するので、外すこと。
-            XCTExpectFailure("空のお知らせの案内が翻訳されず、キーのまま表示される(Notionのカード参照)") {
-                XCTAssertTrue(known.contains(empty.label), "空のときの案内が日本語になっていません: \(empty.label)")
-            }
+            // `Text(LocalizedStringKey(...))` で表示するので、翻訳キーのまま出ない(直した不具合の回帰テスト)。
+            XCTAssertTrue(known.contains(empty.label), "空のときの案内が日本語になっていません: \(empty.label)")
             XCTAssertFalse(app.buttons["すべて既読"].exists, "お知らせが無いのに「すべて既読」が出ています。")
         } else {
             XCTAssertGreaterThan(rows.count, 0)
