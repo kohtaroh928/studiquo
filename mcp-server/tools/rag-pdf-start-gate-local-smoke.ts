@@ -20,7 +20,7 @@ const mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',cf:false,d1Pe
 try{
  const db=await mf.getD1Database('ADMIN_DB'),dir=new URL('../migrations/',import.meta.url);let count=0;
  const apply=async name=>{for(const sql of unstable_splitSqlQuery(readFileSync(new URL(name,dir),'utf8')))await db.prepare(sql).run();count++;};
- for(const name of readdirSync(dir).filter(n=>/^00(?:0[1-9]|1[0-8])_.*\.sql$/u.test(n)).sort())await apply(name);
+ for(const name of readdirSync(dir).filter(n=>/^00(?:0[1-9]|[12]\d|3[0-2])_.*\.sql$/u.test(n)).sort())await apply(name);
  const env={ADMIN_DB:db,AI_PROVIDER_APPROVED:'true',RAG_ENABLED:'true',RAG_AUTO_INDEX_ENABLED:'true',RAG_PDF_PROCESSING_ENABLED:'true',
   RAG_PDF_START_GATE_ENABLED:'true',RAG_PDF_STOP_EVIDENCE_ENABLED:'true',RAG_PDF_RPC_V2_ENABLED:'true',DOCLING_PROCESSOR:{cancelV2:async()=>({cancelled:true})}};
  const session={sub:'synthetic-start-local'},key=await accountKey(session.sub);
@@ -34,7 +34,7 @@ try{
  };
  const settle=async s=>{await s.scope.sealAndRecord();await confirmRawPDFRemoteStop(env,s.contract.jobId);await settleRawPDFJobFromEvidence(env,s.contract.jobId);};
  const get=s=>db.prepare('SELECT * FROM rag_pdf_jobs WHERE job_id=?').bind(s.contract.jobId).first();
- const old=await prepare('legacy',false),before=await get(old);await apply('0033_rag_pdf_start_gate.sql');assert.equal(count,21);
+ const old=await prepare('legacy',false),before=await get(old);const loaded=count;await apply('0033_rag_pdf_start_gate.sql');assert.equal(count,loaded+1);
  const after=await get(old);for(const k of Object.keys(before))assert.deepEqual(after[k],before[k]);assert.equal(after.start_protocol,'legacy');
  await assert.rejects(()=>claimRawPDFStart(env,old.contract,crypto.randomUUID()));await settle(old);
  const fresh=await prepare('new',true),id=crypto.randomUUID();

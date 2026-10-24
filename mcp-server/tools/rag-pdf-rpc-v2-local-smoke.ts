@@ -45,7 +45,7 @@ try{
  for(const name of readdirSync(dir).filter(n=>/^00(?:0[1-9]|[12]\d|3[0-2])_.*\.sql$/u.test(n)).sort()){
   for(const sql of unstable_splitSqlQuery(readFileSync(new URL(name,dir),'utf8')))await db.prepare(sql).run();files++;
  }
- assert.equal(files,20);
+ assert.equal(files,21); // 0001-0005, main's 0006-0008, RAG 0020-0032
  const {DOCLING_PROCESSOR}=await mf.getBindings('caller');
  const env={ADMIN_DB:db,DOCLING_PROCESSOR,RAG_ENABLED:'true',AI_PROVIDER_APPROVED:'true',RAG_AUTO_INDEX_ENABLED:'true',
   RAG_PDF_PROCESSING_ENABLED:'true',RAG_PDF_STOP_EVIDENCE_ENABLED:'true',RAG_PDF_RPC_V2_ENABLED:'true'};
