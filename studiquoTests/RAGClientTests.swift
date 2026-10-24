@@ -211,24 +211,32 @@ final class RAGClientTests: XCTestCase {
             XCTFail("A changed account must not acknowledge the deletion")
         } catch { XCTAssertEqual(account, "b") }
     }
-    func testIndexStopsAfterEndpointChangesDuringFirstBatch() async {
+    /// The endpoint is fixed when the app starts (`LaunchStoreEnvironment`), so changing the
+    /// `mcpCloudEndpoint` setting while an index is running cannot send the rest of it elsewhere.
+    /// (Before the staging/production separation the index had to notice and stop; now the
+    /// address simply does not move, and every request keeps going to the launch endpoint.)
+    func testChangingTheEndpointSettingDuringIndexDoesNotRedirectTheUploads() async {
         let previous = UserDefaults.standard.object(forKey: "mcpCloudEndpoint")
         defer {
             if let previous { UserDefaults.standard.set(previous, forKey: "mcpCloudEndpoint") }
             else { UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint") }
         }
+        let launchHost = WorkerAIProvider().baseURL?.host
         UserDefaults.standard.set("https://first.example", forKey: "mcpCloudEndpoint")
         let notebook = Notebook(title: "Synthetic fixture")
         for index in 0..<6 { notebook.addPage(NotePage(order: index)) }
-        var uploads = 0
+        var uploadHosts: [String] = []
         let service = RAGIndexingService(accountPartition: { "test-account" }) { request in
             if request.httpMethod == "GET" { return self.response(request, json: "{\"enabled\":true}") }
-            uploads += 1
+            uploadHosts.append(request.url?.host ?? "")
             UserDefaults.standard.set("https://second.example", forKey: "mcpCloudEndpoint")
             return self.response(request)
         }
-        do { try await service.index(notebook); XCTFail("Must stop when endpoint changes") }
-        catch { XCTAssertEqual(uploads, 1) }
+        _ = try? await service.index(notebook)
+        XCTAssertFalse(uploadHosts.isEmpty, "the index should have uploaded at least once")
+        XCTAssertFalse(uploadHosts.contains("first.example") || uploadHosts.contains("second.example"),
+                       "the setting must not redirect the uploads: \(uploadHosts)")
+        XCTAssertEqual(WorkerAIProvider().baseURL?.host, launchHost, "the endpoint must stay what it was at launch")
     }
     func testRetrievalStatusDecodesAllKnownStatesAndRejectsUnknownOrLegacyEvents() {
         for status in RAGRetrievalStatus.allCases {
