@@ -60,7 +60,7 @@ test('active file changes same inode replacement lock and source changes poison 
   const j=open(d);let stub;
   if(kind==='same_inode'){const raw=fs.readFileSync(file(d),'utf8');fs.writeFileSync(file(d),raw.replace('persistence_manifest','persistence_manifesX'));}
   if(kind==='replacement'){fs.renameSync(file(d),path.join(p,'old'));fs.writeFileSync(file(d),fs.readFileSync(path.join(p,'old')),{mode:0o600});}
-  if(kind==='lock'){fs.rmdirSync(lock(d));fs.mkdirSync(lock(d),{mode:0o700});}
+  if(kind==='lock'){fs.renameSync(lock(d),path.join(p,'old-lock'));fs.mkdirSync(lock(d),{mode:0o700});}
   if(kind==='source'){const orig=fs.readFileSync;stub=t.mock.method(fs,'readFileSync',(f,...args)=>{const v=orig(f,...args);return String(f).endsWith('subject-role-paired-journal.ts')?Buffer.concat([Buffer.from(v),Buffer.from('changed')]):v;});}
   try{assert.throws(()=>j.reserveNext(),error);}finally{stub?.mock.restore();}assert.throws(()=>j.close(),error);assert.ok(fs.existsSync(lock(d)));
  });
