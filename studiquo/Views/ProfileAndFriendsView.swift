@@ -37,6 +37,8 @@ struct UserProfileView: View {
     @AppStorage("profileBio") private var bio = ""
     @AppStorage("profileImage") private var imageData = Data()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var passkeyAdded = false
+    @State private var confirmsPasskeyRemoval = false
     /// A multiline `TextField(_:text:axis:.vertical)` bound straight to an
     /// `@AppStorage` value re-triggers this `Form`'s layout (the field's own
     /// height depends on its text) on every keystroke as the write-through to
@@ -46,41 +48,98 @@ struct UserProfileView: View {
     /// `bio` on change, keeps every keystroke local to this view instead.
     @State private var bioDraft = ""
 
+    // Kept out of `body`: the whole Form in one expression exceeded the
+    // compiler's type-check time limit under CodeQL's slower tracing build.
+    @ViewBuilder private var profileSection: some View {
+        Section {
+            HStack(spacing: 18) {
+                profileImage
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label("写真を選ぶ", systemImage: "photo")
+                }
+            }
+            TextField("名前", text: $name)
+            TextField("職業・身分", text: $occupation)
+            TextField("自己紹介", text: $bioDraft, axis: .vertical).lineLimit(3...6)
+            LabeledContent("メールアドレス", value: authentication.email)
+        } footer: {
+            Text("名前・写真・自己紹介はフレンドに表示されます。自己紹介は500文字まで共有されます。")
+        }
+    }
+
+    @ViewBuilder private var loginSection: some View {
+        Section {
+            Button {
+                Task { passkeyAdded = await authentication.addPasskey() }
+            } label: {
+                Label(
+                    passkeyAdded ? "パスキーを追加しました" : "パスキーを追加",
+                    systemImage: passkeyAdded ? "checkmark.circle.fill" : "person.badge.key.fill"
+                )
+            }
+            .disabled(authentication.isPasskeyBusy || passkeyAdded)
+            Button("パスキーをすべて削除", role: .destructive) { confirmsPasskeyRemoval = true }
+                .disabled(authentication.isPasskeyBusy)
+            if !authentication.errorMessage.isEmpty {
+                Text(authentication.errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Palette.danger)
+            }
+        } header: {
+            Text("ログイン")
+        } footer: {
+            Text("パスキーはiCloudキーチェーンに安全に保存され、次回からFace IDまたはTouch IDでログインできます。")
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    HStack(spacing: 18) {
-                        profileImage
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("写真を選ぶ", systemImage: "photo")
-                        }
-                    }
-                    TextField("名前", text: $name)
-                    TextField("職業・身分", text: $occupation)
-                    TextField("自己紹介", text: $bioDraft, axis: .vertical).lineLimit(3...6)
-                    LabeledContent("メールアドレス", value: authentication.email)
-                } footer: {
-                    Text("名前・写真・自己紹介はフレンドに表示されます。自己紹介は500文字まで共有されます。")
-                }
+                profileSection
+                loginSection
                 Section {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
             }
-                .themeScreenBackground()
+            .confirmationDialog(
+                "パスキーをすべて削除しますか?",
+                isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
+            ) {
+                passkeyRemovalActions
+            } message: {
+                passkeyRemovalMessage
+            }
+            .themeScreenBackground()
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
             .onAppear { bioDraft = bio }
             .onChange(of: bioDraft) { _, newValue in bio = newValue }
             .onChange(of: selectedPhoto) { _, item in
-                Task {
-                    guard let data = try? await item?.loadTransferable(type: Data.self),
-                          let image = UIImage(data: data),
-                          let normalized = AvatarImageProcessor.jpegData(from: image) else { return }
-                    imageData = normalized
-                }
+                Task { await loadPhoto(item) }
             }
         }
+    }
+
+    private var passkeyRemovalActions: some View {
+        Button("削除して設定し直す", role: .destructive) {
+            Task { await resetPasskeys() }
+        }
+    }
+
+    private var passkeyRemovalMessage: some View {
+        Text("心当たりのないパスキーが追加されたときに使います。削除後、新しいパスキーの設定をお願いします。")
+    }
+
+    private func resetPasskeys() async {
+        passkeyAdded = false
+        _ = await authentication.removeAllPasskeys()
+    }
+
+    private func loadPhoto(_ item: PhotosPickerItem?) async {
+        guard let data = try? await item?.loadTransferable(type: Data.self),
+              let image = UIImage(data: data),
+              let normalized = AvatarImageProcessor.jpegData(from: image) else { return }
+        imageData = normalized
     }
 
     @ViewBuilder private var profileImage: some View {

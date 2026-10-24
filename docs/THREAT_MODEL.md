@@ -126,8 +126,8 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 ### A3. 他人の資料への到達(IDOR)(X2, X3)
 - **手口**: 他人のルームID・文書ID・アバター・添付・MCP接続を推測/列挙して読む・書く。
 - **緩和**: ルームのメンバー確認(`chat.test.js`「someone outside the room cannot look up messages in it」「someone outside the friendship cannot read or send in the room」「a stranger cannot download someone else's avatar」「someone who isn't a member of the group cannot upload its photo」)、文書の役割確認(`document-collab.test.js`「someone never invited cannot read room state」「a non-owner cannot invite」)、IDはサーバーが決める、KVのキーはトークンのハッシュ、アカウント間の漏れなし(`entitlements.test.js`「one account's subscription never leaks into another's lookup」、`account-deletion.test.js` 48)。
-- **残る**: 新しい経路を足すたびに確認が要る(テストの網羅表が無い)。
-- **状態**: 対応済み(継続的な確認が必要)。
+- **残る**: 新しい経路を足すたびに確認が要る(テストの網羅表が無い)。2026-10-22のAPI監査(`docs/API_SECURITY_AUDIT_2026-10-22.md`)で、ブロック/フレンド削除の判定が「メッセージ送信」にしか掛かっておらず、編集・添付・共有文書・招待の承諾が別々に判定されていた(AUTHZ-1〜4,7)。修正済みだが、判定が書き込みの全入口に通る共通の仕組みにはなっていない。未対応: DO(Durable Object)の無制限生成(AUTHZ-6)、文書の参加者一覧に内部のチャット鍵が出る(AUTHZ-8)、共有文書の除名・退出の画面(APIのみ)。
+- **状態**: 一部(対応済みの経路は継続的な確認が必要。上の未対応が残る)。
 
 ### A4. フレンド招待リンクの悪用(X3, X6)
 - **手口**: リンクを手に入れた人は、承認なしで招待者の友達になれる。招待ページが`studiquo://`へ転送し、同じスキームを登録した別アプリがトークンを受け取る。

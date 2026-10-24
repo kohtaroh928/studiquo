@@ -198,7 +198,7 @@ final class AuthenticationStore: ObservableObject {
             // A wait or a busy server says nothing about the password, so it
             // must not read as "wrong password".
             switch error {
-            case .tooManyAttempts, .serverBusy, .passkeyRequired, .servicePaused: errorMessage = error.localizedDescription
+            case .tooManyAttempts, .serverBusy, .passkeyRequired, .accountDeleting, .servicePaused: errorMessage = error.localizedDescription
             case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
             }
             return false
@@ -445,6 +445,28 @@ final class AuthenticationStore: ObservableObject {
             return false
         } catch {
             passkeyEnrollmentFailed = true
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Removes every passkey of the account (the profile's "delete all"),
+    /// so a passkey a thief added with a stolen session can be undone. The
+    /// server asks for an established passkey first when there is one.
+    @discardableResult
+    func removeAllPasskeys() async -> Bool {
+        isPasskeyBusy = true
+        defer { isPasskeyBusy = false }
+        do {
+            try await PasskeyService.shared.removeAllPasskeys(token: MCPCloudCredentials.loadOrCreateToken())
+            needsPasskeyEnrollment = true
+            errorMessage = ""
+            return true
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch PasskeyError.cancelled {
+            return false
+        } catch {
             errorMessage = error.localizedDescription
             return false
         }
