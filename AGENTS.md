@@ -27,9 +27,9 @@
 ClaudeとCodexなど複数のエージェントの作業が被らないよう、次を守る。
 
 - メインのチェックアウト(`~/studiquo`)では編集・コミットしない。読み取りと統合専用とする。
-- 作業は必ず`git worktree`で行う。`git worktree add .worktrees/<task> -b <claude|codex>/<task> main`
+- 作業は必ず`git worktree`で行う。`git worktree add .worktrees/<task> -b <claude|codex|antigravity>/<task> main`
   - Codexのアプリが作る`~/.codex/worktrees/`配下も可。
-- ブランチ名は`claude/<task>`または`codex/<task>`とする。他エージェントの接頭辞のブランチはcheckout・コミットしない。
+- ブランチ名は`claude/<task>`、`codex/<task>`または`antigravity/<task>`とする。他エージェントの接頭辞のブランチはcheckout・コミットしない。
 - 着手前に`git worktree list`で同じ`<task>`や同じ対象ファイルが使われていないか確認する。被る場合はユーザーに確認する。
 - 作業が終わり統合したら、worktreeとブランチを片付ける。
 - `.githooks/`が上記を機械的に強制する。有効化は初回に`git config core.hooksPath .githooks`。人が意図的に回避する場合のみ`STUDIQUO_ALLOW_SHARED_CHECKOUT=1`を付ける。エージェントが勝手に付けてはならない。
