@@ -18,7 +18,7 @@ async function rig() {
   {pageNumber:3,text:'根毛は根の表面積を増やし、水や無機養分の吸収を助ける。'},
  ]}));
  const original = env.AI.run.bind(env.AI);
- env.AI.run = async (model,input) => model.includes('reranker') ? {response:input.contexts.map((c,id)=>({id,score:JSON.parse(c.text).text.includes('光合成')?.9:.1}))} : original(model,input);
+ env.AI.run = async (model,input) => model.includes('reranker') ? {response:input.contexts.map((c,id)=>({id,score:JSON.parse(c.text).text.includes('光合成') ? 0.9 : 0.1}))} : original(model,input);
  return env;
 }
 test('simple mechanism citation follows reranker rather than roots ranked first by RRF', async () => {

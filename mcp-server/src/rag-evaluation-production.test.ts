@@ -2,13 +2,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {captureProductionProbe,capturePolicyProbe,productionProbeMetadata,productionProbeBody,PRODUCTION_CASE_IDS,POLICY_CASE_IDS} from '../scripts/rag-quality/evaluation-50-production.ts';
 import {e50Manifest,runE50Stage} from '../scripts/rag-quality/evaluation-50-live.ts';
 import {loadEvaluation50} from '../scripts/rag-quality/evaluation-50.ts';
 import {comparisonBoundaryFixture} from '../scripts/rag-quality/comparison-boundary-fixture.ts';
-const directory=()=>fs.mkdtempSync('/private/tmp/studiquo-prod-test-');
+const directory=()=>fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'studiquo-prod-test-'));
 const response=()=>new Response('data: {"type":"response.output_text.delta","delta":"synthetic test"}\n\ndata: {"type":"response.completed","response":{"status":"completed","model":"gpt-6-luna","usage":{"input_tokens":50,"output_tokens":10,"total_tokens":60,"output_tokens_details":{"reasoning_tokens":3}}}}\n\n');
 
 test('fixed production capture is offline, paired, opaque and cannot be modified',async()=>{

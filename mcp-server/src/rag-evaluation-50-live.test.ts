@@ -2,13 +2,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {e50Body,e50Manifest,runE50Stage} from '../scripts/rag-quality/evaluation-50-live.ts';
 import {loadEvaluation50} from '../scripts/rag-quality/evaluation-50.ts';
 
 const key='synthetic-e50-test-key';
-const temp=()=>fs.mkdtempSync('/private/tmp/studiquo-e50-test-');
+const temp=()=>fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'studiquo-e50-test-'));
 const good=(usage={input_tokens:200,output_tokens:50,total_tokens:250,output_tokens_details:{reasoning_tokens:20}})=>new Response('data: '+JSON.stringify({type:'response.output_text.delta',delta:'synthetic answer'})+'\n\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed',model:'gpt-6-luna',usage}})+'\n\n');
 const records=d=>fs.readFileSync(path.join(d,'journal.ndjson'),'utf8').trimEnd().split('\n').map(JSON.parse);
 const sha=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
