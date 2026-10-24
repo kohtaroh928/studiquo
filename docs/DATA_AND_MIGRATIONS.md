@@ -112,9 +112,11 @@ Folder移行と一覧metadata再構築には`try? context.save()`があり、保
 | 0003 | `0003_announcements.sql` | `announcements`、`announcement_translations` |
 | 0004 | `0004_announcement_push.sql` | お知らせのpush状態・cursor・集計・日時の列追加 |
 | 0005 | `0005_privacy_retention.sql` | 報告の`account_key`、診断関連の`last_seen_at`、削除済み顧客hashテーブルとindex |
-| 0006 | `0020_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
-| 0007 | `0021_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
-| 0008 | `0022_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
+| 0020 | `0020_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
+| 0021 | `0021_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
+| 0022 | `0022_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
+
+(この表のRAGの行は、2026-10-24に旧0006〜0019から0020〜0033へ付け替えた後の番号。mainの`0006_legacy_standard_accounts`・`0007_moderation`・`0008_subscriber_transaction`はこの表の対象外で、番号もそのまま。付け替えの対応表は末尾の節を参照。)
 
 D1の主要な日時列はUnix epochの**ミリ秒**。一方、Worker tokenの発行時刻は秒、Swiftの標準Codable `Date`は別の基準である。境界で明示的に変換し、数字だけを無条件にコピーしない。
 
@@ -243,13 +245,13 @@ backup場所・復元試験・RPO／RTO:
 
 ## RAG自動索引の安全基盤（2026-10-11）
 
-0008は0006/0007の後に追加する。既存migrationの書き換えは行わない。適用前の旧資料は旧経路で扱えるが、管理APIは503で閉じる。一部管理tableだけ欠ける場合は未管理へ降格せず閉じる。remote適用、Worker更新、iPad更新は別工程。
+0022は0020/0021の後に追加する。既存migrationの書き換えは行わない。適用前の旧資料は旧経路で扱えるが、管理APIは503で閉じる。一部管理tableだけ欠ける場合は未管理へ降格せず閉じる。remote適用、Worker更新、iPad更新は別工程。
 
 `rag_controls`の存在するaccountは永続的にmanagedとなり、旧manual uploadへ戻らない。epoch/generationの期待値を条件に更新し、世代ごとにWorkerがsource IDを発行する。物理source IDと端末の安定document IDは異なる。iPad側は対応表を保持して出典を開く必要がある。hashは同一性、generationは更新順序を表す。
 
 削除は資格失効→Vectorize削除受付→chunks/FTS/pagesの順。外部upsert前にIDとwriter leaseをjournalへ記録する。強制終了で`settled=0`が残ればjournalを自動破棄せず、削除再試行とaccount削除待ちを継続する。運用解消・監視と実Vectorize mutation順序の確認は有効化前の必須残件。
 
-rollbackでは0008を残し、資格guardを持つWorkerへ戻す。管理導入前の任意の旧Workerやtable削除へのrollbackは禁止。`RAG_AUTO_INDEX_ENABLED=false`は新しい同意付与・登録受付を止めるが、資格失効・削除・定期cleanupを止めない。
+rollbackでは0022を残し、資格guardを持つWorkerへ戻す。管理導入前の任意の旧Workerやtable削除へのrollbackは禁止。`RAG_AUTO_INDEX_ENABLED=false`は新しい同意付与・登録受付を止めるが、資格失効・削除・定期cleanupを止めない。
 
 ## iPad自動索引の保存形式（未公開）
 
@@ -257,7 +259,7 @@ Notebookにdefault空文字のragDocumentIDを追加し、既存資料は使用�
 
 UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、許可範囲、資料ID、fingerprint/hash、sourceId/generation、登録cursor、資格失効待ち、検索反映待ちと再試行deadlineを保存する。本文、OCR、画像、タイトル、tokenは保存しない。OCR結果は再開時に再抽出し同一hashだけ続きを送信する。初回managed同意は従来手動indexを失効させるため取り消しで旧方式へ戻らない。端末ストアに別account由来資料がある可能性は選択同意UIで開示する。
 
-この工程で新しいD1 migrationは追加しない。既存0006/0007/0008を前提とする。失効pendingは再許可前に反映し、サーバーlocked/trashed/excludedを解除するには利用者の個別再許可を必要とする。rollbackはflags OFFで登録停止し、失効・削除APIを保持する。
+この工程で新しいD1 migrationは追加しない。既存の0020/0021/0022を前提とする。失効pendingは再許可前に反映し、サーバーlocked/trashed/excludedを解除するには利用者の個別再許可を必要とする。rollbackはflags OFFで登録停止し、失効・削除APIを保持する。
 
 
 ### RAG構造metadata用追加migration（2026-10-17、未配備）
