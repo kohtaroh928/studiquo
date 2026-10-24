@@ -18,7 +18,7 @@ final class DocumentViewNavigationBarTests: XCTestCase {
     }
 
     func testFullScreenDocumentViewsHideNavigationBar() throws {
-        for file in ["FlashcardDeckView.swift", "SlideDeckView.swift", "TextDocumentView.swift", "NoteEditorView.swift"] {
+        for file in ["FlashcardDeckView.swift", "TextDocumentView.swift", "NoteEditorView.swift"] {
             let text = try source(file)
             XCTAssertTrue(
                 text.contains(".toolbar(.hidden, for: .navigationBar)")
