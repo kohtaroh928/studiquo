@@ -12,7 +12,7 @@ import SwiftData
 /// The store is opened once at launch, so a change applies after the app is
 /// quit and reopened.
 enum ICloudSyncPreference {
-    static let defaultsKey = "iCloudSyncEnabled"
+    static var defaultsKey: String { StudiquoRuntimeEnvironment.namespaced("iCloudSyncEnabled") }
 
     /// The stored choice. The very first time it is read, it is decided from
     /// whether a library already exists, and written back so it never changes

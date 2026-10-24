@@ -150,8 +150,8 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
     }
 }
 
-/// The iCloud container in `studiquo.entitlements`.
-private let cloudKitContainerIdentifier = "iCloud.com.yabuko.studiquo"
+/// The iCloud container configured for this build in `project.yml`.
+private var cloudKitContainerIdentifier: String { StudiquoRuntimeEnvironment.cloudKitContainer }
 
 /// Only fall back after the cloud attempt has actually returned an error.
 /// A deadline cannot cancel ModelContainer.init; opening another container
@@ -209,6 +209,7 @@ struct StudiquoApp: App {
         // Files left in the work folder by the last run (StudiquoWorkFiles).
         StudiquoWorkFiles.sweep()
         // Before anything can create the store file — see `ICloudSyncPreference`.
+        _ = LaunchStoreEnvironment.endpoint
         ICloudSyncPreference.resolveAtLaunch()
         // Listen from the start: a "full" report can arrive right after launch.
         _ = ICloudSyncMonitor.shared

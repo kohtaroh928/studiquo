@@ -1523,7 +1523,7 @@ struct DeleteAccountView: View {
 }
 
 enum MCPCloudCredentials {
-    private static let service = "com.yabuko.studiquo.mcp"
+    private static let service = LaunchStoreEnvironment.namespaced("com.yabuko.studiquo.mcp")
     private static let account = "cloud-token"
     /// How long a generated token stays valid before the server starts rejecting it.
     /// Keep in sync with `VALIDITY_SECONDS` in mcp-server/src/token.js.
@@ -1753,8 +1753,9 @@ enum MCPCloudCredentials {
     /// should target: the user's custom endpoint from settings if they've set
     /// one and it's a valid https URL, otherwise the built-in default.
     static func configuredEndpoint() -> URL? {
-        // A released build only talks to the production Worker (WorkerEndpointPolicy).
-        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
+        // The endpoint is fixed before local credentials are opened. A later
+        // settings change cannot send this environment's token elsewhere.
+        LaunchStoreEnvironment.endpoint
     }
 }
 
@@ -2346,7 +2347,7 @@ struct ContentView: View {
     @State private var isShowingNewFlashcardDeckAlert = false
     @State private var newFlashcardDeckName = ""
     @State private var homeSection: HomeSection = .notes
-    @AppStorage("mcpCloudEndpoint") private var mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint
+    private var mcpCloudEndpoint: String { LaunchStoreEnvironment.endpoint?.absoluteString ?? WorkerAIProvider.defaultEndpoint }
     @State private var mcpCloudToken = MCPCloudCredentials.loadOrCreateToken()
     @State private var showsMCPCloudSettings = false
     @State private var mcpCloudStatus = ""
@@ -2946,17 +2947,11 @@ struct ContentView: View {
             Section("Cloudflare MCP") {
                 LabeledContent("サーバーURL") {
                     HStack {
-                        TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
+                        Text(mcpCloudEndpoint)
                             .multilineTextAlignment(.trailing)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            // A released build always uses the production Worker.
-                            .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
-                            .onAppear {
-                                if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
-                            }
+                            .textSelection(.enabled)
                         Button {
-                            let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
+                            let endpoint = mcpCloudEndpoint
                                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                             UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
                                 ? endpoint
@@ -6684,7 +6679,7 @@ struct ContentView: View {
 
     @MainActor
     private func syncMCPCloud() async {
-        guard let baseURL = WorkerEndpointPolicy.resolve(mcpCloudEndpoint),
+        guard let baseURL = LaunchStoreEnvironment.endpoint,
               let snapshotData = makeMCPSnapshotData(),
               mcpCloudToken.count >= 32 else {
             mcpCloudStatus = L("URLまたはトークンを確認してください。")
