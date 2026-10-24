@@ -61,12 +61,6 @@ enum PageSnippetRenderer {
         let image = UIImage(cgImage: cropped, scale: scale, orientation: full.imageOrientation)
         guard cropped.width > 0, cropped.height > 0,
               let data = image.pngData(), !data.isEmpty else { return nil }
-        GestureDiagnostics.pageSnippetCreated(
-            bytes: data.count,
-            pixelWidth: cropped.width,
-            pixelHeight: cropped.height,
-            usedLiveDrawing: drawing != nil
-        )
         return PageSnippet(pngData: data, sourceLabel: label)
     }
 }

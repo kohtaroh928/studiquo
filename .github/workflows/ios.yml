@@ -1,0 +1,64 @@
+# iOSのビルドとユニットテスト(macOSランナーは分数の消費が大きいので、実行を絞る)。
+# 決まりは claude/ci-setup の ci.yml と同じ: secretsを使わない、contents: readのみ、
+# actionはコミットSHAで固定する(docs/CI.md)。
+#   - mainへのpush、手動実行は常に走る
+#   - PRはアプリ関連のファイルを変更したときだけ走る
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "studiquo/**"
+      - "studiquoShare/**"
+      - "studiquoTests/**"
+      - "project.yml"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  # PRの古い実行だけ取り消す。mainの実行は取り消さない。
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: ビルドとユニットテスト
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: XcodeGenでプロジェクトを生成
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: iPadシミュレータを選ぶ
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          for devices in json.load(sys.stdin)["devices"].values():
+              for d in devices:
+                  if "iPad" in d["name"]:
+                      print(d["udid"]); raise SystemExit
+          ')
+          test -n "$udid" || { echo "利用できるiPadシミュレータがありません" >&2; exit 1; }
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      # 署名なし(CODE_SIGNING_ALLOWED=NO)だとシミュレータのアプリにentitlementsが付かず、
+      # キーチェーンが-34018で失敗する。チームなしのad-hoc署名で付ける。
+      # 文言のテストは日本語がソース言語なので、ランナーの言語に関わらず日本語で動かす。
+      - name: テスト
+        run: |
+          xcodebuild test \
+            -project studiquo.xcodeproj \
+            -scheme studiquo \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:studiquoTests \
+            -testLanguage ja -testRegion JP \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=

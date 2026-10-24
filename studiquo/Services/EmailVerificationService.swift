@@ -72,6 +72,7 @@ enum EmailVerificationService {
         // 429: too many checks for this address for now. The code was not looked
         // at, so it is neither right nor wrong, and is still good once the wait is over.
         if http.statusCode == 403, PasskeyRequired.isIn(body: data) { throw EmailVerificationError.passkeyRequired }
+        if http.statusCode == 409, AccountDeleting.isIn(body: data) { throw EmailVerificationError.accountDeleting }
         if http.statusCode == 429 {
             throw EmailVerificationError.tooManyConfirmations(retryAfter: LocalAuthService.retryAfterSeconds(http, body: data))
         }
@@ -98,10 +99,13 @@ enum EmailVerificationError: LocalizedError, Equatable {
     case tooManyConfirmations(retryAfter: TimeInterval?)
     /// The account has a passkey, so a code is no longer accepted.
     case passkeyRequired
+    /// The account was just deleted and the server is still finishing it.
+    case accountDeleting
 
     var errorDescription: String? {
         switch self {
         case .passkeyRequired: PasskeyRequired.message
+        case .accountDeleting: AccountDeleting.message
         case .sendFailed: "確認コードを送信できませんでした。"
         case .confirmFailed: "確認コードを確認できませんでした。"
         case .tooManySends(let retryAfter):

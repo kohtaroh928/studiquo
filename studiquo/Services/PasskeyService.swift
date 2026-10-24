@@ -282,7 +282,11 @@ enum PasskeyError: LocalizedError {
         case .reauthRequired: "パスキーでの確認が必要です。"
         case .invalidResponse: "パスキーの応答を読み取れませんでした。"
         case .notVerified: "パスキーを確認できませんでした。"
-        case .serverRejected: "パスキーサーバーに接続できませんでした。"
+        // The server answered and refused: a connection that failed throws a
+        // URLError instead, so "could not connect" was the wrong thing to say.
+        // The reason is not known here (an expired challenge, a passkey the
+        // server no longer has, ...), so none is claimed.
+        case .serverRejected: "サーバーがパスキーを受け付けませんでした。もう一度お試しください。続く場合は、別の方法でログインしてください。"
         }
     }
 }

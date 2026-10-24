@@ -330,6 +330,19 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertNil(MCPCloudCredentials.currentToken())
     }
 
+    func testLoginForAnAccountBeingDeletedSaysSoInsteadOfAskingForAPasskey() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 409, body: ["error": "deleting", "code": "account_deleting"])
+        let store = makeStore()
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(store.errorMessage, AccountDeleting.message)
+        XCTAssertNotEqual(store.errorMessage, PasskeyRequired.message)
+        XCTAssertEqual(store.state, .needsLogin)
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+    }
+
     // MARK: - passkey enrollment gate
 
     private func makeSignedInStore(email: String = "student@example.com", registered: Bool?) -> AuthenticationStore {

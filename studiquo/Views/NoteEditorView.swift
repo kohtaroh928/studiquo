@@ -343,7 +343,6 @@ struct NoteEditorView: View {
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
-    @State private var showsStudySession = false
     @State private var showsOutline = false
     @State private var showsTimeTool = false
     @State private var timeToolModel = TimeToolModel()
@@ -509,9 +508,6 @@ struct NoteEditorView: View {
 
     private func editorWithSheets(_ content: some View) -> some View {
         content
-        .sheet(isPresented: $showsStudySession) {
-            StudySessionView(notebook: notebook)
-        }
         .sheet(isPresented: $showsOutline) {
             NotebookOutlineView(notebook: notebook, currentPageIndex: $primaryPageIndex)
         }
@@ -1986,12 +1982,6 @@ struct NoteEditorView: View {
                 }
             } label: {
                 Label("表示モード", systemImage: isReadOnlyMode ? "eye" : "pencil.and.outline")
-            }
-
-            Button {
-                showsStudySession = true
-            } label: {
-                Label("学習モード", systemImage: "graduationcap")
             }
 
             if Self.showsDarkPageToggle {
@@ -7513,9 +7503,6 @@ struct PageCanvasContainer: View {
             if let data = page.drawingData, let loaded = InkDrawing.load(from: data) {
                 drawing = loaded
                 drawingVersion += 1
-                GestureDiagnostics.inkLoaded(strokes: loaded.strokes.count, hadData: true)
-            } else {
-                GestureDiagnostics.inkLoaded(strokes: 0, hadData: page.drawingData != nil)
             }
             hasLoadedDrawing = true
             normalizeInkCoordinateSpace(displayWidth: canvasDisplaySize.width)
