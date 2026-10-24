@@ -187,7 +187,9 @@
   "env": {
     "staging": {
       "name": "studiquo-mcp-staging",
-      "services": [{"binding":"DOCLING_PROCESSOR","service":"studiquo-private-docling-staging","entrypoint":"DoclingProcessor"}],
+      // Documents are extracted on the iPad before they are sent to the RAG
+      // control API. Keep staging free of the obsolete Docling service binding:
+      // the named Worker was never provisioned and no server code invokes it.
       "ai": { "binding": "AI" },
       "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1-staging" }],
       // The Worker is its own origin, so use a Custom Domain rather than a
