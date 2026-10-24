@@ -192,7 +192,11 @@
   "env": {
     "staging": {
       "name": "studiquo-mcp-staging",
-      "services": [{"binding":"DOCLING_PROCESSOR","service":"studiquo-private-docling-staging","entrypoint":"DoclingProcessor"}],
+      // Documents are extracted on the iPad before they are sent to the RAG
+      // control API. Keep staging free of the Docling service binding: the named
+      // Worker was never provisioned. The server's PDF routes (src/rag/pdf-*.ts)
+      // still read env.DOCLING_PROCESSOR and refuse the request when it is absent,
+      // so leaving it out turns PDF processing off rather than breaking it.
       "ai": { "binding": "AI" },
       "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1-staging" }],
       // The Worker is its own origin, so use a Custom Domain rather than a
