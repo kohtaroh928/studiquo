@@ -170,10 +170,10 @@ targets:
           PRODUCT_MODULE_NAME: studiquo
           STUDIQUO_APP_PRODUCT_NAME: "studiquo Staging"
           STUDIQUO_ENVIRONMENT: staging
-          # This is replaced by staging-api.studiquo.app once its DNS, TLS,
-          # AASA and Worker route have been provisioned. Keeping the current
-          # Worker host here makes the separate backend testable in the meantime.
-          STUDIQUO_WORKER_ENDPOINT: https://studiquo-mcp-staging.studiquo-mcp-server.workers.dev
+          # This custom domain is provisioned with the staging Worker. It is
+          # also the WebAuthn relying-party and universal-link host, so the app
+          # never falls back to workers.dev.
+          STUDIQUO_WORKER_ENDPOINT: https://staging-api.studiquo.app
           STUDIQUO_ASSOCIATED_DOMAIN: staging-api.studiquo.app
           STUDIQUO_CLOUDKIT_CONTAINER: iCloud.com.yabuko.studiquo.staging
           STUDIQUO_APP_GROUP: group.com.yabuko.studiquo.staging.share
