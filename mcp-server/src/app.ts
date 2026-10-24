@@ -782,6 +782,8 @@ async function handleAppleSignIn(request: Request, env: Env, ctx: ExecutionConte
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
+  const deleting = await accountDeletingResponse(env, identityKey);
+  if (deleting) return deleting;
   // An account with a passkey signs in with that instead (passkey-policy.ts).
   const passkeyGate = await gatePasskeyAccount(env, identityKey, accountEmail && accountEmailVerified && !accountUsesPrivateRelay ? accountEmail : null, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
@@ -844,6 +846,8 @@ async function handleGoogleSignIn(request: Request, env: Env, ctx: ExecutionCont
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
+  const deleting = await accountDeletingResponse(env, identityKey);
+  if (deleting) return deleting;
   // An account with a passkey signs in with that instead (passkey-policy.ts).
   const passkeyGate = await gatePasskeyAccount(env, identityKey, email && emailVerified ? email : null, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
@@ -995,17 +999,17 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
   // An account with a passkey does not accept a code that could have been
   // relayed by a look-alike site, neither to sign in nor to reset the password
   // (which would sign in): checked before anything is changed.
+  // Nothing is stored for an account whose deletion is still running: the
+  // password would be saved and then the sign-in below refused with a message
+  // that says nothing about why. Say so, before anything changes — and before
+  // the passkey rule, which still sees the passkey the deletion has yet to remove.
+  const deleting = await accountDeletingResponse(env, accountKey);
+  if (deleting) return deleting;
   const passkeyGate = await gatePasskeyAccount(env, accountKey, normalizedEmail, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
   // A passkey registered for any address of this account signs in as the
   // account, so all of them go with a reset (see revokePasskeysForAccount).
   const accountEmails = [normalizedEmail, ...(link.linkedIdentities ?? []).map(identityKey).filter(key => key.startsWith("email:")).map(key => key.slice("email:".length))];
-  // Nothing is stored for an account whose deletion is still running: the
-  // password would be saved and then the sign-in below refused with a message
-  // that says nothing about why. Say so, before anything changes.
-  if (await accountIsBeingDeleted(env, accountKey)) {
-    return json({ error: "このアカウントは削除の処理中です。しばらくしてからもう一度お試しください。", code: "account_deleting" }, 409);
-  }
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they
@@ -1147,6 +1151,8 @@ async function handleLocalLogin(request: Request, env: Env, ctx: ExecutionContex
   });
   // The password was right, but a password can be relayed by a look-alike
   // site: an account with a passkey signs in with that instead.
+  const deleting = await accountDeletingResponse(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
+  if (deleting) return deleting;
   const passkeyGate = await gatePasskeyAccount(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, normalizedEmail, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
@@ -1162,6 +1168,17 @@ async function handleLocalLogin(request: Request, env: Env, ctx: ExecutionContex
 
 // Every response gets the transport headers, and plain-http requests are answered
 // before the handler reads anything (transport.ts).
+/**
+ * The answer for an account whose deletion is still running, or null. Checked
+ * before the passkey rule on every sign-in route: while the deletion runs, the
+ * passkey and its recovery are still there, and "this account uses a passkey"
+ * would be told to someone who has just deleted the account and cannot use it.
+ */
+async function accountDeletingResponse(env: Env, accountKey: string) {
+  if (!(await accountIsBeingDeleted(env, accountKey))) return null;
+  return json({ error: "このアカウントは削除の処理中です。しばらくしてからもう一度お試しください。", code: "account_deleting" }, 409);
+}
+
 export default {
   ...handler,
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {

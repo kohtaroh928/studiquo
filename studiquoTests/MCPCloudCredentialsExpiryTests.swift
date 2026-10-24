@@ -259,6 +259,13 @@ final class PasskeyReauthDetectionTests: XCTestCase {
         XCTAssertTrue(PasskeyRequired.isIn(body: body("passkey_required")))
         XCTAssertFalse(PasskeyRequired.isIn(body: body("reauth_required")))
     }
+
+    func testTheAccountDeletingAnswerIsRecognisedAndIsNotMistakenForAPasskeyOne() {
+        XCTAssertTrue(AccountDeleting.isIn(body: body("account_deleting")))
+        XCTAssertFalse(AccountDeleting.isIn(body: body("passkey_required")))
+        XCTAssertFalse(PasskeyRequired.isIn(body: body("account_deleting")))
+        XCTAssertFalse(AccountDeleting.isIn(body: Data("not json".utf8)))
+    }
 }
 
 final class MCPImportReceiptTests: XCTestCase {
