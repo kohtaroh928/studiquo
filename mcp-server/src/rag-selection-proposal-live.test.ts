@@ -11,7 +11,7 @@ const packet=(raw,extra={})=>JSON.stringify({candidates:[{finishReason:'STOP',co
 const proposal=t=>JSON.stringify({version:1,snapshot:t.snapshot,decision:'select',decisions:t.references.map(r=>({referenceId:r.id,action:'retain',reason:'answer',spans:[{start:0,end:r.text.length,quote:r.text}]}))});
 test('transport uses fixed endpoint, header key, schema and AbortSignal',async()=>{
  const t=task();let metrics;const raw=await geminiProposer({apiKey:'synthetic-key',observe:m=>metrics=m,fetchImpl:async(url,options)=>{
-  assert.ok(!url.includes('synthetic-key'));assert.match(url,/generativelanguage.googleapis.com/);assert.equal(options.redirect,'error');assert.equal(options.headers['x-goog-api-key'],'synthetic-key');assert.ok(options.signal);
+  assert.ok(!url.includes('synthetic-key'));assert.match(url,/^https:\/\/generativelanguage\.googleapis\.com\//);assert.equal(options.redirect,'error');assert.equal(options.headers['x-goog-api-key'],'synthetic-key');assert.ok(options.signal);
   const body=JSON.parse(options.body);assert.equal(body.generationConfig.maxOutputTokens,4096);assert.equal(body.generationConfig.temperature,1);assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,'minimal');assert.equal(body.generationConfig.responseMimeType,'application/json');assert.ok(body.generationConfig.responseJsonSchema);
   return new Response(packet(proposal(t)));
  }})(proposalMessages(t),{signal:new AbortController().signal});
