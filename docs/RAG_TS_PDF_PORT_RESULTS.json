@@ -1,0 +1,153 @@
+{
+  "date": "2026-10-21",
+  "branch": "codex/rag-start-ts",
+  "base": "960f83d",
+  "portedHistoricalCommit": "dae6129",
+  "selectiveMainFix": "3b6b06d",
+  "scope": "TS_port_and_necessary_generation_timeout_integration; C2_unconnected",
+  "typecheck": {
+    "sourceAndTestConfiguration": "passed",
+    "historicalTestAndToolTsNoCheck": true,
+    "anyFullyEliminated": false,
+    "mcpSourceStrict": true,
+    "privateWorkerStrictConfiguration": false
+  },
+  "fullCurrent": {
+    "command": "npm test -- --test-concurrency=1",
+    "tests": 2447,
+    "pass": 2446,
+    "fail": 0,
+    "cancelled": 0,
+    "skip": 1,
+    "durationMs": 51660.382417,
+    "skipReason": "preexisting main re-registration rule: pending provider deletion no longer blocks re-registration"
+  },
+  "focused": {
+    "gateCleanupRecoveryStopIntegration": {
+      "pass": 69,
+      "fail": 0
+    },
+    "accountDeletionCompletenessReregistrationPDF": {
+      "pass": 136,
+      "fail": 0
+    },
+    "privateWorker": {
+      "pass": 51,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "localRuntime": {
+    "startGate": {
+      "localWorkerd": true,
+      "d1Migrations": 21,
+      "actualCAS": true,
+      "existingLegacyPreserved": true,
+      "oneWinner": true,
+      "sameNonceDenied": true,
+      "lostCommitNotRegranted": true,
+      "immutableConsumption": true,
+      "newParentHeld": true,
+      "vm": "not_started",
+      "remoteBinding": "synthetic_cancel_ack_only",
+      "remoteChanges": false
+    },
+    "v2RPC": {
+      "localWorkerd": true,
+      "d1Migrations": 20,
+      "serviceBindingRPC": true,
+      "sqliteDO": true,
+      "mcpPipeline": true,
+      "immutableEnvelope": true,
+      "bothStopProofs": true,
+      "intakeErasedStop": true,
+      "flagOffStop": true,
+      "legacyParseRejected": true,
+      "replayRejected": true,
+      "vm": "synthetic_io_adapter_only",
+      "remoteChanges": false
+    },
+    "ownerCleanup": {
+      "localWorkerd": true,
+      "migrations": 19,
+      "independentErasureWhilePending": true,
+      "minimalCheckpoint": true,
+      "flagsOffEvidenceRecovery": true,
+      "tokenFreeRetry": true,
+      "evidenceRetained": true,
+      "remote": "synthetic_adapter_only",
+      "remoteChanges": false
+    }
+  },
+  "sourceSha256": {
+    "mcp-server/migrations/0016_rag_pdf_stop_evidence.sql": "25a51740a13dea28d80c325443ceae54bc0c4360da71b28821fa7b14553d356c",
+    "mcp-server/migrations/0017_rag_pdf_evidence_retention.sql": "ab5c44f613969e1ca80cd009bef8926190f5487b25ee0ec9c6fecc968301355c",
+    "mcp-server/migrations/0018_rag_pdf_rpc_v2.sql": "e0524ebdaf4f8d8f1fe4f007ccfaaae2cd4d393971241db6410c21037a5662d9",
+    "mcp-server/migrations/0019_rag_pdf_start_gate.sql": "edc5781103dfe6e58c7d2130c0d267825002283b336af636e655d84386664a00",
+    "mcp-server/src/account-deletion.test.ts": "454c8f9419ba92f528cf15bb51a6e0edf92017b32cba06df3e919fd1119e48d9",
+    "mcp-server/src/account-deletion.ts": "7ed97a7ae8ac2aaad6815b9fb1d23f3dfffb8e02ee992340e169517aeb0655c1",
+    "mcp-server/src/rag-pdf-account-cleanup.test.ts": "320003d69c1499866e9d9be89f8606c87d17a70e2078e223755c29a1ba1f2ecc",
+    "mcp-server/src/rag-pdf-migration.test.ts": "9c5585cacd05dc270114490cc5c95bf0105f360886f2e7e85d240e1473764886",
+    "mcp-server/src/rag-pdf-rpc-v2.test.ts": "8133516419817db478b075ef24fd795800b4d39f04c88e149e5f36eb513859c7",
+    "mcp-server/src/rag-pdf-start-gate.test.ts": "fdceabdd71965fbcdc7b5676cb48dd59b460bb6e94e39ca8a021247e55be2bfb",
+    "mcp-server/src/rag-pdf-stop-evidence.test.ts": "cc3d0bd54125728cb7076c0457ac3dc3d866584e4b5c933904166c212adfb20c",
+    "mcp-server/src/rag-pdf-stop-integration.test.ts": "1f956a608f9b1b2b01a4e67130896b3578c3ccbfc08ea1d179c46b36a0fca605",
+    "mcp-server/src/rag/pdf-account-cleanup.ts": "c15e3a2b7ad4cad15d3a9dbd6bc8f67615a42be2fe8ccc883ed5830aa7a341c5",
+    "mcp-server/src/rag/pdf-job-recovery.ts": "acf8a6ee48217d593d02afb290d3775d8ae793789f2145129cf346d3f77ee8b4",
+    "mcp-server/src/rag/pdf-jobs.ts": "91d982838eaeb8d1408715422b3b124b456ec0238a2b7ab643a615297fba7cef",
+    "mcp-server/src/rag/pdf-process.ts": "65d6bc6162fb167d8571f9a4de75a47b46c97a3b9acb1e5eccc54963f401a9ae",
+    "mcp-server/src/rag/pdf-purge.ts": "124bd3efb76aab0750d5c3880c93a08df3a45c1b8f9d97d864c050f4da564147",
+    "mcp-server/src/rag/pdf-retention.ts": "1b97bad3636d7c357f7f127c85f57a44e5c40c9cd3c6618601917fc9a68b7157",
+    "mcp-server/src/rag/pdf-rpc.ts": "cccf0765d4eac22f987c9edc50b1e736cd9be96d26815b967bfca3a5d97fb36c",
+    "mcp-server/src/rag/pdf-start-gate.ts": "b73a20eb928af602c2e33931e73611ab844d2a95aca8734f92534065ade6904a",
+    "mcp-server/src/rag/pdf-stop-evidence.ts": "5ce1dffd11d7bd3d3f2513dc3b6e2913b607d943db2de1e152a8bfcd79cd334d",
+    "mcp-server/src/records.ts": "7433b3134184b88a1b09306ef26068a63b12a0b4769a49a481263529b3333fbb",
+    "mcp-server/tools/rag-docling-destroy-confirmation-local-smoke.ts": "0ede63298f2f0ac4190784aa3dca911415f64baa10159eea3ecb06d9ccd8cdaf",
+    "mcp-server/tools/rag-docling-v2-local-smoke.ts": "15a10ed2afd275178fd354918613757e475dcf64bf699bcef730b532bae3f7d5",
+    "mcp-server/tools/rag-local-runtime.ts": "ab988a85157625feeb9255a80a075aab764ef5b27ed62f5306b7918425d834b0",
+    "mcp-server/tools/rag-pdf-account-cleanup-local-smoke.ts": "ee84f6c84fb49b2512b6858b99464a6e27e27999916aa5beabf9f0a2c4049ea7",
+    "mcp-server/tools/rag-pdf-purge-local-smoke.ts": "a284efa8d4c52d63e8e170c3b045a80f387e34c2ff1d91f43ff2ceb4fb9a712d",
+    "mcp-server/tools/rag-pdf-retention-local-smoke.ts": "cbec1f68c19cb420b6ee8f3c5e9f4e0042a80a6f93ebc707bb1c48708380d357",
+    "mcp-server/tools/rag-pdf-rpc-v2-local-smoke.ts": "2dd2cb9cce08da76eec81de7b76c4106eb571f626ef4d6000b429fc2a35a7512",
+    "mcp-server/tools/rag-pdf-start-gate-local-smoke.ts": "f5b2f213df59db1481edda8cd91744bea922717c9ab6426c9ad3a9d5e6943fc9",
+    "mcp-server/tools/rag-pdf-stop-evidence-local-smoke.ts": "44146914018be708a76d005164f8f847f235ae0721600d61df8c13959464642a",
+    "mcp-server/tools/rag-pdf-stop-integration-local-smoke.ts": "d69b884bc44b8a9d545b07accc8cd7793333b821ad5960a86104a8964a9689c1",
+    "services/docling-worker/destroy-confirmation.test.ts": "f8f17493caa2749c328528ee927517e81e465674df7bb95299a94b9637f0d6e8",
+    "services/docling-worker/index.ts": "7de827942aee39948230dc65b94a88f4dd4bfbcb979387248d64033160ed6ba1",
+    "services/docling-worker/v2.test.ts": "398672ddb03ee4eec2379a9d2c39926014898db6b0a4d7d57f443f2eb2fe5b03"
+  },
+  "reviews": {
+    "planner": "read_only_plan_complete",
+    "code": "all_medium_and_low_addressed; no_final_findings",
+    "security": "all_medium_addressed; no_final_findings",
+    "independentTestExecution": false
+  },
+  "intermediateFailures": [
+    "initial TS fixture missing explicit generation expectation; legacy reopen assertions replaced with new held safety contract",
+    "direct Miniflare pin lacks converter and compatibility date; use Wrangler bundled runtime without dependency/date changes",
+    "schema timeout timer rounding allowed late CAS; fixed irreversible closed flag + regression",
+    "RPC cap timeout incorrectly closed recovery pass; separated operation closure from pass closure, old assertions retained"
+  ],
+  "residuals": [
+    "legacy deleted unknown/hashed-only PDF ownership requires separate reconciliation; held without lifecycle overwrite",
+    "active/foreign alias PDF ownership is held",
+    "KV ownership check and D1 writes are not distributed atomic; issued work can complete late",
+    "existing migration number collisions 0006/0007 require remote history resolution",
+    "C2 named gate RPC connection not implemented; C3/C4 marker purge still unimplemented"
+  ],
+  "secretScan": {
+    "tool": "gitleaks 8.30.1",
+    "findings": 0,
+    "scope": "changed source and documents"
+  },
+  "gitDiffCheck": "passed",
+  "remoteChanges": false,
+  "realConfigChanged": false,
+  "realPDF": false,
+  "paidAI": false,
+  "realVMStarted": false,
+  "commitPushMerge": false,
+  "automation": "PAUSED",
+  "processesStartedThisTurn": "all_completed",
+  "notion": "existing_card_results_and_next_step_updated"
+}

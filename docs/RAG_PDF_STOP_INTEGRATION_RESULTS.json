@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-19",
+  "step": "6-B",
+  "baseCommit": "4debcd4",
+  "preservedDirty": "Step6-A implementation and Project synchronization",
+  "serverTests": {
+    "tests": 1923,
+    "pass": 1923,
+    "fail": 0,
+    "skipped": 0
+  },
+  "newIntegrationTests": 15,
+  "localWorkerd": {
+    "localWorkerd": true,
+    "migrations": 17,
+    "processorLocalProof": true,
+    "singleCancelPerCleanup": true,
+    "reaperEvidenceSettlement": true,
+    "cascadeRetention": true,
+    "cascadeRollback": true,
+    "remote": "synthetic_adapter_only",
+    "remoteChanges": false
+  },
+  "reviews": {
+    "planner": "completed",
+    "code": "Medium lease race and Low schema marker fixed; rereview no findings",
+    "security": "Medium context spoof fixed using FK cascade; rereview no findings",
+    "independentTestRerun": false
+  },
+  "priorAttempts": {
+    "integration": "4 fixture constraint failures; cancellation fields made NULL as schema requires; rerun succeeded",
+    "localWorkerd": "harness bytes hash encoded as string; digest corrected; rerun succeeded"
+  },
+  "remoteChanges": false,
+  "paidAI": false,
+  "commitOrPush": false,
+  "remaining": [
+    "account PDF pending phase",
+    "DO finite retention and receipts",
+    "resource/cost calibration",
+    "new evidence integration with real Docling VM",
+    "remote deployment and iPad adoption"
+  ],
+  "limitation": "executor loss before durable local proof remains held; no forced-release boolean or TTL",
+  "sourceHashes": {
+    "mcp-server/migrations/0017_rag_pdf_evidence_retention.sql": "ab5c44f613969e1ca80cd009bef8926190f5487b25ee0ec9c6fecc968301355c",
+    "mcp-server/src/rag/pdf-process.js": "40b430510b135c0471f83a41123de21149f6dfce233d2bab17c3aa3b0450b8bc",
+    "mcp-server/src/rag/pdf-job-recovery.js": "13efac185337399043cc86a7376be455d15ef346756baf640062efef0070feb7",
+    "mcp-server/src/rag/pdf-stop-evidence.js": "1b08f5677d91aa42f45b9c34aa8cf4287438957b1221caf97ffab0390fa378e3",
+    "mcp-server/src/rag/pdf-purge.js": "5f59f42d3f9f3ebc4fbe7463bbb10dae4e40e6c82f11c29d781283a9a94430f4",
+    "mcp-server/src/rag/pdf-retention.js": "6d88840e7b56e614fbb5be6393fe507805b193729fcb9159c79d3d9b54de2fd0",
+    "mcp-server/src/rag-pdf-migration.test.js": "db8142b1b602a201129236bffdeed50466bc4d9a699ea59457fa7e1d80bfb0bf",
+    "mcp-server/src/rag-pdf-stop-integration.test.js": "992f9dd837a3a84b7410ff5ddce6bcdfc9993d96efd36b518996cd71efacb05b",
+    "mcp-server/tools/rag-pdf-stop-integration-local-smoke.mjs": "d0836ad77b8dbf26ee682a70922a7461803f2f7fc35df65b7c66991d16baabdf"
+  }
+}

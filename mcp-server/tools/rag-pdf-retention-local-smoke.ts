@@ -1,6 +1,6 @@
 // @ts-nocheck -- ported from JavaScript untyped; typing it is tracked in Notion (Studiquo タスク).
 // Manual local-only workerd/D1 smoke. Synthetic metadata; no remote bindings.
-import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import {Miniflare,convertV4MiniflareOptions} from './rag-local-runtime.ts';
 import {unstable_splitSqlQuery} from 'wrangler';
 import {readFileSync,readdirSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';

@@ -1,0 +1,45 @@
+# Step5-C：アカウント削除とPDF後片付けの連携
+
+2026-10-20。`codex/rag-wip`。Step6-A/BとProject同期の既存dirtyを保持した追加変更。公開環境には反映していない。
+
+## 振る舞い
+
+アカウント削除がPDFの停止確認を待つ場合、他の独立した削除処理を進めたうえで`deleted:false,cleanupPending:true`を返す。停止不明のPDFを消去済みと扱わず、再試行jobとaccount denial fenceを残す。`startAccountDeletion`も内部結果を反映し、pendingをdeleted:trueへ変換しない。既存HTTPはcleanupPendingを202で返す経路を維持する。
+
+session/identity対応を消す前の既存checkpointにPDF phaseを保存する。その他phaseが成功した時点でcheckpointを`status`・`identityKeys`・`pdfCleanup`・`independentCleanupComplete`の4項目に縮め、消去済みセッションhash・メール・端末/credential関連keyを保留期間へ持ち越さない。再試行は保存identityを用いたPDF-only phaseから始め、消去済みcredential等を再探索しない。PDFも完了した場合だけstatusをdeletedへ変更しprivacy jobを除去する。
+
+既存のtext/vectorの認可失効・消去失敗は従来どおり例外とし、PDF保留だけを独立したpendingとして扱う。すべてのRAG失敗を握り潰して削除成功へ進める変更ではない。
+
+## owner専用処理
+
+新しい内部`pdf-account-cleanup.js`は、account denial fenceを確認してraw consent/intakeの失効と指紋・長さ・requestの詳細削減を行う。job/evidence/recovery/世代/accounting fenceは削除しない。1 passはDBを含め10秒以内、候補各段階最大10件、remote待機最大2秒。timeoutは元処理停止の証拠にしない。
+
+既存reaperへowner専用入口を追加し、すべての候補選択・更新へserver-derived account hashを限定する。64桁lowerhex文字列以外、null/undefinedを専用exportで拒否し、global処理へ広がらない。SQL fragmentへ入る値もこの検証済みhashだけで、HTTP入力のownerを受け付けない。別ownerの大量backlogは削除対象の枠を消費しない。
+
+受付期限前でも削除対象jobは停止要求へ移す。未claim/未dispatchは競合条件を再確認して0精算。claimedは同じclaimに保存済みのlocal/remote証拠が揃った場合だけ精算する。remote ack単独、legacy停止不明、live lease、証拠不足、attempt上限到達はpendingを保つ。attemptを巻き戻さない。remote bindingなしでもPDFなしの確認や未claimの0精算は可能で、bindingなしのclaimedは保持する。
+
+候補を10件処理したという理由では完了にしない。owner全体の未精算job、未完了/lease付きrecovery、削減未了intakeと有効raw consentの有無を最終確認する。flag OFFはcleanupを止めない。
+
+## 旧記録・障害の互換性
+
+PDF関連tableが確実に存在しない旧schemaは従来の削除結果/checkpoint形を維持する。部分schemaやDB読取り失敗はPDFなしと判断せずpending。PDFを一度追跡したcheckpointは、後からbinding/schemaが消えても完了へ進めない。
+
+旧版のstatus deletedにはPDF停止待ちが反映されていない可能性があるため、version付きPDF完了markerがない場合は保存identityのPDF phaseだけを再確認する。RAG未利用だった旧accountはrag_accounts行すらないことがある。保存済み旧deleted/独立phase完了の経路だけで、schema確認後にownerの拒否行を確立し、他phaseを繰り返さず完了可能にする。
+
+checkpoint書込みに失敗したら最終deletedへ進めない。再試行に必要な対応は既存KV checkpointに残る。KVの整合性や全削除を新しいACID取引として保証する変更ではなく、既存の削除/再試行境界上にPDF phaseを追加している。二重実行は既存CAS/証拠/leaseで枠を二重精算せず、PDF metadataは保持する。
+
+## 検証
+
+新規13回帰を追加。PDF pending中のcredential/session/snapshot削除と最小checkpoint、証拠付き完了、セッション/実行キーなしのPDF-only retry、binding/schema消失、checkpoint保存失敗、別owner25件の無変更、10件超の継続、invalid owner/type、timeout、旧deletedのheld job、旧RAG未利用accountを確認。
+
+既存account削除・recovery・停止接続を含む対象83件成功。最終server全体1,936 pass/0fail/0skip。件数と今回5source hashはRESULTSを参照する。最初のreview修正時に旧schemaのcheckpoint完全一致テストが失敗し、既存テストを変更せず、PDFを追跡しない旧schemaでは従来形を保持する実装へ修正した。
+
+実local workerd/D1で17migrationを適用し、合成accountのPDF保留中に独立消去が進むこと、4項目のcheckpoint、flags OFFのtokenなし証拠精算、最後にprivacy jobを除去すること、証拠metadata保持を確認。一時DBは破棄。KVは合成Map adapter、parse/cancelは合成adapterで、実Cloudflare KV伝播/実Docling VM/実アカウント消去は未検証。
+
+Planner・Code・Securityの独立レビューを実施。旧deleted迂回、不要な個人metadata持越し、ownerキー未指定でのglobal化、旧RAG未利用者の永久pendingを修正し、再レビュー残所見なし。reviewerによる独立テスト・DB操作はない。今回ソースhashとテスト件数はRESULTSへ分け、過去の成績/hashを改変しない。テスト成功は回答品質改善の証明ではない。
+
+## 残件・rollback
+
+Step5-Cのローカル実装は完了。証拠保存前のexecutor消失は引き続き保留する。最小の拒否/会計/証拠metadataの保持は、全データ物理purge完了と同義ではない。次はStep5-DのDO有限tombstoneとreceipt前提、資源/費用校正。実環境・iPad採用は残る。
+
+rollbackは原PDFの新規受付を停止し、checkpoint/account fence/job/evidence/lease/floorを維持する。PDF pendingを理解しない旧account-deletionへ戻してdeleted扱いにしない。追加migration/配備設定/キー/有料API/実ユーザーデータ操作/commit/pushなし、automation PAUSED。
