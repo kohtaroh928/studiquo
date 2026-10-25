@@ -63,7 +63,8 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  if (unitAsk && !comparisonSubjects.length && targets.length === 1 && clauseLike(targets[0])) {
   const at = facets.indexOf('quantity'); if (at >= 0) facets.splice(at, 1);
  }
- return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate,
+ const askedUnit = ['何パーセント', '何度', '何秒', '何キロ', '何メートル'].map(w => text.includes(w) ? w : null).find(Boolean) ?? null;
+ return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit,
    completeness: facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
    freshness: facets.length > 0 && /最新|現在|直近|今日|今年/u.test(text) };
 }
@@ -108,6 +109,26 @@ function linkedValue(span: any, rule: any, requirements: any, target: any) {
  const value = pattern.exec(suffix);
  if (!value) return false;
  return /^(?:は|が|の和|日時|時刻|[:：]|\s|約|およそ|税込|税抜|で|[-−]|\d{4}年)*$/u.test(suffix.slice(0,value.index));
+}
+
+// A question that asks for a unit ("何パーセント") names it, so the value only has to be in that unit. The attribute word
+// before it is open vocabulary (発生率, 標高, ...); the closed label list used for other quantities cannot cover it.
+const askedUnitValue: Record<string, RegExp> = {
+ '何パーセント': /\d[\d,.]*\s*(?:%|パーセント)/u, '何度': /\d[\d,.]*\s*(?:°|˚|度)/u, '何秒': /\d[\d,.]*\s*秒/u,
+ '何キロ': /\d[\d,.]*\s*(?:km|キロ)/u, '何メートル': /\d[\d,.]*\s*(?:メートル|m(?![a-z]))/u,
+};
+// The subject and a value in the asked unit in the same sentence, with no comparison and the asked attribute word
+// (割合 may be reported as a rate). The subject is compared without spaces (an excerpt may write "Hi-Lo テスト").
+function sameSentenceUnitValue(clause: any, target: any, requirements: any) {
+ const value = askedUnitValue[requirements.askedUnit];
+ if (!value || !target || requirements.symbolic) return false;
+ const compact = clause.replace(/\s/gu, '');
+ if (!compact.includes(target.replace(/\s/gu, ''))) return false;
+ if (/比較|比べ|別の|他の|に対して|に対し/u.test(clause)) return false;
+ const label = requirements.quantityLabel;
+ if (label && !(clause.includes(label) || label === '割合' && /率/u.test(clause))) return false;
+ if (!requirements.conditions.every((c: any) => { const at = compact.indexOf(c); return at >= 0 && (at === 0 || !/[\d.]/u.test(compact[at - 1])); })) return false;
+ return value.test(clause);
 }
 
 function symbolicSupport(text: any, requirements: any, target: any) {
@@ -202,7 +223,7 @@ export function referenceSupport(text: any, requirements: any) {
     })) return false;
     // A question's temperature is a condition, not the requested answer value.
     return (id !== 'quantity' || !requirements.quantityLabel || s.includes(requirements.quantityLabel)) && linkedValue(s, rule, requirements, target);
-   })) found.add(`${targetIndex}:${id}`);
+   }) || id === 'quantity' && requirements.askedUnit && clauses.some(s => sameSentenceUnitValue(s, target, requirements))) found.add(`${targetIndex}:${id}`);
   }
  }
  return found;
