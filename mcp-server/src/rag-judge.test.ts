@@ -154,6 +154,18 @@ test('on: a multi-subject question whose subjects cannot be named is demoted to 
   }
 });
 
+test('a multi-subject numerical comparison whose subjects cannot be named does not drop secondary quantity evidence', async () => {
+  const pages = numbered(
+    '温帯低気圧は中緯度で前線を伴って発達し、高気圧や移動性高気圧と交互に通過する特徴がある。',
+    '熱帯低気圧や移動性高気圧の統計では年間発生数が 25 件記録されている。'
+  );
+  const query = '温帯低気圧と熱帯低気圧は、高気圧と移動性高気圧の違いとして年間発生数は何件ですか。';
+  const { hit } = await ask({ mode: 'on', judge: 0.2, pages, query });
+  assert.notEqual(hit.detail, 'quantity');
+  assert.equal(hit.status, 'partial');
+  assert.ok(hit.citations.length > 0);
+});
+
 test('on: when the judge fails the evidence stays, whatever way it fails', async () => {
   for (const judge of [() => { throw new Error('unavailable'); }, () => ({}), () => ({ answers: { answerable: { noul: 7 } } }), () => null]) {
     const { hit } = await ask({ mode: 'on', judge });

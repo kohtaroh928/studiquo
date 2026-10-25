@@ -159,3 +159,19 @@ test('the same-sentence route needs the asked attribute next to the value, a who
  // The question names no attribute (a bare subject): the route stays off.
  assert.equal(accepted('光は何秒で地球を一周しますか。', '光は 1 秒に 7 周する。'), false);
 });
+
+test('the same-sentence route handles approximate unit questions, reversed value-attribute order, and rejects intervening verbs', () => {
+ const accepted = (query: string, text: string) => assessReference(text, detailRequirements(query)).accepted;
+ // "約" before the asked unit still extracts the attribute ("標高").
+ assert.equal(detailRequirements('富士山の標高は約何メートルですか。').askedAttribute, '標高');
+ assert.equal(accepted('富士山の標高は約何メートルですか。', '富士山の標高は 3,776 m である。'), true);
+ // Value followed by particle + attribute (e.g. "3,776 m の標高").
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山では約 3,776 m の標高が測られた。'), true);
+ // Intervening non-filler words between attribute and value must be rejected.
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の標高は昨年 10 m 変化したという記録はない。'), false);
+ // Short 1-character noun after a verb ending ("差") keeps the full attribute phrase so it does not over-match a single character.
+ const shortAttr = detailRequirements('合成Aの出た差は何メートルですか。');
+ assert.equal(shortAttr.askedAttribute, '出た差');
+ assert.equal(accepted('合成Aの出た差は何メートルですか。', '合成Aの出た差は 4 m であった。'), true);
+ assert.equal(accepted('合成Aの出た差は何メートルですか。', '合成Aの交差は 4 m であった。'), false);
+});
