@@ -640,9 +640,11 @@ struct NoteEditorView: View {
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
         }
-        .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { notification in
+            let citation = notification.object as? RAGCitation
             Task { @MainActor in
                 await Task.yield()
+                if let citation { showCitedNotebook(citation) }
                 applyPendingRAGCitation()
             }
         }
@@ -3320,6 +3322,17 @@ struct NoteEditorView: View {
         }
         applyPaneTarget(target, to: .primary)
         activePane = .primary
+    }
+
+    /// A citation is clicked in the AI chat, which occupies a pane. Puts the
+    /// cited notebook in that pane (or the active one), unless a pane already shows it.
+    private func showCitedNotebook(_ citation: RAGCitation) {
+        guard let (cited, _) = RAGCitationNavigation.resolve(citation, notebooks: notebooks) else { return }
+        if displayedPrimaryNotebook === cited && !primaryShowsAIChat && primaryChatTarget == nil { return }
+        if secondaryNotebook === cited && !secondaryShowsAIChat && secondaryChatTarget == nil { return }
+        let pane: ActivePane = primaryShowsAIChat ? .primary : secondaryShowsAIChat ? .secondary : activePane
+        applyPaneTarget(.notebook(cited), to: pane)
+        activePane = pane
     }
 
     private func applyPendingRAGCitation() {
