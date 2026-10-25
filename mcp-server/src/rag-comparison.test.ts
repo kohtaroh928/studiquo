@@ -79,8 +79,12 @@ test('the topic marker ends the subjects: the predicate is never part of a subje
  ] as const) {
   const plan = queryPlan(query);
   assert.deepEqual(plan.coverageGroups, groups, query);
-  assert.ok(plan.queries.every(q => !/それぞれ|どのよう|どんな/u.test(q)) || plan.queries[0] === query, query);
+  assert.ok(plan.queries.slice(1).every(q => !/それぞれ|どのよう|どんな/u.test(q)), query);
  }
  // A single subject whose predicate contains と is not split by the topic cut.
  assert.deepEqual(queryPlan('地図記号は、田と畑をどう区別しますか').coverageGroups, []);
+ // "Xとは、…" is a definition lead-in, not a topic marker that closes two subjects.
+ assert.equal(queryPlan('鉄道とは、貨物と旅客の違いを説明して').coverageGroups.length, 2); // unchanged from before: not collapsed to []
+ assert.deepEqual(queryPlan('鉄道および船舶は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶']);
+ assert.deepEqual(queryPlan('鉄道と船舶と航空機は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶', '航空機']);
 });
