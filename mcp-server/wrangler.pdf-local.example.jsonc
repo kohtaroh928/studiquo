@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "studiquo-rag-pdf-local",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [],
+  "observability": {"enabled": false},
+  // Dedicated local resources. Never copy production/preview IDs into this file.
+  "kv_namespaces": [{"binding":"STUDIQUO_DATA","id":"00000000000000000000000000000000"}],
+  "d1_databases": [{"binding":"ADMIN_DB","database_name":"studiquo-pdf-local","database_id":"00000000-0000-4000-8000-000000000000","migrations_dir":"migrations"}],
+  "services": [{"binding":"DOCLING_PROCESSOR","service":"studiquo-private-docling","entrypoint":"DoclingProcessor"}],
+  "ratelimits": [{"name":"RATE_LIMIT_RAG_PDF","namespace_id":"3027","simple":{"limit":10,"period":60}}],
+  "vars": {
+    "AI_PROVIDER_APPROVED":"false",
+    "RAG_ENABLED":"false",
+    "RAG_AUTO_INDEX_ENABLED":"false",
+    "RAG_PDF_PROCESSING_ENABLED":"false",
+    "RAG_PDF_CLEANUP_ENABLED":"false",
+    "RAG_PDF_ADMISSION_POLICY":"{\"perOwnerActive\":1,\"globalActive\":1,\"globalMemoryBytes\":67108864,\"perOwnerDailyUnits\":10,\"globalDailyUnits\":20,\"reservationUnits\":1,\"perOwnerDailyRequests\":10,\"globalDailyRequests\":20}",
+    "RAG_PDF_INTAKE_LIMITS":"{\"ownerRows\":10,\"globalRows\":100,\"ownerPending\":1,\"globalPending\":2}"
+  }
+}

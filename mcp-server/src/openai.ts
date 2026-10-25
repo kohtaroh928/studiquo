@@ -100,16 +100,39 @@ export function toStrictJSONSchema(schema: unknown): StrictSchema {
   return out as StrictSchema;
 }
 
+/**
+ * Called before every attempt so a retry re-checks what it is about to send.
+ * A string is the instructions; an object may also carry `reference`.
+ */
+export type BeforeDispatch = () => Promise<string | { instructions: string; reference?: unknown }>;
+
 /** Sends one Responses request, retrying overload/5xx with backoff. Returns the last response. */
-async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: string | undefined) {
+async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: string | undefined, beforeDispatch?: BeforeDispatch) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
-  const payload = JSON.stringify(body);
   let last: Response | null = null;
+  const baseInput = body.input as unknown[];
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (attempt > 0) {
       const base = env.AI_RETRY_BASE_MS === undefined ? 600 : Number(env.AI_RETRY_BASE_MS) || 0;
       await new Promise(resolve => setTimeout(resolve, base * 2 ** (attempt - 1)));
     }
+    if (beforeDispatch) {
+      // A string is the instructions. An object may also carry `reference`:
+      // retrieved text sent as its own input item just before the student's
+      // last turn, so it is data in the conversation and not an instruction.
+      const prepared = await beforeDispatch();
+      if (typeof prepared === "string") {
+        // A retry whose references were revoked must not keep the earlier attempt's input item.
+        body.instructions = prepared;
+        body.input = baseInput;
+      } else {
+        body.instructions = prepared.instructions;
+        body.input = prepared.reference
+          ? [...baseInput.slice(0, -1), { role: "user", content: prepared.reference }, baseInput.at(-1)]
+          : baseInput;
+      }
+    }
+    const payload = JSON.stringify(body);
     const response = await fetch(API_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -148,8 +171,8 @@ export async function callOpenAIStructured(env: Env, { model, systemInstruction,
  * `apiKey` defaults to this Worker's own `OPENAI_API_KEY`; it is a parameter
  * so a per-user token can be passed here later without touching the body.
  */
-export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "turns" | "images" | "safetyId"> & { apiKey?: string }) {
-  return postWithRetry(env, buildResponsesBody({ model, systemInstruction, turns, images, safetyId }), apiKey);
+export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, beforeDispatch, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "turns" | "images" | "safetyId"> & { apiKey?: string; beforeDispatch?: BeforeDispatch }) {
+  return postWithRetry(env, buildResponsesBody({ model, systemInstruction, turns, images, safetyId }), apiKey, beforeDispatch);
 }
 
 /**
@@ -171,7 +194,7 @@ const MODERATION_PIECE = 8000;
 const MODERATION_MAX_PIECES = 64;
 const MODERATION_BATCH = 20;
 
-export async function moderationRejection(env: Env, texts: string[], apiKey = env.OPENAI_API_KEY) {
+export async function moderationRejection(env: Env, texts: string[], apiKey = env.OPENAI_API_KEY, { timeoutMs }: { timeoutMs?: number } = {}) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
   const input: string[] = [];
   for (const text of texts) {
@@ -192,6 +215,8 @@ export async function moderationRejection(env: Env, texts: string[], apiKey = en
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model: "omni-moderation-latest", input: input.slice(from, from + MODERATION_BATCH) }),
+        // The finished reply waits on this check before the stream can close, so it is bounded.
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       });
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});

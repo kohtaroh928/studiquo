@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-15",
+  "method": "offline request preparation; NOT model extraction or API schema acceptance",
+  "version": 1,
+  "syntheticOnly": true,
+  "externalCalls": 0,
+  "modelEvaluated": false,
+  "releaseAccepted": false,
+  "questionCount": 6,
+  "questionOrderHash": "917b8dbf5f81ddf62d29471efe58ab9a00aacc6f7ced87574dcb4832a5260956",
+  "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+  "schemaHash": "46dd50ccf5525a91a58498cfa92dc6bc1854a8e2d6fef11114bdc837548a05b0",
+  "rows": [
+    {
+      "index": 0,
+      "questionHash": "0cb88cbcef2db4d5ed1263f95c377f309565b7e48de8e082264b1ec9619805da",
+      "requestHash": "5f18a3fb550582fa15484fc27d29b812be18e8ff781fbdf9524787fdf9b71dd8",
+      "bytes": 4983
+    },
+    {
+      "index": 1,
+      "questionHash": "aace2877e37575bb8f3a25a4191a80fd084bfb229d16d3e270359ddc723e6cd4",
+      "requestHash": "fef9b484e532e214278cb54be72c4445b433dc4f294171cb875e6314f3b3b159",
+      "bytes": 4988
+    },
+    {
+      "index": 2,
+      "questionHash": "4f60c10f87bb5b3c4262da88870c41f6ae3a5e964fa3ada03e37cb48a605167f",
+      "requestHash": "3cad19bf94fcaca1bcff801899830498540fce8c3089c15d987a9bf0aa3ecd2a",
+      "bytes": 5026
+    },
+    {
+      "index": 3,
+      "questionHash": "5cca7b14aafac2709491f7379a74943a4ed1df69e630c38ae20988bc7f68a5fe",
+      "requestHash": "e9a4b81932a972d50f804c93df28ce2b1e8c6286c18176d15d8c4101a84d8126",
+      "bytes": 5001
+    },
+    {
+      "index": 4,
+      "questionHash": "4e834f0731b4baf51668a96120bd29a803490e1309d586b7fa0024f78df40ed8",
+      "requestHash": "44e65919ecaca3b48deb30da9120c3c5f9ecca18f2864b5f0d67a441769d1c74",
+      "bytes": 4998
+    },
+    {
+      "index": 5,
+      "questionHash": "f239141b762eeb72814990a08da68c15f6f7dcbe1088202256e2336b55f70c88",
+      "requestHash": "17812ea18af11a292ffa1cf6a65f94edebcba5a8eba67f16be1d2b0424a00827",
+      "bytes": 5000
+    }
+  ],
+  "sourceHashes": {
+    "scripts/rag-quality/task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+    "scripts/rag-quality/task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+    "scripts/rag-quality/question-task-fixture.mjs": "5faba8476b6a84338b8d1d465b809eef0328fbfc8192f946ca3b5842b2363310"
+  },
+  "verification": {
+    "targetPassed": 5,
+    "relatedPassed": 23,
+    "fullWorkerPassed": 1333,
+    "failures": 0,
+    "skipped": 0,
+    "independentTargetPassed": 5,
+    "independentReview": "no High/Medium findings",
+    "semanticCompleteness": "pending",
+    "runtimePolicyOutputChanges": 0,
+    "previousReportChanges": [],
+    "v1InitialHashesUnchanged": true
+  },
+  "responseValidation": {
+    "date": "2026-10-15",
+    "method": "mocked response validation only; NOT model extraction or live API compatibility",
+    "sourceHash": "dfdb1adfc572ff8318a9f233696abe6ff93eb344f33f4721be9496a55747caf4",
+    "targetPassed": 7,
+    "relatedPassed": 19,
+    "fullWorkerPassed": 1340,
+    "failures": 0,
+    "skipped": 0,
+    "independentTargetPassed": 7,
+    "independentReview": "no High/Medium findings",
+    "runtimePolicyOutputChanges": 0,
+    "v1InitialHashesUnchanged": true,
+    "externalCalls": 0,
+    "modelEvaluated": false,
+    "releaseAccepted": false,
+    "transportConnected": false
+  }
+}

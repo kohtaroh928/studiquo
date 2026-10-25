@@ -1,0 +1,474 @@
+{
+ "date": "2026-10-21",
+ "before": "be4cc6c (検出モジュールなし)",
+ "after": "b87641e (detail-presence あり)",
+ "material": "気象庁『総観気象学 基礎編【改訂版】』348物理ページ",
+ "manifestSha256": "4b847a0b10466875dc3532f9f250a6a3af0e42c51a82a0bd207f3de90833dd15",
+ "environment": "real Workers AI REST (bge-m3, bge-reranker-base); D1=local SQLite FTS5, Vectorize=local exact cosine",
+ "categoryLabels": {
+  "a": "話題が合うが単位つきの量がない",
+  "b": "話題が合うが単位のない詳細・漢字語の詳細がない",
+  "c": "固有語(カタカナ・英字)が資料にない",
+  "d": "無関係",
+  "p": "答えあり(対照)"
+ },
+ "summary": {
+  "negatives": {
+   "n": 27,
+   "before": 9,
+   "after": 17
+  },
+  "positives": {
+   "n": 12,
+   "before": 12,
+   "after": 12
+  },
+  "byCategory": {
+   "A 量(単位つき)": {
+    "n": 6,
+    "before": 1,
+    "after": 4
+   },
+   "B 詳細(単位なし・漢字語)": {
+    "n": 6,
+    "before": 1,
+    "after": 1
+   },
+   "C 固有語が資料にない": {
+    "n": 7,
+    "before": 1,
+    "after": 6
+   },
+   "D 無関係": {
+    "n": 8,
+    "before": 6,
+    "after": 6
+   },
+   "答えあり(対照)": {
+    "n": 12,
+    "before": 12,
+    "after": 12
+   }
+  },
+  "targetedByDesign(A+C)": {
+   "n": 13,
+   "before": 2,
+   "after": 10
+  },
+  "notTargeted(B+D)": {
+   "n": 14,
+   "before": 7,
+   "after": 7
+  }
+ },
+ "cases": {
+  "v3-a1": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-a2": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-a3": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-a4": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-a5": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-a6": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-b1": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-b2": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-b3": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-b4": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-b5": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-b6": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-c1": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-c2": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-c3": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-c4": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-c5": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-c6": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-c7": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "insufficient",
+    "ok": true
+   }
+  },
+  "v3-d1": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-d2": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-d3": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-d4": {
+   "before": {
+    "status": "grounded",
+    "ok": false
+   },
+   "after": {
+    "status": "grounded",
+    "ok": false
+   }
+  },
+  "v3-d5": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-d6": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-d7": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-d8": {
+   "before": {
+    "status": "fallback",
+    "ok": true
+   },
+   "after": {
+    "status": "fallback",
+    "ok": true
+   }
+  },
+  "v3-p1": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p2": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p3": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p4": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p5": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p6": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p7": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p8": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p9": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p10": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p11": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  },
+  "v3-p12": {
+   "before": {
+    "status": "grounded",
+    "ok": true
+   },
+   "after": {
+    "status": "grounded",
+    "ok": true
+   }
+  }
+ },
+ "changedCases": [
+  "v3-a1",
+  "v3-a2",
+  "v3-a5",
+  "v3-c1",
+  "v3-c2",
+  "v3-c3",
+  "v3-c6",
+  "v3-c7"
+ ],
+ "meta": {
+  "apiCallsEach": 417,
+  "neuronsAfter": 300.6,
+  "neuronsBefore": 299.7,
+  "executionFailures": 0,
+  "elapsedMedianAfter": 1061
+ },
+ "note": "質問・正解・本文は含まない。case idは質問ID(v3-<分類><番号>)のみ。noEvidenceは出典が返らないこと、答えありは必要な根拠がそろったこと。"
+}

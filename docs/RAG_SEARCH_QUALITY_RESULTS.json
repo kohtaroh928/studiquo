@@ -1,0 +1,5323 @@
+{
+  "date": "2026-10-08T04:54:10.974Z",
+  "pages": 100,
+  "ocrPages": 20,
+  "chunks": 100,
+  "idempotent": true,
+  "calls": [
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 1045
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 181
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 182
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 182
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 258
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 833
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 328
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 343
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 348
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 233
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 234
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 192
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 198
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 419
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 156
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 244
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 396
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 246
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 147
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 775
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 526
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.24,
+      "elapsedMs": 233
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 170
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 772
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 225
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 322
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 224
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 233
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 291
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 340
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 208
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 176
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 286
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 186
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 191
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 185
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 227
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.27,
+      "elapsedMs": 464
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 162
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 300
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 647
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.24,
+      "elapsedMs": 505
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 220
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 195
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 423
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 718
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 207
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 216
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 242
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 276
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 175
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 351
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 215
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 307
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 535
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 197
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 301
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 165
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 246
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 217
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 456
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 179
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 838
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 174
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 156
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 250
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 192
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 464
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 147
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 362
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 317
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.24,
+      "elapsedMs": 251
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.27,
+      "elapsedMs": 274
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 241
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 410
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 234
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 160
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 203
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 162
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 248
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 175
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 332
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 439
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 530
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 164
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 347
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 214
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 306
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 303
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 222
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 198
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.24,
+      "elapsedMs": 637
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 201
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 206
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 176
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 264
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 496
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.26,
+      "elapsedMs": 166
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 248
+    },
+    {
+      "phase": "index",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.25,
+      "elapsedMs": 524
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 674
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 329
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 376
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.07,
+      "elapsedMs": 343
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 217
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.12,
+      "elapsedMs": 445
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 191
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 520
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 174
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.13,
+      "elapsedMs": 436
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 266
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 338
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 193
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.08,
+      "elapsedMs": 413
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 733
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 513
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 578
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 358
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 523
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 457
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 587
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.08,
+      "elapsedMs": 1185
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 216
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.12,
+      "elapsedMs": 371
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 562
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 380
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 244
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.13,
+      "elapsedMs": 376
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 458
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 468
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 502
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 405
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 359
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 403
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 405
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 497
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 179
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 355
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 176
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 423
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 209
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 347
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 215
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 448
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 590
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.13,
+      "elapsedMs": 700
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 485
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.12,
+      "elapsedMs": 364
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 750
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 444
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 261
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.15,
+      "elapsedMs": 330
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 709
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 470
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 317
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 326
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 694
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.13,
+      "elapsedMs": 387
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 279
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.13,
+      "elapsedMs": 361
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 187
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.12,
+      "elapsedMs": 325
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 694
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 456
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 409
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 404
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 270
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 426
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 206
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 432
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 850
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 316
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 793
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 441
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 350
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 306
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 226
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 345
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 322
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 515
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 291
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 857
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 1014
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 517
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 199
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 255
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0,
+      "elapsedMs": 650
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.08,
+      "elapsedMs": 432
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 188
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0,
+      "elapsedMs": 433
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 692
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 379
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 250
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 395
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 371
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.14,
+      "elapsedMs": 508
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 328
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0,
+      "elapsedMs": 387
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 519
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 417
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 239
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 273
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 310
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 441
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 358
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 341
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 730
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 321
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0,
+      "elapsedMs": 188
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 722
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 947
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 431
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 290
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 303
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 1036
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 500
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0,
+      "elapsedMs": 201
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 523
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 677
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.08,
+      "elapsedMs": 345
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 358
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 470
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 371
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 393
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 399
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.06,
+      "elapsedMs": 1086
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 713
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 470
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.01,
+      "elapsedMs": 312
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 312
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 470
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.11,
+      "elapsedMs": 428
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 192
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.1,
+      "elapsedMs": 664
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-m3",
+      "status": 200,
+      "neurons": 0.02,
+      "elapsedMs": 514
+    },
+    {
+      "phase": "evaluate",
+      "model": "@cf/baai/bge-reranker-base",
+      "status": 200,
+      "neurons": 1.09,
+      "elapsedMs": 388
+    }
+  ],
+  "results": [
+    {
+      "id": "def-1",
+      "kind": "paraphrase",
+      "expectedPages": [
+        1
+      ],
+      "stages": {
+        "vector": [
+          1,
+          86,
+          90,
+          5,
+          88
+        ],
+        "keyword": [
+          88,
+          86,
+          34,
+          54,
+          1
+        ],
+        "rrf": [
+          86,
+          1,
+          88,
+          90,
+          87
+        ],
+        "final": [
+          1,
+          90,
+          89,
+          87,
+          4
+        ]
+      },
+      "elapsedMs": 1030,
+      "candidatePages": [
+        86,
+        1,
+        88,
+        90,
+        87,
+        34,
+        4,
+        5,
+        94,
+        89,
+        36,
+        9,
+        54,
+        2,
+        7
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-1",
+      "kind": "ocr",
+      "expectedPages": [
+        5
+      ],
+      "stages": {
+        "vector": [
+          5,
+          90,
+          86,
+          3,
+          88
+        ],
+        "keyword": [
+          5,
+          90,
+          86,
+          87,
+          88
+        ],
+        "rrf": [
+          5,
+          90,
+          86,
+          88,
+          3
+        ],
+        "final": [
+          5,
+          2,
+          35,
+          4,
+          86
+        ]
+      },
+      "elapsedMs": 731,
+      "candidatePages": [
+        5,
+        90,
+        86,
+        88,
+        3,
+        87,
+        89,
+        4,
+        35,
+        1,
+        50,
+        46,
+        2,
+        82,
+        14
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-2",
+      "kind": "paraphrase",
+      "expectedPages": [
+        6
+      ],
+      "stages": {
+        "vector": [
+          6,
+          10,
+          8,
+          31,
+          7
+        ],
+        "keyword": [
+          10,
+          6,
+          33,
+          38,
+          8
+        ],
+        "rrf": [
+          10,
+          6,
+          8,
+          33,
+          31
+        ],
+        "final": [
+          6,
+          10,
+          9,
+          31,
+          7
+        ]
+      },
+      "elapsedMs": 674,
+      "candidatePages": [
+        10,
+        6,
+        8,
+        33,
+        31,
+        2,
+        9,
+        81,
+        11,
+        38,
+        7,
+        41,
+        47,
+        50,
+        1
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-2",
+      "kind": "ocr",
+      "expectedPages": [
+        10
+      ],
+      "stages": {
+        "vector": [
+          10,
+          7,
+          35,
+          9,
+          31
+        ],
+        "keyword": [
+          7,
+          27,
+          89,
+          17,
+          10
+        ],
+        "rrf": [
+          7,
+          10,
+          27,
+          35,
+          89
+        ],
+        "final": [
+          10,
+          7,
+          83,
+          85,
+          35
+        ]
+      },
+      "elapsedMs": 721,
+      "candidatePages": [
+        7,
+        10,
+        27,
+        35,
+        89,
+        9,
+        17,
+        31,
+        85,
+        15,
+        86,
+        75,
+        83,
+        32,
+        8
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-3",
+      "kind": "paraphrase",
+      "expectedPages": [
+        11
+      ],
+      "stages": {
+        "vector": [
+          11,
+          41,
+          50,
+          46,
+          15
+        ],
+        "keyword": [
+          11,
+          53,
+          41,
+          50,
+          26
+        ],
+        "rrf": [
+          11,
+          41,
+          50,
+          12,
+          47
+        ],
+        "final": [
+          11,
+          12,
+          47,
+          15,
+          50
+        ]
+      },
+      "elapsedMs": 617,
+      "candidatePages": [
+        11,
+        41,
+        50,
+        12,
+        47,
+        26,
+        30,
+        27,
+        31,
+        33,
+        53,
+        46,
+        15,
+        90,
+        14
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-3",
+      "kind": "ocr",
+      "expectedPages": [
+        15
+      ],
+      "stages": {
+        "vector": [
+          15,
+          13,
+          11,
+          12,
+          43
+        ],
+        "keyword": [
+          13,
+          12,
+          15,
+          47,
+          68
+        ],
+        "rrf": [
+          13,
+          15,
+          12,
+          11,
+          47
+        ],
+        "final": [
+          15,
+          13,
+          11,
+          50,
+          43
+        ]
+      },
+      "elapsedMs": 616,
+      "candidatePages": [
+        13,
+        15,
+        12,
+        11,
+        47,
+        14,
+        78,
+        41,
+        22,
+        68,
+        43,
+        65,
+        49,
+        50,
+        7
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-4",
+      "kind": "paraphrase",
+      "expectedPages": [
+        16
+      ],
+      "stages": {
+        "vector": [
+          16,
+          21,
+          20,
+          18,
+          17
+        ],
+        "keyword": [
+          16,
+          21,
+          20,
+          47,
+          43
+        ],
+        "rrf": [
+          16,
+          21,
+          20,
+          17,
+          22
+        ],
+        "final": [
+          16,
+          19,
+          17,
+          21,
+          6
+        ]
+      },
+      "elapsedMs": 617,
+      "candidatePages": [
+        16,
+        21,
+        20,
+        17,
+        22,
+        7,
+        27,
+        2,
+        47,
+        18,
+        43,
+        57,
+        19,
+        92,
+        6
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-4",
+      "kind": "ocr",
+      "expectedPages": [
+        20
+      ],
+      "stages": {
+        "vector": [
+          20,
+          16,
+          17,
+          18,
+          21
+        ],
+        "keyword": [
+          20,
+          18,
+          16,
+          17,
+          19
+        ],
+        "rrf": [
+          20,
+          16,
+          18,
+          17,
+          19
+        ],
+        "final": [
+          20,
+          24,
+          22,
+          21,
+          31
+        ]
+      },
+      "elapsedMs": 1255,
+      "candidatePages": [
+        20,
+        16,
+        18,
+        17,
+        19,
+        21,
+        22,
+        24,
+        37,
+        31,
+        33,
+        7,
+        11,
+        49,
+        25
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-5",
+      "kind": "paraphrase",
+      "expectedPages": [
+        21
+      ],
+      "stages": {
+        "vector": [
+          16,
+          21,
+          20,
+          17,
+          19
+        ],
+        "keyword": [
+          21,
+          16,
+          43,
+          20,
+          18
+        ],
+        "rrf": [
+          21,
+          16,
+          20,
+          17,
+          18
+        ],
+        "final": [
+          21,
+          16,
+          31,
+          6,
+          22
+        ]
+      },
+      "elapsedMs": 947,
+      "candidatePages": [
+        21,
+        16,
+        20,
+        17,
+        18,
+        19,
+        51,
+        22,
+        24,
+        43,
+        76,
+        31,
+        62,
+        58,
+        6
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-5",
+      "kind": "ocr",
+      "expectedPages": [
+        25
+      ],
+      "stages": {
+        "vector": [
+          25,
+          23,
+          22,
+          21,
+          24
+        ],
+        "keyword": [
+          25,
+          23,
+          21,
+          22,
+          24
+        ],
+        "rrf": [
+          25,
+          23,
+          22,
+          21,
+          24
+        ],
+        "final": [
+          25,
+          23,
+          22,
+          21,
+          24
+        ]
+      },
+      "elapsedMs": 992,
+      "candidatePages": [
+        25,
+        23,
+        22,
+        21,
+        24,
+        18,
+        52,
+        9,
+        53,
+        33,
+        49,
+        39,
+        8,
+        3,
+        5
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-6",
+      "kind": "paraphrase",
+      "expectedPages": [
+        26
+      ],
+      "stages": {
+        "vector": [
+          26,
+          30,
+          27,
+          11,
+          28
+        ],
+        "keyword": [
+          26,
+          32,
+          29,
+          79,
+          14
+        ],
+        "rrf": [
+          26,
+          29,
+          14,
+          27,
+          30
+        ],
+        "final": [
+          35,
+          42,
+          79,
+          28,
+          27
+        ]
+      },
+      "elapsedMs": 1782,
+      "candidatePages": [
+        26,
+        29,
+        14,
+        27,
+        30,
+        28,
+        11,
+        8,
+        35,
+        32,
+        79,
+        17,
+        20,
+        42,
+        10
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-6",
+      "kind": "ocr",
+      "expectedPages": [
+        30
+      ],
+      "stages": {
+        "vector": [
+          30,
+          26,
+          38,
+          40,
+          36
+        ],
+        "keyword": [
+          30,
+          7,
+          12,
+          26,
+          11
+        ],
+        "rrf": [
+          30,
+          26,
+          11,
+          7,
+          40
+        ],
+        "final": [
+          30,
+          28,
+          5,
+          40,
+          38
+        ]
+      },
+      "elapsedMs": 596,
+      "candidatePages": [
+        30,
+        26,
+        11,
+        7,
+        40,
+        45,
+        5,
+        38,
+        12,
+        36,
+        28,
+        55,
+        65,
+        10,
+        60
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-7",
+      "kind": "paraphrase",
+      "expectedPages": [
+        31
+      ],
+      "stages": {
+        "vector": [
+          31,
+          33,
+          35,
+          32,
+          20
+        ],
+        "keyword": [
+          33,
+          31,
+          35,
+          32,
+          38
+        ],
+        "rrf": [
+          33,
+          31,
+          35,
+          32,
+          20
+        ],
+        "final": [
+          6,
+          10,
+          35,
+          8,
+          38
+        ]
+      },
+      "elapsedMs": 950,
+      "candidatePages": [
+        33,
+        31,
+        35,
+        32,
+        20,
+        10,
+        81,
+        8,
+        27,
+        36,
+        38,
+        62,
+        2,
+        7,
+        6
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-7",
+      "kind": "ocr",
+      "expectedPages": [
+        35
+      ],
+      "stages": {
+        "vector": [
+          35,
+          10,
+          32,
+          45,
+          41
+        ],
+        "keyword": [
+          35,
+          36,
+          90,
+          32,
+          7
+        ],
+        "rrf": [
+          35,
+          32,
+          45,
+          7,
+          36
+        ],
+        "final": [
+          35,
+          41,
+          42,
+          100,
+          45
+        ]
+      },
+      "elapsedMs": 630,
+      "candidatePages": [
+        35,
+        32,
+        45,
+        7,
+        36,
+        40,
+        38,
+        10,
+        90,
+        41,
+        50,
+        31,
+        100,
+        42,
+        37
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-8",
+      "kind": "paraphrase",
+      "expectedPages": [
+        36
+      ],
+      "stages": {
+        "vector": [
+          36,
+          37,
+          38,
+          39,
+          40
+        ],
+        "keyword": [
+          36,
+          35,
+          38,
+          37,
+          32
+        ],
+        "rrf": [
+          36,
+          37,
+          38,
+          35,
+          33
+        ],
+        "final": [
+          81,
+          36,
+          35,
+          38,
+          11
+        ]
+      },
+      "elapsedMs": 936,
+      "candidatePages": [
+        36,
+        37,
+        38,
+        35,
+        33,
+        39,
+        40,
+        31,
+        81,
+        10,
+        32,
+        50,
+        4,
+        11,
+        47
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-8",
+      "kind": "ocr",
+      "expectedPages": [
+        40
+      ],
+      "stages": {
+        "vector": [
+          40,
+          38,
+          36,
+          37,
+          5
+        ],
+        "keyword": [
+          40,
+          38,
+          36,
+          37,
+          90
+        ],
+        "rrf": [
+          40,
+          38,
+          36,
+          37,
+          90
+        ],
+        "final": [
+          38,
+          36,
+          11,
+          44,
+          41
+        ]
+      },
+      "elapsedMs": 917,
+      "candidatePages": [
+        40,
+        38,
+        36,
+        37,
+        90,
+        11,
+        5,
+        44,
+        35,
+        39,
+        93,
+        41,
+        76,
+        12,
+        45
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-9",
+      "kind": "paraphrase",
+      "expectedPages": [
+        41
+      ],
+      "stages": {
+        "vector": [
+          41,
+          11,
+          43,
+          12,
+          46
+        ],
+        "keyword": [
+          41,
+          12,
+          78,
+          43,
+          50
+        ],
+        "rrf": [
+          41,
+          12,
+          43,
+          11,
+          50
+        ],
+        "final": [
+          41,
+          43,
+          12,
+          11,
+          2
+        ]
+      },
+      "elapsedMs": 770,
+      "candidatePages": [
+        41,
+        12,
+        43,
+        11,
+        50,
+        47,
+        49,
+        13,
+        78,
+        46,
+        8,
+        72,
+        6,
+        2,
+        42
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-9",
+      "kind": "ocr",
+      "expectedPages": [
+        45
+      ],
+      "stages": {
+        "vector": [
+          45,
+          42,
+          41,
+          43,
+          44
+        ],
+        "keyword": [
+          45,
+          42,
+          49,
+          41,
+          43
+        ],
+        "rrf": [
+          45,
+          42,
+          41,
+          43,
+          49
+        ],
+        "final": [
+          45,
+          42,
+          43,
+          49,
+          41
+        ]
+      },
+      "elapsedMs": 914,
+      "candidatePages": [
+        45,
+        42,
+        41,
+        43,
+        49,
+        44,
+        3,
+        13,
+        10,
+        40,
+        8,
+        22,
+        85,
+        25,
+        68
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-10",
+      "kind": "paraphrase",
+      "expectedPages": [
+        46
+      ],
+      "stages": {
+        "vector": [
+          46,
+          47,
+          50,
+          48,
+          11
+        ],
+        "keyword": [
+          46,
+          47,
+          22,
+          18,
+          6
+        ],
+        "rrf": [
+          46,
+          47,
+          48,
+          2,
+          50
+        ],
+        "final": [
+          47,
+          42,
+          49,
+          50,
+          46
+        ]
+      },
+      "elapsedMs": 542,
+      "candidatePages": [
+        46,
+        47,
+        48,
+        2,
+        50,
+        22,
+        18,
+        6,
+        11,
+        3,
+        49,
+        5,
+        69,
+        25,
+        42
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-10",
+      "kind": "ocr",
+      "expectedPages": [
+        50
+      ],
+      "stages": {
+        "vector": [
+          50,
+          48,
+          46,
+          47,
+          49
+        ],
+        "keyword": [
+          50,
+          12,
+          46,
+          49,
+          48
+        ],
+        "rrf": [
+          50,
+          46,
+          48,
+          49,
+          12
+        ],
+        "final": [
+          50,
+          11,
+          12,
+          74,
+          55
+        ]
+      },
+      "elapsedMs": 610,
+      "candidatePages": [
+        50,
+        46,
+        48,
+        49,
+        12,
+        47,
+        78,
+        41,
+        15,
+        35,
+        71,
+        11,
+        55,
+        83,
+        74
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-11",
+      "kind": "paraphrase",
+      "expectedPages": [
+        51
+      ],
+      "stages": {
+        "vector": [
+          51,
+          52,
+          58,
+          53,
+          54
+        ],
+        "keyword": [
+          51,
+          25,
+          4,
+          54,
+          58
+        ],
+        "rrf": [
+          51,
+          58,
+          54,
+          56,
+          57
+        ],
+        "final": [
+          51,
+          58,
+          52,
+          55,
+          56
+        ]
+      },
+      "elapsedMs": 569,
+      "candidatePages": [
+        51,
+        58,
+        54,
+        56,
+        57,
+        72,
+        66,
+        52,
+        25,
+        4,
+        53,
+        55,
+        76,
+        17,
+        67
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-11",
+      "kind": "ocr",
+      "expectedPages": [
+        55
+      ],
+      "stages": {
+        "vector": [
+          55,
+          53,
+          51,
+          52,
+          28
+        ],
+        "keyword": [
+          55,
+          80,
+          28,
+          51,
+          22
+        ],
+        "rrf": [
+          55,
+          51,
+          53,
+          28,
+          80
+        ],
+        "final": [
+          55,
+          73,
+          71,
+          43,
+          22
+        ]
+      },
+      "elapsedMs": 675,
+      "candidatePages": [
+        55,
+        51,
+        53,
+        28,
+        80,
+        52,
+        54,
+        43,
+        22,
+        58,
+        83,
+        19,
+        73,
+        60,
+        71
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-12",
+      "kind": "paraphrase",
+      "expectedPages": [
+        56
+      ],
+      "stages": {
+        "vector": [
+          58,
+          73,
+          53,
+          51,
+          72
+        ],
+        "keyword": [
+          56,
+          59,
+          60,
+          49,
+          99
+        ],
+        "rrf": [
+          56,
+          73,
+          59,
+          58,
+          60
+        ],
+        "final": [
+          58,
+          59,
+          56,
+          73,
+          53
+        ]
+      },
+      "elapsedMs": 1300,
+      "candidatePages": [
+        56,
+        73,
+        59,
+        58,
+        60,
+        51,
+        54,
+        28,
+        53,
+        49,
+        99,
+        72,
+        20,
+        55,
+        24
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-12",
+      "kind": "ocr",
+      "expectedPages": [
+        60
+      ],
+      "stages": {
+        "vector": [
+          60,
+          59,
+          52,
+          58,
+          75
+        ],
+        "keyword": [
+          60,
+          52,
+          59,
+          27,
+          18
+        ],
+        "rrf": [
+          60,
+          52,
+          59,
+          25,
+          27
+        ],
+        "final": [
+          60,
+          59,
+          73,
+          27,
+          53
+        ]
+      },
+      "elapsedMs": 858,
+      "candidatePages": [
+        60,
+        52,
+        59,
+        25,
+        27,
+        58,
+        18,
+        75,
+        33,
+        6,
+        53,
+        74,
+        48,
+        65,
+        73
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-13",
+      "kind": "paraphrase",
+      "expectedPages": [
+        61
+      ],
+      "stages": {
+        "vector": [
+          62,
+          63,
+          64,
+          61,
+          65
+        ],
+        "keyword": [
+          64,
+          63,
+          62,
+          65,
+          61
+        ],
+        "rrf": [
+          62,
+          64,
+          63,
+          65,
+          61
+        ],
+        "final": [
+          62,
+          65,
+          64,
+          61,
+          63
+        ]
+      },
+      "elapsedMs": 1205,
+      "candidatePages": [
+        62,
+        64,
+        63,
+        65,
+        61,
+        76,
+        29,
+        53,
+        13,
+        20,
+        31,
+        78,
+        69,
+        73,
+        21
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-13",
+      "kind": "ocr",
+      "expectedPages": [
+        65
+      ],
+      "stages": {
+        "vector": [
+          62,
+          65,
+          63,
+          64,
+          61
+        ],
+        "keyword": [
+          65,
+          63,
+          64,
+          69,
+          29
+        ],
+        "rrf": [
+          65,
+          63,
+          64,
+          61,
+          62
+        ],
+        "final": [
+          65,
+          62,
+          64,
+          60,
+          63
+        ]
+      },
+      "elapsedMs": 602,
+      "candidatePages": [
+        65,
+        63,
+        64,
+        61,
+        62,
+        20,
+        73,
+        69,
+        29,
+        52,
+        13,
+        72,
+        47,
+        78,
+        60
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-14",
+      "kind": "paraphrase",
+      "expectedPages": [
+        66
+      ],
+      "stages": {
+        "vector": [
+          66,
+          67,
+          69,
+          70,
+          68
+        ],
+        "keyword": [
+          67,
+          66,
+          69,
+          68,
+          70
+        ],
+        "rrf": [
+          67,
+          66,
+          69,
+          70,
+          68
+        ],
+        "final": [
+          67,
+          66,
+          69,
+          72,
+          39
+        ]
+      },
+      "elapsedMs": 1190,
+      "candidatePages": [
+        67,
+        66,
+        69,
+        70,
+        68,
+        54,
+        51,
+        39,
+        25,
+        52,
+        63,
+        72,
+        74,
+        65,
+        34
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-14",
+      "kind": "ocr",
+      "expectedPages": [
+        70
+      ],
+      "stages": {
+        "vector": [
+          69,
+          70,
+          66,
+          67,
+          68
+        ],
+        "keyword": [
+          70,
+          69,
+          68,
+          66,
+          67
+        ],
+        "rrf": [
+          70,
+          69,
+          66,
+          68,
+          67
+        ],
+        "final": [
+          47,
+          50,
+          69,
+          34,
+          35
+        ]
+      },
+      "elapsedMs": 653,
+      "candidatePages": [
+        70,
+        69,
+        66,
+        68,
+        67,
+        46,
+        35,
+        100,
+        78,
+        95,
+        50,
+        64,
+        65,
+        47,
+        34
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-15",
+      "kind": "paraphrase",
+      "expectedPages": [
+        71
+      ],
+      "stages": {
+        "vector": [
+          72,
+          71,
+          73,
+          74,
+          75
+        ],
+        "keyword": [
+          71,
+          51,
+          58,
+          43,
+          95
+        ],
+        "rrf": [
+          71,
+          51,
+          58,
+          65,
+          64
+        ],
+        "final": [
+          64,
+          65,
+          73,
+          74,
+          75
+        ]
+      },
+      "elapsedMs": 1092,
+      "candidatePages": [
+        71,
+        51,
+        58,
+        65,
+        64,
+        25,
+        72,
+        73,
+        43,
+        74,
+        95,
+        75,
+        52,
+        45,
+        8
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-15",
+      "kind": "ocr",
+      "expectedPages": [
+        75
+      ],
+      "stages": {
+        "vector": [
+          74,
+          75,
+          72,
+          73,
+          60
+        ],
+        "keyword": [
+          75,
+          74,
+          72,
+          71,
+          73
+        ],
+        "rrf": [
+          74,
+          75,
+          72,
+          73,
+          71
+        ],
+        "final": [
+          75,
+          74,
+          60,
+          78,
+          51
+        ]
+      },
+      "elapsedMs": 649,
+      "candidatePages": [
+        74,
+        75,
+        72,
+        73,
+        71,
+        22,
+        28,
+        57,
+        60,
+        33,
+        78,
+        51,
+        5,
+        35,
+        50
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-16",
+      "kind": "paraphrase",
+      "expectedPages": [
+        76
+      ],
+      "stages": {
+        "vector": [
+          76,
+          77,
+          78,
+          80,
+          79
+        ],
+        "keyword": [
+          76,
+          79,
+          29,
+          15,
+          78
+        ],
+        "rrf": [
+          76,
+          79,
+          78,
+          77,
+          80
+        ],
+        "final": [
+          76,
+          77,
+          78,
+          15,
+          13
+        ]
+      },
+      "elapsedMs": 522,
+      "candidatePages": [
+        76,
+        79,
+        78,
+        77,
+        80,
+        63,
+        15,
+        13,
+        58,
+        53,
+        29,
+        38,
+        61,
+        64,
+        62
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-16",
+      "kind": "ocr",
+      "expectedPages": [
+        80
+      ],
+      "stages": {
+        "vector": [
+          80,
+          76,
+          55,
+          53,
+          78
+        ],
+        "keyword": [
+          80,
+          55,
+          36,
+          28,
+          35
+        ],
+        "rrf": [
+          80,
+          55,
+          35,
+          53,
+          76
+        ],
+        "final": [
+          80,
+          35,
+          83,
+          22,
+          36
+        ]
+      },
+      "elapsedMs": 1161,
+      "candidatePages": [
+        80,
+        55,
+        35,
+        53,
+        76,
+        28,
+        22,
+        43,
+        51,
+        68,
+        36,
+        78,
+        77,
+        83,
+        95
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-17",
+      "kind": "paraphrase",
+      "expectedPages": [
+        81
+      ],
+      "stages": {
+        "vector": [
+          81,
+          82,
+          85,
+          83,
+          84
+        ],
+        "keyword": [
+          81,
+          42,
+          15,
+          83,
+          8
+        ],
+        "rrf": [
+          81,
+          83,
+          31,
+          33,
+          82
+        ],
+        "final": [
+          37,
+          85,
+          83,
+          81,
+          36
+        ]
+      },
+      "elapsedMs": 822,
+      "candidatePages": [
+        81,
+        83,
+        31,
+        33,
+        82,
+        85,
+        50,
+        84,
+        8,
+        37,
+        36,
+        10,
+        11,
+        42,
+        15
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-17",
+      "kind": "ocr",
+      "expectedPages": [
+        85
+      ],
+      "stages": {
+        "vector": [
+          85,
+          82,
+          83,
+          81,
+          11
+        ],
+        "keyword": [
+          82,
+          85,
+          52,
+          18,
+          6
+        ],
+        "rrf": [
+          85,
+          82,
+          6,
+          7,
+          52
+        ],
+        "final": [
+          85,
+          84,
+          81,
+          83,
+          82
+        ]
+      },
+      "elapsedMs": 706,
+      "candidatePages": [
+        85,
+        82,
+        6,
+        7,
+        52,
+        83,
+        18,
+        81,
+        11,
+        41,
+        25,
+        42,
+        48,
+        65,
+        84
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-18",
+      "kind": "paraphrase",
+      "expectedPages": [
+        86
+      ],
+      "stages": {
+        "vector": [
+          86,
+          88,
+          87,
+          90,
+          89
+        ],
+        "keyword": [
+          86,
+          93,
+          89,
+          90,
+          87
+        ],
+        "rrf": [
+          86,
+          87,
+          89,
+          90,
+          88
+        ],
+        "final": [
+          86,
+          87,
+          89,
+          88,
+          1
+        ]
+      },
+      "elapsedMs": 650,
+      "candidatePages": [
+        86,
+        87,
+        89,
+        90,
+        88,
+        31,
+        2,
+        4,
+        5,
+        10,
+        93,
+        1,
+        91,
+        46,
+        9
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-18",
+      "kind": "ocr",
+      "expectedPages": [
+        90
+      ],
+      "stages": {
+        "vector": [
+          90,
+          86,
+          87,
+          88,
+          89
+        ],
+        "keyword": [
+          90,
+          86,
+          3,
+          91,
+          89
+        ],
+        "rrf": [
+          90,
+          86,
+          89,
+          3,
+          2
+        ],
+        "final": [
+          90,
+          2,
+          8,
+          85,
+          10
+        ]
+      },
+      "elapsedMs": 1176,
+      "candidatePages": [
+        90,
+        86,
+        89,
+        3,
+        2,
+        1,
+        91,
+        10,
+        85,
+        87,
+        88,
+        60,
+        8,
+        4,
+        19
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-19",
+      "kind": "paraphrase",
+      "expectedPages": [
+        91
+      ],
+      "stages": {
+        "vector": [
+          91,
+          93,
+          94,
+          95,
+          92
+        ],
+        "keyword": [
+          91,
+          93,
+          3,
+          33,
+          31
+        ],
+        "rrf": [
+          91,
+          93,
+          3,
+          86,
+          33
+        ],
+        "final": [
+          92,
+          91,
+          95,
+          94,
+          93
+        ]
+      },
+      "elapsedMs": 1245,
+      "candidatePages": [
+        91,
+        93,
+        3,
+        86,
+        33,
+        51,
+        92,
+        55,
+        94,
+        95,
+        31,
+        99,
+        59,
+        84,
+        90
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-19",
+      "kind": "ocr",
+      "expectedPages": [
+        95
+      ],
+      "stages": {
+        "vector": [
+          95,
+          91,
+          93,
+          92,
+          94
+        ],
+        "keyword": [
+          91,
+          95,
+          93,
+          3,
+          2
+        ],
+        "rrf": [
+          95,
+          91,
+          93,
+          3,
+          92
+        ],
+        "final": [
+          95,
+          94,
+          93,
+          1,
+          92
+        ]
+      },
+      "elapsedMs": 667,
+      "candidatePages": [
+        95,
+        91,
+        93,
+        3,
+        92,
+        86,
+        2,
+        42,
+        94,
+        1,
+        9,
+        38,
+        4,
+        56,
+        88
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "def-20",
+      "kind": "paraphrase",
+      "expectedPages": [
+        96
+      ],
+      "stages": {
+        "vector": [
+          96,
+          98,
+          97,
+          100,
+          99
+        ],
+        "keyword": [
+          96,
+          98,
+          97,
+          99,
+          100
+        ],
+        "rrf": [
+          96,
+          98,
+          97,
+          100,
+          99
+        ],
+        "final": [
+          96,
+          100,
+          97,
+          98,
+          99
+        ]
+      },
+      "elapsedMs": 581,
+      "candidatePages": [
+        96,
+        98,
+        97,
+        100,
+        99,
+        56,
+        58,
+        41,
+        57,
+        36,
+        26,
+        59,
+        94,
+        82,
+        86
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ocr-20",
+      "kind": "ocr",
+      "expectedPages": [
+        100
+      ],
+      "stages": {
+        "vector": [
+          100,
+          98,
+          60,
+          96,
+          97
+        ],
+        "keyword": [
+          100,
+          68,
+          65,
+          10,
+          60
+        ],
+        "rrf": [
+          100,
+          60,
+          57,
+          98,
+          55
+        ],
+        "final": [
+          100,
+          98,
+          97,
+          96,
+          75
+        ]
+      },
+      "elapsedMs": 848,
+      "candidatePages": [
+        100,
+        60,
+        57,
+        98,
+        55,
+        58,
+        68,
+        65,
+        10,
+        96,
+        97,
+        22,
+        75,
+        67,
+        63
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-1",
+      "kind": "comparison",
+      "expectedPages": [
+        1,
+        6
+      ],
+      "stages": {
+        "vector": [
+          3,
+          8,
+          6,
+          2,
+          1
+        ],
+        "keyword": [
+          6,
+          3,
+          8,
+          1,
+          10
+        ],
+        "rrf": [
+          3,
+          8,
+          1,
+          7,
+          9
+        ],
+        "final": [
+          1,
+          9,
+          6,
+          7,
+          8
+        ]
+      },
+      "elapsedMs": 1573,
+      "candidatePages": [
+        3,
+        8,
+        1,
+        7,
+        9,
+        6,
+        10,
+        2,
+        5,
+        4,
+        25,
+        90,
+        66,
+        46,
+        16
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-3",
+      "kind": "comparison",
+      "expectedPages": [
+        11,
+        16
+      ],
+      "stages": {
+        "vector": [
+          13,
+          11,
+          15,
+          18,
+          20
+        ],
+        "keyword": [
+          16,
+          21,
+          18,
+          11,
+          20
+        ],
+        "rrf": [
+          11,
+          13,
+          16,
+          18,
+          20
+        ],
+        "final": [
+          8,
+          11,
+          13,
+          15,
+          18
+        ]
+      },
+      "elapsedMs": 1116,
+      "candidatePages": [
+        11,
+        13,
+        16,
+        18,
+        20,
+        21,
+        17,
+        19,
+        15,
+        12,
+        14,
+        24,
+        41,
+        46,
+        8
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-5",
+      "kind": "comparison",
+      "expectedPages": [
+        21,
+        26
+      ],
+      "stages": {
+        "vector": [
+          21,
+          22,
+          23,
+          24,
+          25
+        ],
+        "keyword": [
+          21,
+          29,
+          26,
+          23,
+          51
+        ],
+        "rrf": [
+          21,
+          23,
+          26,
+          22,
+          11
+        ],
+        "final": [
+          21,
+          28,
+          29,
+          26,
+          25
+        ]
+      },
+      "elapsedMs": 1103,
+      "candidatePages": [
+        21,
+        23,
+        26,
+        22,
+        11,
+        25,
+        24,
+        29,
+        13,
+        56,
+        8,
+        3,
+        43,
+        31,
+        28
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-7",
+      "kind": "comparison",
+      "expectedPages": [
+        31,
+        36
+      ],
+      "stages": {
+        "vector": [
+          31,
+          33,
+          35,
+          34,
+          32
+        ],
+        "keyword": [
+          36,
+          38,
+          40,
+          37,
+          39
+        ],
+        "rrf": [
+          36,
+          38,
+          37,
+          40,
+          33
+        ],
+        "final": [
+          36,
+          31,
+          38,
+          33,
+          35
+        ]
+      },
+      "elapsedMs": 922,
+      "candidatePages": [
+        36,
+        38,
+        37,
+        40,
+        33,
+        31,
+        35,
+        39,
+        34,
+        32,
+        1,
+        25,
+        2,
+        51,
+        66
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-9",
+      "kind": "comparison",
+      "expectedPages": [
+        41,
+        46
+      ],
+      "stages": {
+        "vector": [
+          48,
+          46,
+          47,
+          50,
+          49
+        ],
+        "keyword": [
+          49,
+          41,
+          46,
+          48,
+          50
+        ],
+        "rrf": [
+          49,
+          41,
+          46,
+          43,
+          48
+        ],
+        "final": [
+          49,
+          43,
+          47,
+          41,
+          42
+        ]
+      },
+      "elapsedMs": 948,
+      "candidatePages": [
+        49,
+        41,
+        46,
+        43,
+        48,
+        47,
+        50,
+        11,
+        42,
+        45,
+        44,
+        15,
+        76,
+        8,
+        6
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-11",
+      "kind": "comparison",
+      "expectedPages": [
+        51,
+        56
+      ],
+      "stages": {
+        "vector": [
+          56,
+          58,
+          57,
+          59,
+          60
+        ],
+        "keyword": [
+          56,
+          51,
+          58,
+          71,
+          57
+        ],
+        "rrf": [
+          51,
+          56,
+          58,
+          53,
+          57
+        ],
+        "final": [
+          56,
+          51,
+          59,
+          58,
+          52
+        ]
+      },
+      "elapsedMs": 784,
+      "candidatePages": [
+        51,
+        56,
+        58,
+        53,
+        57,
+        59,
+        71,
+        60,
+        52,
+        55,
+        54,
+        76,
+        73,
+        72,
+        63
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-13",
+      "kind": "comparison",
+      "expectedPages": [
+        61,
+        66
+      ],
+      "stages": {
+        "vector": [
+          66,
+          63,
+          68,
+          61,
+          65
+        ],
+        "keyword": [
+          66,
+          69,
+          68,
+          67,
+          70
+        ],
+        "rrf": [
+          66,
+          63,
+          61,
+          70,
+          76
+        ],
+        "final": [
+          65,
+          64,
+          61,
+          63,
+          62
+        ]
+      },
+      "elapsedMs": 1090,
+      "candidatePages": [
+        66,
+        63,
+        61,
+        70,
+        76,
+        68,
+        69,
+        67,
+        65,
+        62,
+        64,
+        78,
+        16,
+        51,
+        56
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-15",
+      "kind": "comparison",
+      "expectedPages": [
+        71,
+        76
+      ],
+      "stages": {
+        "vector": [
+          71,
+          72,
+          75,
+          73,
+          74
+        ],
+        "keyword": [
+          76,
+          71,
+          78,
+          79,
+          77
+        ],
+        "rrf": [
+          71,
+          78,
+          73,
+          80,
+          76
+        ],
+        "final": [
+          71,
+          73,
+          75,
+          78,
+          72
+        ]
+      },
+      "elapsedMs": 1390,
+      "candidatePages": [
+        71,
+        78,
+        73,
+        80,
+        76,
+        79,
+        77,
+        56,
+        11,
+        72,
+        75,
+        74,
+        51,
+        46,
+        63
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-17",
+      "kind": "comparison",
+      "expectedPages": [
+        81,
+        86
+      ],
+      "stages": {
+        "vector": [
+          88,
+          86,
+          89,
+          87,
+          90
+        ],
+        "keyword": [
+          86,
+          88,
+          90,
+          87,
+          81
+        ],
+        "rrf": [
+          83,
+          87,
+          89,
+          81,
+          88
+        ],
+        "final": [
+          88,
+          87,
+          89,
+          86,
+          81
+        ]
+      },
+      "elapsedMs": 1547,
+      "candidatePages": [
+        83,
+        87,
+        89,
+        81,
+        88,
+        86,
+        82,
+        84,
+        90,
+        85,
+        47,
+        18,
+        46,
+        26,
+        27
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "comparison-19",
+      "kind": "comparison",
+      "expectedPages": [
+        91,
+        96
+      ],
+      "stages": {
+        "vector": [
+          91,
+          93,
+          95,
+          94,
+          92
+        ],
+        "keyword": [
+          96,
+          99,
+          98,
+          97,
+          100
+        ],
+        "rrf": [
+          99,
+          91,
+          96,
+          98,
+          93
+        ],
+        "final": [
+          93,
+          95,
+          91,
+          94,
+          92
+        ]
+      },
+      "elapsedMs": 1061,
+      "candidatePages": [
+        99,
+        91,
+        96,
+        98,
+        93,
+        97,
+        100,
+        56,
+        95,
+        94,
+        92,
+        86,
+        23,
+        51,
+        66
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": true
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ambiguous-1",
+      "kind": "rewrite",
+      "expectedPages": [
+        1
+      ],
+      "stages": {
+        "vector": [
+          11,
+          26,
+          66,
+          72,
+          56
+        ],
+        "keyword": [
+          51,
+          66,
+          46,
+          16,
+          56
+        ],
+        "rrf": [
+          66,
+          56,
+          26,
+          11,
+          61
+        ],
+        "final": [
+          26,
+          61,
+          86,
+          16,
+          21
+        ]
+      },
+      "elapsedMs": 840,
+      "candidatePages": [
+        66,
+        56,
+        26,
+        11,
+        61,
+        51,
+        76,
+        71,
+        86,
+        46,
+        16,
+        72,
+        41,
+        21,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ambiguous-6",
+      "kind": "rewrite",
+      "expectedPages": [
+        26
+      ],
+      "stages": {
+        "vector": [
+          11,
+          26,
+          66,
+          72,
+          56
+        ],
+        "keyword": [
+          51,
+          66,
+          46,
+          16,
+          56
+        ],
+        "rrf": [
+          66,
+          56,
+          26,
+          11,
+          61
+        ],
+        "final": [
+          26,
+          61,
+          86,
+          16,
+          21
+        ]
+      },
+      "elapsedMs": 398,
+      "candidatePages": [
+        66,
+        56,
+        26,
+        11,
+        61,
+        51,
+        76,
+        71,
+        86,
+        46,
+        16,
+        72,
+        41,
+        21,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ambiguous-11",
+      "kind": "rewrite",
+      "expectedPages": [
+        51
+      ],
+      "stages": {
+        "vector": [
+          11,
+          26,
+          66,
+          72,
+          56
+        ],
+        "keyword": [
+          51,
+          66,
+          46,
+          16,
+          56
+        ],
+        "rrf": [
+          66,
+          56,
+          26,
+          11,
+          61
+        ],
+        "final": [
+          26,
+          61,
+          86,
+          16,
+          21
+        ]
+      },
+      "elapsedMs": 416,
+      "candidatePages": [
+        66,
+        56,
+        26,
+        11,
+        61,
+        51,
+        76,
+        71,
+        86,
+        46,
+        16,
+        72,
+        41,
+        21,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ambiguous-16",
+      "kind": "rewrite",
+      "expectedPages": [
+        76
+      ],
+      "stages": {
+        "vector": [
+          11,
+          26,
+          66,
+          72,
+          56
+        ],
+        "keyword": [
+          51,
+          66,
+          46,
+          16,
+          56
+        ],
+        "rrf": [
+          66,
+          56,
+          26,
+          11,
+          61
+        ],
+        "final": [
+          26,
+          61,
+          86,
+          16,
+          21
+        ]
+      },
+      "elapsedMs": 426,
+      "candidatePages": [
+        66,
+        56,
+        26,
+        11,
+        61,
+        51,
+        76,
+        71,
+        86,
+        46,
+        16,
+        72,
+        41,
+        21,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "ambiguous-19",
+      "kind": "rewrite",
+      "expectedPages": [
+        91
+      ],
+      "stages": {
+        "vector": [
+          11,
+          26,
+          66,
+          72,
+          56
+        ],
+        "keyword": [
+          51,
+          66,
+          46,
+          16,
+          56
+        ],
+        "rrf": [
+          66,
+          56,
+          26,
+          11,
+          61
+        ],
+        "final": [
+          26,
+          61,
+          86,
+          16,
+          21
+        ]
+      },
+      "elapsedMs": 1113,
+      "candidatePages": [
+        66,
+        56,
+        26,
+        11,
+        61,
+        51,
+        76,
+        71,
+        86,
+        46,
+        16,
+        72,
+        41,
+        21,
+        69
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "negative-1",
+      "kind": "negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          2,
+          4,
+          1,
+          3,
+          32
+        ],
+        "keyword": [
+          64,
+          52,
+          18,
+          6,
+          25
+        ],
+        "rrf": [
+          18,
+          30,
+          5,
+          95,
+          75
+        ],
+        "final": [
+          4,
+          1,
+          3,
+          2,
+          64
+        ]
+      },
+      "elapsedMs": 1193,
+      "candidatePages": [
+        18,
+        30,
+        5,
+        95,
+        75,
+        90,
+        64,
+        2,
+        52,
+        4,
+        1,
+        3,
+        6,
+        25,
+        32
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "negative-2",
+      "kind": "negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          59,
+          60,
+          57,
+          75,
+          32
+        ],
+        "keyword": [
+          52,
+          18,
+          6,
+          25,
+          48
+        ],
+        "rrf": [
+          60,
+          95,
+          75,
+          57,
+          52
+        ],
+        "final": [
+          2,
+          30,
+          75,
+          52,
+          32
+        ]
+      },
+      "elapsedMs": 633,
+      "candidatePages": [
+        60,
+        95,
+        75,
+        57,
+        52,
+        59,
+        18,
+        6,
+        25,
+        32,
+        48,
+        65,
+        72,
+        30,
+        2
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "negative-3",
+      "kind": "negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          30,
+          40,
+          95,
+          37,
+          32
+        ],
+        "keyword": [
+          52,
+          18,
+          6,
+          25,
+          48
+        ],
+        "rrf": [
+          30,
+          95,
+          40,
+          48,
+          90
+        ],
+        "final": [
+          88,
+          18,
+          52,
+          90,
+          32
+        ]
+      },
+      "elapsedMs": 909,
+      "candidatePages": [
+        30,
+        95,
+        40,
+        48,
+        90,
+        57,
+        52,
+        18,
+        6,
+        25,
+        37,
+        32,
+        65,
+        38,
+        88
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "negative-4",
+      "kind": "negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          75,
+          60,
+          59,
+          74,
+          30
+        ],
+        "keyword": [
+          60,
+          75,
+          59,
+          52,
+          18
+        ],
+        "rrf": [
+          60,
+          75,
+          59,
+          30,
+          52
+        ],
+        "final": [
+          52,
+          18,
+          57,
+          6,
+          55
+        ]
+      },
+      "elapsedMs": 869,
+      "candidatePages": [
+        60,
+        75,
+        59,
+        30,
+        52,
+        5,
+        57,
+        55,
+        74,
+        18,
+        32,
+        6,
+        25,
+        45,
+        48
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    },
+    {
+      "id": "negative-5",
+      "kind": "negative",
+      "expectedPages": [],
+      "stages": {
+        "vector": [
+          95,
+          30,
+          94,
+          57,
+          59
+        ],
+        "keyword": [
+          52,
+          18,
+          6,
+          25,
+          48
+        ],
+        "rrf": [
+          30,
+          95,
+          29,
+          52,
+          57
+        ],
+        "final": [
+          6,
+          57,
+          92,
+          52,
+          23
+        ]
+      },
+      "elapsedMs": 911,
+      "candidatePages": [
+        30,
+        95,
+        29,
+        52,
+        57,
+        92,
+        18,
+        94,
+        6,
+        25,
+        48,
+        59,
+        65,
+        27,
+        23
+      ],
+      "rerankReceived": true,
+      "plan": {
+        "ambiguous": false,
+        "multi": false
+      },
+      "citationValid": true
+    }
+  ]
+}

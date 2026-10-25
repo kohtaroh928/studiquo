@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "date": "2026-10-15",
+  "definitions": "Explicit lookup/compare/recommend/calculate/explain/conditions/summarize; repeated attributes remain separate oracle items; implicit lookup is gold even when no lookup cue appears.",
+  "humanReview": "pending",
+  "hashes": {
+    "scripts/rag-quality/question-task-fixture.mjs": "5faba8476b6a84338b8d1d465b809eef0328fbfc8192f946ca3b5842b2363310",
+    "scripts/rag-quality/question-task-probe.mjs": "4f971ad2234e0de9db2775580d962540750afdddcf71fbf1a7c81dffada0256a",
+    "../docs/RAG_QUESTION_TASK_RESULTS.json": "816548a4123713c6c28c155320a38b760e1956fed4cdcea6023da0b8b3c55d46"
+  },
+  "controls": [
+    {
+      "id": "operation_in_product_name",
+      "expectedOperations": [
+        "lookup"
+      ],
+      "foundOperations": [
+        "compare",
+        "lookup"
+      ],
+      "status": "candidates",
+      "extraOperations": [
+        "compare"
+      ],
+      "candidateOnly": true
+    },
+    {
+      "id": "negative_eligibility_request",
+      "expectedOperations": [
+        "conditions"
+      ],
+      "foundOperations": [
+        "conditions"
+      ],
+      "status": "candidates",
+      "extraOperations": [],
+      "candidateOnly": true
+    },
+    {
+      "id": "legitimate_instruction",
+      "expectedOperations": [
+        "calculate"
+      ],
+      "foundOperations": [
+        "calculate"
+      ],
+      "status": "candidates",
+      "extraOperations": [],
+      "candidateOnly": true
+    }
+  ],
+  "apiCalls": 0
+}

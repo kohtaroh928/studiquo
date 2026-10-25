@@ -112,6 +112,11 @@ Folder移行と一覧metadata再構築には`try? context.save()`があり、保
 | 0003 | `0003_announcements.sql` | `announcements`、`announcement_translations` |
 | 0004 | `0004_announcement_push.sql` | お知らせのpush状態・cursor・集計・日時の列追加 |
 | 0005 | `0005_privacy_retention.sql` | 報告の`account_key`、診断関連の`last_seen_at`、削除済み顧客hashテーブルとindex |
+| 0020 | `0020_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
+| 0021 | `0021_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
+| 0022 | `0022_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
+
+(この表のRAGの行は、2026-10-24に旧0006〜0019から0020〜0033へ付け替えた後の番号。mainの`0006_legacy_standard_accounts`・`0007_moderation`・`0008_subscriber_transaction`はこの表の対象外で、番号もそのまま。付け替えの対応表は末尾の節を参照。)
 
 D1の主要な日時列はUnix epochの**ミリ秒**。一方、Worker tokenの発行時刻は秒、Swiftの標準Codable `Date`は別の基準である。境界で明示的に変換し、数字だけを無条件にコピーしない。
 
@@ -237,3 +242,165 @@ backup場所・復元試験・RPO／RTO:
 6. CloudKit Productionスキーマ変更の運用記録と、新旧実機の同期確認。
 
 未整備事項を、実装済み・公開済みとして扱わない。対応時は関連テストとこの文書を同じ変更で更新する。
+
+## RAG自動索引の安全基盤（2026-10-11）
+
+0022は0020/0021の後に追加する。既存migrationの書き換えは行わない。適用前の旧資料は旧経路で扱えるが、管理APIは503で閉じる。一部管理tableだけ欠ける場合は未管理へ降格せず閉じる。remote適用、Worker更新、iPad更新は別工程。
+
+`rag_controls`の存在するaccountは永続的にmanagedとなり、旧manual uploadへ戻らない。epoch/generationの期待値を条件に更新し、世代ごとにWorkerがsource IDを発行する。物理source IDと端末の安定document IDは異なる。iPad側は対応表を保持して出典を開く必要がある。hashは同一性、generationは更新順序を表す。
+
+削除は資格失効→Vectorize削除受付→chunks/FTS/pagesの順。外部upsert前にIDとwriter leaseをjournalへ記録する。強制終了で`settled=0`が残ればjournalを自動破棄せず、削除再試行とaccount削除待ちを継続する。運用解消・監視と実Vectorize mutation順序の確認は有効化前の必須残件。
+
+rollbackでは0022を残し、資格guardを持つWorkerへ戻す。管理導入前の任意の旧Workerやtable削除へのrollbackは禁止。`RAG_AUTO_INDEX_ENABLED=false`は新しい同意付与・登録受付を止めるが、資格失効・削除・定期cleanupを止めない。
+
+## iPad自動索引の保存形式（未公開）
+
+Notebookにdefault空文字のragDocumentIDを追加し、既存資料は使用前にUUIDを割り当てModelContext.saveする。従来ragIDの削除時ローテーションから独立する。CloudKit Production schema更新と旧永続storeの実機移行は未検証で、有効化前に必要。
+
+UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、許可範囲、資料ID、fingerprint/hash、sourceId/generation、登録cursor、資格失効待ち、検索反映待ちと再試行deadlineを保存する。本文、OCR、画像、タイトル、tokenは保存しない。OCR結果は再開時に再抽出し同一hashだけ続きを送信する。初回managed同意は従来手動indexを失効させるため取り消しで旧方式へ戻らない。端末ストアに別account由来資料がある可能性は選択同意UIで開示する。
+
+この工程で新しいD1 migrationは追加しない。既存の0020/0021/0022を前提とする。失効pendingは再許可前に反映し、サーバーlocked/trashed/excludedを解除するには利用者の個別再許可を必要とする。rollbackはflags OFFで登録停止し、失効・削除APIを保持する。
+
+
+### RAG構造metadata用追加migration（2026-10-17、未配備）
+
+`mcp-server/migrations/0023_rag_metadata.sql`はrag_chunks.metadata_json TEXTを追加する。既存行はNULLで読み取り可能。新形式登録のみ列を必須とし、未適用DBへのlegacy入力は継続する。共通文書情報もchunk列内に保持し、既存source/account削除と共に除去する。位置情報だけの変更でも新lease chunkIDを発行、folder cloneはmetadataも複製する。source共通行へ新たな本文/metadataを残さない。remote migrationは未適用。公開順・停止・旧Workerへの切戻し条件は [RAG_STRUCTURED_INGESTION.md](RAG_STRUCTURED_INGESTION.md)。
+
+
+## iPadの構造索引・出典接続（2026-10-17、ローカル実装）
+
+原PDFのbytes hashでprepared Docling packageを検証し、新Notebookへ取り込む経路を実装。packageはNotebookのoptional属性に保持し、既存ロック暗号化に含める。編集時は失効し、manual/managed索引は現在の内容を使用する。Worker capabilityを確認し、構造batchを再分割せず送信する。出典metadataは会話保存と安全な補助表示へ接続し、source/page認可を維持する。精密bboxジャンプと原PDFの自動サーバー解析は未接続。iOS関連98成功・最終関連36成功（重複）、Worker1723成功。実機・iCloud移行・実資料精度の証明ではない。詳細: [RAG_IPAD_STRUCTURED_INTEGRATION.md](RAG_IPAD_STRUCTURED_INTEGRATION.md)。公開操作なし、自動スケジュールPAUSED。
+
+
+## Doclingのprivate Container実行境界（2026-10-17、未配備）
+
+独立services/docling-workerにprivate RPC/default flag false、単発jobの期限・取消・非本文状態・destroy後返却を実装。Container専用Python入口、ready前版/model検証、有限no-follow orphan cleanup、offline/nonroot Docker recipeとsample configを追加。既存MCP/iPadは未接続。JS28・Python関連60/既存49成功、型生成/bundleと合成2pageの実Nodefetch→Docling接続を確認（VMlifecycleはmock）。Docker不在でLinux build/実Cloudflare起動・隔離・停止は未検証。原PDF別同意/認可/admission・削除/予算・運用監視と依存監査を満たす前に有効化しない。DO stateはopaque ID/status/deadline/cleanup回数のみで本文なし、tombstone retentionは未設計。storage障害でpoison/alarm保存できない場合は運用停止確認が必要。詳細 [RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md](RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md)。公開操作・追加購入なし、自動スケジュールPAUSED。
+
+## 原PDF同意の永続状態（2026-10-18、未適用）
+
+追加migration `0024_rag_raw_pdf_consent.sql`はrawPDF専用の同意epoch/enabled、親RAG同意epoch、同意版のみを保存する。既存ユーザーの同意backfillや本文/PDF保存はしない。RAG同意変更/削除とaccount tombstoneのtriggerで原子的に失効し、削除途中失敗からaccount再開しても旧同意を復活させない。世代は単調増加、safe integer上限到達は再許可不可（失効は維持）。migration0006〜0009後の追加ファイルとしてローカルSQLiteで検証し、remoteには未適用。guardは未接続で、既存Workerのschema要件を変更しない。適用後は表/trigger/失効epochを削除するrollbackを行わない。詳細: [原PDF自動解析設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
+
+## 新規原PDF intake（2026-10-18、0011未適用）
+
+`0025_rag_pdf_intakes.sql`は解析前の受付をtext用rag_documentsから分離する。owner/documentごとに現在行と単調増加generationを残し、server UUID、request ID、rawPDF SHA256/長さ、両同意epoch、10分のserver期限、pending/cancelledだけを保持。本文・PDF・タイトルは保存しない。取消/同意失効/既存文書登録・変更・削除/account削除はtriggerでpendingを取り消しdigest/長さをNULL化する。期限切れは認可時に拒否し、時刻到達での物理削除/消去はまだない。
+
+再送は元の期待世代・current request・metadata・両同意epoch一致の場合だけ同じID/期限を返す。旧世代の予約は上書き後に再送不可。全request履歴や過去request IDの永久重複禁止は保証せず、世代tombstoneを削除して再利用させない。retention・受付数制限はadmissionとともに公開前に整備する。既存rag_documentsのあるIDは新規intake不可。0010/0011はローカルSQLite検証のみ、remote未適用。rollback時も追加表/triggerをdropせず未接続を維持。
+
+## PDF job admission（2026-10-18、0012未適用）
+
+`0026_rag_pdf_jobs.sql`にowner/intake一意のjob、文書世代/両epoch、状態、execution token hash、不可逆dispatch印、UTC日窓、予約/精算units、memory weight、policy版、期限を追加。本文/原PDF/digest/タイトル/生tokenは保存しない。intake失効/差替え/削除triggerでstop_requestedへ進め、停止未確認のactive枠は解放しない。reserved→receivingのclaim勝者だけがtokenを得て、同tokenでdispatchは一度だけ。期限を延長する再予約やtoken再発行はない。
+
+信頼済みserver policyは必須、job作成時のunits/weight/窓を保存する。単位はDocling受付のshadow budgetで実請求/既存AI creditsではない。未dispatchは停止確認後0、dispatch済みは予約全unitsを保守的に消費。未claimだけはstop後token不要で閉じられ、claim済みはtrusted executor token/停止確認で精算、再精算は冪等。物理削除・保持期限・停止不明時の手動復旧は未実装で、台帳dropによるrollbackは禁止。remote適用なし。
+
+2026-10-18 内部orchestratorとbounded intake登録を追加。新migration追加なし。intakeのowner/global総行数・pending数を条件付きSQLで制限し、jobはreader/検証/consumerの実終了を確認してから精算する。新しい結果保存tableやpublic routeはなく、非公開consumerからの正式採用/retentionは別実装。実D1/remote適用は未実施。詳細: [内部接続記録](RAG_PDF_ORCHESTRATION_REPORT.md)。
+
+## PDF停止再試行台帳（2026-10-18、0013未適用）
+
+`0027_rag_pdf_job_recovery.sql`はjob IDだけを参照し、attempt数、次試行時刻、CAS lease、固定outcome/状態、remote停止確認時刻を保存する。owner/digest/本文/tokenは追加保存しない。最大3回、固定backoff、各DB段階と停止RPC候補は最大10件、pass最大10秒。未claimのstop_requestedだけ0精算し、claimedはremote停止確認後もmemory/unitsを保持。元executor精算後にdoneへ整理する。table/job/intakeを物理削除するretentionは未実装。
+
+内部reaper/集計のみで公開route/schedulerへ未接続。旧Worker動作は変更せず、利用時に0012→0013が必要。migration0010〜0013はいずれもremote未適用。rollbackはreaper呼出しを止め、台帳を残す。詳細: [停止と復旧](RAG_PDF_RECOVERY.md)。
+
+## 2026-10-18 実Linux・公開HTTP接続（最新）
+
+実Linux amd64コンテナで合成2ページを解析（22.908秒）、通信遮断・UID10001・非書込コード/モデル・取消・期限切れ・SIGTERM・job削除を確認。認証済みローカルworkerd→private RPC→同Linux Docling→最終complete/精算も21.045秒で成功した。Cloudflareへの配備・remote migration・公開URL有効化は未実施で、ローカル成功をremote完了とは扱わない。
+
+公開HTTP handlerは認証後に同意/intake/process/cancelを処理する。受信前認可・予約、転送中の再認可、停止精算後のcompleteを維持。早すぎるResponse返却によるworkerdの入力破棄、isolated Pythonの兄弟import、WranglerのCASE分割を実環境で修正。受付/cleanup/private実行flagsはfalse。本番private bindingなし。staging設定とdry-runを準備済み。
+
+検証: サーバー全1,851件、processor61件、provision6件、HTTP/app/process42件成功。Python102依存のauditは既知脆弱性0・skip0（OS/モデルライセンスの保証ではない）。独立Code/Securityレビューの未解決所見なし。回答品質の有料評価・実資料・未使用20問は使っていない。
+
+詳細・制約・ロールバック: [実Linuxと公開接続の検証](RAG_LINUX_PUBLIC_CONNECTION_REPORT.md)。次はstagingの既存配備/DB状態と利用条件を確認し、remote配備の承認範囲を確定してから段階適用・疎通する。iPad正式採用、claimed停止不明の復旧、retentionは残る。
+
+## 2026-10-19 原PDF記録の保存・削除設計（未実装）
+
+[保存期間・整理順](RAG_PDF_RETENTION_DESIGN.md)を追加。期限切れintakeは永続取消/詳細削減、停止不明jobは保持、精算済み詳細は暫定48時間＋過去UTC窓＋参照なしでのみ整理候補とする。世代/失効fenceと現DO spent markerは単純削除しない。settled_at/単調会計floor/原子的削除/旧writer互換が追加実装の前提。account削除callerのPDF停止pending接続、将来receiptと期限付きv2 RPC/DO purgeは残る。これは稼働中の保持保証ではなく設計で、実データ削除・設定変更は行っていない。
+
+## 原PDF Step5-Aのローカル実装（2026-10-19）
+
+追加0014にnullable精算時刻/control/index。旧schema停止互換、旧時刻NULL保持。内部期限整理はflag/schema gate下で最大10受付を永続取消し、PDF指紋/長さ/requestを削減、世代fenceと停止不明job/利用枠を維持する。非識別集計のみ、scheduler/公開接続なし。物理job/DO削除・account PDF pending・receiptは未完。最終server1865件＋実local D1成功、独立レビュー指摘修正済み。remote未適用。詳細: [Step5-A報告](RAG_PDF_RETENTION_IMPLEMENTATION_REPORT.md)。
+
+## 原PDF Step5-Bの処理済み台帳整理（2026-10-19）
+
+追加0015で初期無効の内部purgeを実装。精算から48h・過去UTC窓・永続失効/置換・既知時刻・復旧done/leaseなしだけ、粗い候補10件とcursorで有限整理。floor/child/parent/leaseは原子的rollback、writer fenceは停止後も維持。legacy/停止不明/registry参照は保持、将来採用migrationはpre-adoption契約を先に変更して旧purgeを閉じる。server1888件と実local D1同時pass/rollback検証成功。remote未適用、HTTP/cron/flag未有効化。詳細: [Step5-B報告](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。
+
+
+<!-- Historical dae6129 checkpoint; JS references are historical. -->
+
+
+## Step6-A停止証拠基盤（2026-10-19）
+
+追加0016はstop-proof-v1のclaimに結び付く最小停止証拠tableを追加する。既存jobはlegacyのまま。証拠の巻戻し/削除を拒否し、0015の既知table契約によるpurgeは意図的に閉じる。証拠child/親の原子的整理契約を追加するまで旧purgeを再開しない。remote未適用。
+
+詳細: [停止証拠の設計](RAG_PDF_STOP_EVIDENCE_DESIGN.md)。
+
+
+## Step6-B停止証拠の実処理接続（2026-10-19）
+
+追加0017で証拠tableを既存全列のまま再構築し、job親へのFK ON DELETE CASCADEを追加。既存jobは変更しない。purge契約をpre-adoption-stop-v2へ更新して以前のenabledを0へ戻し、writer fence/floorを維持する。親の条件確認→recovery削除→親と証拠cascade→context解除を同取引で実施、単独証拠削除は親不在条件で拒否。全1923件と実local D1成功。remote適用/backup/配備承認は未実施。
+
+詳細: [Step6-B報告](RAG_PDF_STOP_INTEGRATION_REPORT.md)。
+
+
+## Step5-Cアカウント削除とPDF後片付け（2026-10-20）
+
+Step5-Cは既存KVのaccount削除checkpointへversion付きPDF phaseと独立phase完了状態を追加。独立消去後はstatus/identityKeys/pdfCleanup/independentCleanupCompleteへ縮小し、PDF完了までprivacy jobを保持する。旧deleted記録もPDF-only確認し、RAG未利用旧accountには拒否行だけを確立する。新migrationなし、PDF job/証拠/floor等のmetadataは保持。
+
+詳細: [Step5-C報告](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。
+
+
+## Step5-D1 private v2期限境界（2026-10-20）
+
+private DOのv2 stateへrpcVersion/notAfterを追加する未接続部品を実装。既存legacy stateへ期限を補完せず保持。DOにPDF/digestを保存せず、物理purgeなし。次D2aでMCPがdispatch前にimmutable envelopeを永続化する追加契約が必要。新DB migration/配備は今回なし。
+
+詳細: [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。
+
+
+## Step5-D2a v2接続（2026-10-20）
+
+0032_rag_pdf_rpc_v2.sqlを追加（remote未適用）。既存jobはrpc_version=1・追加値NULLのまま。v2の単一dispatch CASでrpc_version=2/rpc_pdf_sha256/rpc_not_after=deadlineを保存し、triggerで不正な初期設定・改変・NULL化・期限延長・downgradeを拒否。追加tableなし、0015/17の親purge・FK cascade・floor契約は維持。digestは取消時に消えるintakeの値と別で、停止不明/未精算とpurge未接続中は残り、既存の精算済親jobの整理時に一緒に削除する。匿名情報ではない。新migrationを削除するrollbackはせず、新規受付OFF＋v2停止コード/schemaを維持する。
+
+詳細: [接続検証](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
+
+
+## D2b-A：停止観測と削除前提（2026-10-20）
+
+private DO v2 stateへdestroyConfirmedAt（最初のdestroy解決を保存した時刻）を追加。D1追加migrationなし。観測は過去の履歴であり、現在VM/全task停止や削除許可ではない。保存等の失敗はack拒否/poison保持。旧state/期限後空DOに補完しない。全消去後clock後退を空DOだけでは検知できないため外部fence等を別設計とし、物理purge/marker縮約/retention alarm未実装。
+
+
+## D2b-B：再実行防止の設計（2026-10-20）
+
+D2b-Bは設計のみ。既存jobへ独立start_protocolとnullableな消費metadataを追加する案を第一候補とした。旧rowを未実行とbackfillせず、新dispatch契約と一回限りstart CASを区別。RPC v2/stop-proof-v1の制約は流用しない。追加migration・親purge/floor契約の評価は次C1、今回DDL/DB変更なし。 [設計正本](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+
+## D2b-C1：開始許可のDB部品（2026-10-20）
+
+0033_rag_pdf_start_gate.sql追加（remote未適用）。jobsへ独立start_protocol/start_claim_id/start_claimed_at、既存行legacy/NULL。新専用dispatch CASのみprotocol設定、初回grantだけ消費、reset/変更/REPLACEを拒否。新protocol親DELETE保留、eligible viewをlegacyに限定しmixedcursor前進を維持。既存0014〜18を編集せず、新tableなし。新start metadataは有限削除未対応で保持が続く。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。
+
+
+## PDF処理のTS移植（2026-10-21）
+
+`codex/rag-start-ts`で未統合の停止証拠/v2 RPC/開始許可をTSへ移植。最新アカウント削除のgeneration/alias保護とhashed完了markerを維持し、legacy deletedの自動再開は保留する。guard待機後・nested recoveryでも所有確認と外側期限を維持し、timer発火後の新しい開始CASをclosedで拒否する。詳しくは[RAG_TS_PDF_PORT_REPORT](RAG_TS_PDF_PORT_REPORT.md)。開始gateのprivate接続C2とremote migration/番号衝突照合は未完、実config未変更。
+
+## RAGのmigration番号の付け替え(2026-10-24)
+
+main側の `0006_legacy_standard_accounts`・`0007_moderation`・`0008_subscriber_transaction` と、RAG側の `0006_rag`・`0007_rag_context`・`0008_rag_control` が同じ番号を使っていた。mainの3件は本番に適用済みで名前を変えられないため、**RAG側の14件を、順序を保ったまま 0020〜0033 に付け替えた**。内容は変えていない(ファイル名だけ)。以降の新しい番号は 0034 から。
+
+| 旧い名前 | 新しい名前 |
+|---|---|
+| `0006_rag.sql` | `0020_rag.sql` |
+| `0007_rag_context.sql` | `0021_rag_context.sql` |
+| `0008_rag_control.sql` | `0022_rag_control.sql` |
+| `0009_rag_metadata.sql` | `0023_rag_metadata.sql` |
+| `0010_rag_raw_pdf_consent.sql` | `0024_rag_raw_pdf_consent.sql` |
+| `0011_rag_pdf_intakes.sql` | `0025_rag_pdf_intakes.sql` |
+| `0012_rag_pdf_jobs.sql` | `0026_rag_pdf_jobs.sql` |
+| `0013_rag_pdf_job_recovery.sql` | `0027_rag_pdf_job_recovery.sql` |
+| `0014_rag_pdf_retention.sql` | `0028_rag_pdf_retention.sql` |
+| `0015_rag_pdf_purge.sql` | `0029_rag_pdf_purge.sql` |
+| `0016_rag_pdf_stop_evidence.sql` | `0030_rag_pdf_stop_evidence.sql` |
+| `0017_rag_pdf_evidence_retention.sql` | `0031_rag_pdf_evidence_retention.sql` |
+| `0018_rag_pdf_rpc_v2.sql` | `0032_rag_pdf_rpc_v2.sql` |
+| `0019_rag_pdf_start_gate.sql` | `0033_rag_pdf_start_gate.sql` |
+
+- **本番**: RAG側は未適用だったので、影響はない。
+- **ステージング**: RAG側を旧い名前で適用済みだったため、D1の適用履歴(`d1_migrations`)の名前を、新しい名前に書き換えた(0030〜0033 に当たる旧0016〜0019は、未適用のまま)。
+- 日付つきの過去の記録(`RAG_STAGING_PREFLIGHT_20261019.*`、`RAG_VERIFICATION_BASELINE_20261019.json`、各種 `*_RESULTS.json`、`docs/releases/` など)には、旧い名前が残っている。上の表で読み替える。

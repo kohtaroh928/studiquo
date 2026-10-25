@@ -1,0 +1,19 @@
+# 対象role比較：中立review packetと提出時の対象照合
+
+2026-10-16。[paired設計](RAG_SUBJECT_ROLE_PAIRED_DESIGN.md)の中立packetを、保存処理へ接続する前のread-only helperとして追加した。stage0完了のpure ledger文字列だけを受け付ける。
+
+`subject-role-review-packets.mjs`は質問・検証済みplan/provenance・凍結oracleをpacketへ入れ、中立なランダムUUIDを付ける。packet自体へvariant・指示・requestHash・ordinalを入れない。別のprivate mappingはpacketId/hashをordinal/pairIndex/index/variant/requestHash/responseHash/questionHash/planHash/oracleHashへ結び付け、collectionはrun/manifest/checkpointにもbindする。packetHashはIDを含むcanonical全内容のhash。packetの順序はID順にする。
+
+提出wrapperは厳密にpacketId・packetHash・review（元review JSONの文字列）だけ。提出時点で凍結mappingへ照合し、採点後にvariantを付けるだけの方式にしない。同一planならquestion/plan/oracle hashやreview内容が同じでも正常で、別々のpacketId/hashが提出対象の取り違えを防ぐ。reviewerへ渡すのはcollection全体ではなくpacketsだけとする。
+
+collectionを再検証する際は、固定ledgerからpacket/mappingを再生成して厳密比較する。oracleファイルhashもledgerのsource closureに照合し、oracle改変、別run、別response、packet内容やmappingの差替えを拒否する。collection2MiB、元review256KiB、提出wrapper1MiBで制限し、入力本文を含めない固定errorを使う。
+
+## 今回の限界
+
+resolveSubmissionは**提出先を照合するだけ**。元reviewの意味/8観点の検証、判定集計、個別採点の実施確認、本人認証、artifact保存、packets_ready、continueは未実装。reviewGateAttached=false・意味pending・根拠unknown・releaseAccepted=falseを維持する。単独で継続許可に使用しない。rawReviewの意味・秘密非混入は未検証なので、そのまま保存・ログ出力しない。厳密な盲検も保証しない（同じOS userはsourceやmappingを読める）。
+
+作成ごとに新IDを発行するpure helperだが、将来の保存wrapperは固定stage collectionをO_EXCLで一度だけ作り、孤立/不明状態で再生成・上書きしない。旧stage0 journalは今回変更しない。接続時には新moduleをsource closureへ追加した別manifestを固定し、正常なpacket準備を比較continueと混同しない。collection全体を固定hashで永続化し、提出時もその最初のcollectionへ照合して別collectionへの差替えを拒否する。現在のhelper単独は最初のcollectionの真正性を保証しない。
+
+対象8回帰で中立packet・同一planの両版・同じreview内容の個別binding、ID/hash取り違え、mapping/packet/oracle差替え、別run/result、未完了/失敗台帳、bytes/JSON/引数、snapshotを確認。全Worker1,590成功（失敗/skip 0）、独立コード8・安全8成功。未解決High/Mediumなし。[結果JSON](RAG_SUBJECT_ROLE_PACKETS_RESULTS.json)参照。合成mockであり実モデル品質を測っていない。
+
+追加API/鍵読取0。本番v1・未使用20問・旧5停止runは保持。次はpacket/mapping collectionのprivate保存と元review artifactの集計/再評価を接続する。新helperを呼ばなければrollbackでき、アプリ/Worker runtime/DBに影響しない。Projectの資料の更新: なし。

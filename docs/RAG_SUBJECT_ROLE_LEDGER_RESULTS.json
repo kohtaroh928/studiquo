@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-16",
+  "scope": "offline manifest and stage0 in-memory replay only",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-paired-ledger.mjs": "46a30e553ec65a28a08e42529fc30f9294e2f31b2de02564a0057755d27c52d1",
+    "mcp-server/src/rag-subject-role-ledger.test.js": "8d21a52e4f70827a9bddeee182e9603940b2b37e6a8bd9e8ae0b7353f2e44ab0"
+  },
+  "plannedPairs": 12,
+  "plannedJobs": 24,
+  "maxExecutableStage": 0,
+  "transportAttached": false,
+  "persistenceAttached": false,
+  "reviewGateAttached": false,
+  "tests": {
+    "target": {
+      "pass": 12,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1568,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCode": {
+      "pass": 12,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 12,
+      "fail": 0
+    }
+  },
+  "resolvedMedium": [
+    "reserved/unreserved pair counts must derive from reservations, not completed results"
+  ],
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "priorCandidateSourceHashesUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "priorStopJournalHashUnchanged": true,
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "next": "private persistence and common lock/fsync wrapper, then neutral packet/mapping and original review gate before bounded transport"
+}

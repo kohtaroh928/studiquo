@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-16",
+  "scope": "first pair real Responses API evaluation with independent semantic review",
+  "directory": "/private/tmp/studiquo-rag-subject-role-live-20261016-01",
+  "runId": "b0fc8f2f-cda7-4aa7-afd4-ca8d2bab73fd",
+  "manifestHash": "3be1b351bb6f7c9787415ea568e3710b0bc2dde17396cdec6285b8a81a100744",
+  "entryPath": "/private/tmp/studiquo-subject-role-live-entry-20261016.mjs",
+  "entryHash": "69f8b2cc15cdb54c2d55fd1ed05b024f0a08a2b54791f6225eb99352909be20f",
+  "completedRequests": 2,
+  "technicalFailures": 0,
+  "rows": [
+    {
+      "ordinal": 0,
+      "variant": "baseline",
+      "index": 0,
+      "model": "gpt-6-luna",
+      "usage": {
+        "input": 1269,
+        "output": 416,
+        "reasoning": 209,
+        "total": 1685,
+        "cached": 0,
+        "cacheWrite": 1266
+      },
+      "elapsedMs": 5411.774874999999,
+      "responseHash": "8f009bcf03f2d45351bfb3dd6232cd299f59f27a517792ded90a9c3e4592ef9e"
+    },
+    {
+      "ordinal": 1,
+      "variant": "candidate",
+      "index": 0,
+      "model": "gpt-6-luna",
+      "usage": {
+        "input": 1490,
+        "output": 346,
+        "reasoning": 139,
+        "total": 1836,
+        "cached": 0,
+        "cacheWrite": 1487
+      },
+      "elapsedMs": 3033.8851250000007,
+      "responseHash": "059868d8085ce3fe84b611bb14f3ab5f2c1e586d2a81f950bc7116719fb1983a"
+    }
+  ],
+  "usage": {
+    "input": 2759,
+    "output": 762,
+    "reasoning": 348,
+    "cached": 0,
+    "cacheWrite": 2753
+  },
+  "usageDerivedUSDEstimate": 0.000725725,
+  "actualBillingUSD": null,
+  "reservedMicroUSD": 16384,
+  "reservationIsBillingCap": false,
+  "priceSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "priceChecked": "2026-10-16",
+  "pricesUSDPerMillion": {
+    "input": 0.1,
+    "cached": 0.01,
+    "cacheWrite": 0.125,
+    "output": 0.5
+  },
+  "model": "gpt-6-luna",
+  "reasoning": "medium",
+  "serviceTier": "default",
+  "firstStageDispatchLimit": 2,
+  "semanticReview": "independent reviewed_match for both variants; original reviews recorded",
+  "modelQualityImprovement": "not established",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "testsRerun": false,
+  "priorWorkerTests": {
+    "pass": 1659,
+    "fail": 0,
+    "skip": 0
+  },
+  "oldLocksRetained": 5,
+  "journalRecords": 8,
+  "journalHash": "a5698f3720fa893ec163ea84be0efebc9034c5b01cb09e96fc5d67de532c3c90",
+  "tailHash": "dbaaa0f8129aec5b4ae92e7fd3ee1074c5e377af0c4228b04e1974bc5e031777",
+  "auditDocument": "docs/RAG_SUBJECT_ROLE_COMPARISON_STAGE0_AUDIT.md",
+  "auditHash": "01a54d6bcff684ca70ed15551c64286eb2bfab73517225fbb7a8b99e29c13834",
+  "artifactHash": "0c2d421cd68cad2f172bbbc68d44547ccbd038f625a45fa3cfa21c9588d1b2e3",
+  "reviewSubmissionHash": "14ca199ff224150d6b853d198863b9f39ffe3679a08c5799ed81896a9debea73",
+  "comparisonDecision": "continue",
+  "cases": [
+    {
+      "variant": "baseline",
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    }
+  ],
+  "stage0CandidateAllMatched": true,
+  "stage0BaselineMismatchCount": 0,
+  "comparablePairs": 1,
+  "additionalStageDispatches": 0,
+  "safetyReview": "entry Medium resolved; stage0 and final registered artifact/8-row chain independently verified; no High/Medium remaining",
+  "limitations": [
+    "one synthetic development question, one unit; not general accuracy",
+    "both variants returned identical plans; improvement not demonstrated",
+    "human gold pending; strict reviewer blinding/identity not authenticated",
+    "bill unknown; usage-derived estimate only; reservation not billing limit",
+    "latency ends at save-start, not fsync-inclusive or whole RAG",
+    "not retrieval/answer/OCR/PDF/iPad evaluation"
+  ],
+  "next": "verify source/run/original stage0 review, then stage1 three pairs (six jobs) through a stage1-only fetch-side cap; independent semantic review before later stages"
+}

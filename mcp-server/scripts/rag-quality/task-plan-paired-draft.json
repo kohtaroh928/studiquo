@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "date": "2026-10-15",
+  "split": "separate-development",
+  "syntheticOnly": true,
+  "humanReview": "pending",
+  "modelEvaluated": false,
+  "purpose": "paired semantic annotation proposals; NOT extraction results; offsets and equivalent spans require separate annotation review",
+  "cases": [
+    {
+      "id": "paired-values_by_subject",
+      "question": "展示室Pの定員と展示室Qの定員は、それぞれ何人ですか。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "value",
+          "attributeText": "定員",
+          "subjectTexts": [
+            "展示室P"
+          ],
+          "conditionTexts": []
+        },
+        {
+          "id": "r2",
+          "operation": "value",
+          "attributeText": "定員",
+          "subjectTexts": [
+            "展示室Q"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-compare_same_attribute",
+      "question": "展示室Pと展示室Qの定員を比較してください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "compare",
+          "attributeText": "定員",
+          "subjectTexts": [
+            "展示室P",
+            "展示室Q"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-different_attributes",
+      "question": "温室Rの開館時刻と入館料を教えてください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "value",
+          "attributeText": "開館時刻",
+          "subjectTexts": [
+            "温室R"
+          ],
+          "conditionTexts": []
+        },
+        {
+          "id": "r2",
+          "operation": "value",
+          "attributeText": "入館料",
+          "subjectTexts": [
+            "温室R"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-method_not_execution",
+      "question": "施設どうしの入館料を比較する方法を説明してください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "explain",
+          "attributeText": "入館料を比較する方法",
+          "subjectTexts": [
+            "施設"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-conditioned_values",
+      "question": "通常時と長期休業中の返却期限を、それぞれ教えてください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "value",
+          "attributeText": "返却期限",
+          "subjectTexts": [],
+          "conditionTexts": [
+            "通常時"
+          ]
+        },
+        {
+          "id": "r2",
+          "operation": "value",
+          "attributeText": "返却期限",
+          "subjectTexts": [],
+          "conditionTexts": [
+            "長期休業中"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paired-conditions_and_exception",
+      "question": "営業時間が変更される条件と、臨時休館の例外を教えてください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "conditions",
+          "attributeText": "変更される条件",
+          "subjectTexts": [
+            "営業時間"
+          ],
+          "conditionTexts": []
+        },
+        {
+          "id": "r2",
+          "operation": "conditions",
+          "attributeText": "例外",
+          "subjectTexts": [
+            "臨時休館"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-joint_summary",
+      "question": "案内Jと案内Kの利用規則をまとめて要約してください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "summarize",
+          "attributeText": "利用規則",
+          "subjectTexts": [
+            "案内J",
+            "案内K"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    },
+    {
+      "id": "paired-two_comparison_attributes",
+      "question": "案内Jと案内Kの利用規則について、相違点と共通点を比較してください。",
+      "declaredScopes": [
+        {
+          "id": "r1",
+          "operation": "compare",
+          "attributeText": "相違点",
+          "subjectTexts": [
+            "案内J",
+            "案内K"
+          ],
+          "conditionTexts": []
+        },
+        {
+          "id": "r2",
+          "operation": "compare",
+          "attributeText": "共通点",
+          "subjectTexts": [
+            "案内J",
+            "案内K"
+          ],
+          "conditionTexts": []
+        }
+      ]
+    }
+  ]
+}

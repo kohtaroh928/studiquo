@@ -66,7 +66,7 @@ final class AuthenticationStore: ObservableObject {
 
     private let sessionAccount = "session"
     private let service: String
-    private let onboardingKey = "authenticationOnboardingComplete"
+    private let onboardingKey: String
     private let passkeyIdentityAccount = "passkey-identity"
     private let oauthIdentityAccount = "oauth-identity"
     private let now: () -> Date
@@ -101,7 +101,7 @@ final class AuthenticationStore: ObservableObject {
     /// `true`, making a freshly-constructed store in a test jump straight
     /// to `.authenticated` when it expects `.onboarding`.
     init(
-        service: String = "com.yabuko.studiquo.authentication",
+        service: String = LaunchStoreEnvironment.namespaced("com.yabuko.studiquo.authentication"),
         now: @escaping () -> Date = Date.init,
         defaults: UserDefaults = .standard,
         unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
@@ -115,6 +115,7 @@ final class AuthenticationStore: ObservableObject {
         }
     ) {
         self.service = service
+        self.onboardingKey = LaunchStoreEnvironment.namespaced("authenticationOnboardingComplete")
         self.now = now
         self.defaults = defaults
         self.unregisterPushDevice = unregisterPushDevice

@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-14",
+  "suiteId": "studiquo-comparison-boundary-20261014",
+  "syntheticOnly": true,
+  "model": "gpt-6-luna",
+  "reasoning": "medium",
+  "serviceTier": "default",
+  "dispatches": 6,
+  "completed": 6,
+  "failed": 0,
+  "usage": {
+    "input": 23421,
+    "output": 1475,
+    "reasoning": 867,
+    "total": 24896
+  },
+  "reservedMicroUSD": 49152,
+  "uncachedStandardEstimatedUSD": 0.0030796,
+  "latencyMs": {
+    "min": 1357,
+    "max": 6062,
+    "mean": 3536.5
+  },
+  "journalSHA256": "c5608ac8466ac5215c570000a62023b0941fd1861abcab7e44fca5842bee5c99",
+  "tests": {
+    "workerPass": 1286,
+    "relatedPass": 16,
+    "fail": 0,
+    "skip": 0
+  },
+  "review": "Codex and independent AI complete; human gold review pending",
+  "caseResults": [
+    {
+      "id": "boundary-explicit-metric:source_only",
+      "elapsedMs": 3864,
+      "usage": {
+        "input": 3797,
+        "output": 246,
+        "reasoning": 146,
+        "total": 4043
+      },
+      "result": "pass",
+      "reason": "fixed_checks_met"
+    },
+    {
+      "id": "boundary-explicit-metric:explain",
+      "elapsedMs": 3681,
+      "usage": {
+        "input": 4014,
+        "output": 308,
+        "reasoning": 193,
+        "total": 4322
+      },
+      "result": "pass",
+      "reason": "fixed_checks_met"
+    },
+    {
+      "id": "boundary-equal-category:explain",
+      "elapsedMs": 2029,
+      "usage": {
+        "input": 3988,
+        "output": 131,
+        "reasoning": 61,
+        "total": 4119
+      },
+      "result": "pass",
+      "reason": "fixed_checks_met"
+    },
+    {
+      "id": "boundary-equal-category:source_only",
+      "elapsedMs": 1357,
+      "usage": {
+        "input": 3771,
+        "output": 89,
+        "reasoning": 32,
+        "total": 3860
+      },
+      "result": "pass",
+      "reason": "fixed_checks_met"
+    },
+    {
+      "id": "boundary-different-conditions:source_only",
+      "elapsedMs": 4226,
+      "usage": {
+        "input": 3817,
+        "output": 293,
+        "reasoning": 179,
+        "total": 4110
+      },
+      "result": "fail",
+      "reason": "conditional_comparability_guard"
+    },
+    {
+      "id": "boundary-different-conditions:explain",
+      "elapsedMs": 6062,
+      "usage": {
+        "input": 4034,
+        "output": 408,
+        "reasoning": 256,
+        "total": 4442
+      },
+      "result": "fail",
+      "reason": "unsupported_value_ranking_despite_caveat"
+    }
+  ],
+  "overallSemanticPass": false,
+  "minutesOnlyStaticSupportDiagnostic": {
+    "accepted": false,
+    "externalCalls": 0,
+    "unresolved": true
+  },
+  "holdoutCalls": 0,
+  "realCloudflare": false,
+  "realPDF": false,
+  "realIPad": false,
+  "productionDeployed": false
+}

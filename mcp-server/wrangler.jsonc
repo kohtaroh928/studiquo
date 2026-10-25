@@ -4,6 +4,8 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI" },
+  "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1" }],
   // Production is reached only through its own domain (api.studiquo.app), where
   // the zone's WAF rate-limit rule applies. The workers.dev address and the
   // per-version preview URLs sit outside that zone, so they stay off. The
@@ -47,6 +49,9 @@
   // One namespace_id per unauthenticated endpoint, so hammering one doesn't
   // burn another's budget.
   "ratelimits": [
+    { "name": "RATE_LIMIT_RAG_INDEX", "namespace_id": "1028", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RATE_LIMIT_RAG_SEARCH", "namespace_id": "1029", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RATE_LIMIT_RAG_PDF", "namespace_id": "1030", "simple": { "limit": 10, "period": 60 } },
     { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "1007", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_EMAIL_VERIFY_SEND", "namespace_id": "1008", "simple": { "limit": 5, "period": 60 } },
@@ -117,6 +122,15 @@
     { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "1027", "simple": { "limit": 300, "period": 60 } }
   ],
   "vars": {
+    "DEPLOYMENT_ENVIRONMENT": "production",
+    "RAG_ENABLED": "false",
+    // Answerability judge (src/rag/judge.ts, docs/RAG_SEMANTIC_JUDGE_DESIGN.md): "off" (default), "shadow" (call the
+    // judge and log its outcome only) or "on" (also stop or demote answers the judge says are not in the excerpts).
+    // Start with "shadow" and watch the "judge" fields of the rag_retrieval log lines (RUNBOOK RB-21) before "on".
+    "RAG_JUDGE": "off",
+    "RAG_AUTO_INDEX_ENABLED": "false",
+    "RAG_PDF_PROCESSING_ENABLED": "false",
+    "RAG_PDF_CLEANUP_ENABLED": "false",
     // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
     // OpenAI's price page on 2026-10-12. Confirm the account can call them
     // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
@@ -178,7 +192,20 @@
   "env": {
     "staging": {
       "name": "studiquo-mcp-staging",
-      "workers_dev": true,
+      // Documents are extracted on the iPad before they are sent to the RAG
+      // control API. Keep staging free of the Docling service binding: the named
+      // Worker was never provisioned. The server's PDF routes (src/rag/pdf-*.ts)
+      // still read env.DOCLING_PROCESSOR and refuse the request when it is absent,
+      // so leaving it out turns PDF processing off rather than breaking it.
+      "ai": { "binding": "AI" },
+      "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1-staging" }],
+      // The Worker is its own origin, so use a Custom Domain rather than a
+      // route in front of another origin. Cloudflare provisions the DNS record
+      // and TLS certificate during `wrangler deploy --env staging`.
+      "routes": [{ "pattern": "staging-api.studiquo.app", "custom_domain": true }],
+      // Do not leave an unaudited second public API entrypoint after the
+      // staging custom domain is live.
+      "workers_dev": false,
       "preview_urls": false,
       // No hourly retention job on staging.
       "triggers": { "crons": [] },
@@ -215,6 +242,9 @@
       // Same limits as production, but namespace ids 20NN instead of 10NN so
       // the two Workers never share a counter.
       "ratelimits": [
+        { "name": "RATE_LIMIT_RAG_INDEX", "namespace_id": "2028", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RATE_LIMIT_RAG_SEARCH", "namespace_id": "2029", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RATE_LIMIT_RAG_PDF", "namespace_id": "2030", "simple": { "limit": 10, "period": 60 } },
         { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "2001", "simple": { "limit": 5, "period": 60 } },
         { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "2007", "simple": { "limit": 5, "period": 60 } },
         { "name": "RATE_LIMIT_EMAIL_VERIFY_SEND", "namespace_id": "2008", "simple": { "limit": 5, "period": 60 } },
@@ -244,6 +274,14 @@
         { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "2027", "simple": { "limit": 300, "period": 60 } }
       ],
       "vars": {
+        "DEPLOYMENT_ENVIRONMENT": "staging",
+        "RAG_ENABLED": "false",
+        "RAG_JUDGE": "off",
+        "RAG_AUTO_INDEX_ENABLED": "false",
+        "RAG_PDF_PROCESSING_ENABLED": "false",
+        "RAG_PDF_CLEANUP_ENABLED": "false",
+        "RAG_PDF_ADMISSION_POLICY": "{\"perOwnerActive\":1,\"globalActive\":1,\"globalMemoryBytes\":67108864,\"perOwnerDailyUnits\":10,\"globalDailyUnits\":20,\"reservationUnits\":1,\"perOwnerDailyRequests\":10,\"globalDailyRequests\":20}",
+        "RAG_PDF_INTAKE_LIMITS": "{\"ownerRows\":10,\"globalRows\":100,\"ownerPending\":1,\"globalPending\":2}",
         // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
         // OpenAI's price page on 2026-10-12. Confirm the account can call them
         // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
@@ -254,7 +292,10 @@
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
         "ALLOW_SANDBOX_PURCHASES": "true",
-        "APNS_TOPIC": "com.yabuko.studiquo",
+        // Marks every Slack message, push, e-mail subject and admin page from this Worker
+        // as staging (environment.ts). Production leaves it unset, so nothing is marked there.
+        "ENVIRONMENT_LABEL": "staging",
+        "APNS_TOPIC": "com.yabuko.studiquo.staging",
         "ARGON2_WRITE": "false",
         // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.
         "REQUIRE_SIGNED_TOKENS": "false",
@@ -266,8 +307,17 @@
         // App Attest stays off here until staging has a TOKEN_SIGNING_KEY (the challenge
         // is signed with it). Development-environment keys are accepted on staging only.
         "APP_ATTEST_MODE": "off",
-        "APP_ATTEST_APP_ID": "972G4VGUA6.com.yabuko.studiquo",
+        "APP_ATTEST_APP_ID": "972G4VGUA6.com.yabuko.studiquo.staging",
         "APP_ATTEST_ALLOW_DEVELOP": "true",
+        // These values take effect when staging-api.studiquo.app is routed to
+        // this Worker and its Apple App ID has been registered. workers.dev
+        // cannot be used as an iOS WebAuthn associated domain.
+        "PASSKEY_RP_ID": "staging-api.studiquo.app",
+        "PASSKEY_ORIGIN": "https://staging-api.studiquo.app",
+        "PASSKEY_APP_ID": "972G4VGUA6.com.yabuko.studiquo.staging",
+        "APPLE_OAUTH_CLIENT_ID": "com.yabuko.studiquo.staging",
+        // Fill after creating a distinct Google OAuth server client. Staging rejects Google sign-in until this is set.
+        "GOOGLE_OAUTH_SERVER_CLIENT_ID": "",
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },

@@ -68,3 +68,9 @@
 - SAST: `.semgrep.yml` の規則は元から `[javascript, typescript]` なので、`.ts` もこれまで通り走査される。`security/sast/run.py` の「JavaScript を走査したか」の確認は、`.ts` を必須にした(コードが全部 .ts になったので、`.ts` の走査が抜けたら失敗させる。`.js` が1本残っていても通さない)。移行前と後で Semgrep の指摘は同じ20件(規則・ファイルとも同じ、行番号だけ違う)。
 - CI: `ci.yml` に `scripts` ジョブ(vuln-watch の型検査とテスト)を足し、`security-dast.yml` に DAST スクリプトの型検査を足した。 `dependabot.yml` に `/scripts/vuln-watch` を足した(typescript と @types/node の更新を見るため)。
 - vuln-watch は Claude Code のスケジュールタスクが `scripts/vuln-watch/RUNBOOK.md` に従って実行する。コマンドが `node src/cli.ts ...` に変わるので、許可設定(`.claude/settings.local.json` の `Bash(node src/cli.js scan)`)も `.ts` に直す必要がある(利用者の設定ファイルなので、ここでは直していない)。
+
+## RAGの取り込み（2026-10-20）
+
+- RAGの開発線(`claude/rag-ts`)にmainを取り込み、RAGのJavaScript 235本（`mcp-server/src`・`src/rag`・`scripts/rag-quality`・`tools`、`collaboration/rag-prompt`、`services/docling-worker`）を`.ts`にした。詳細は`docs/RAG_CLAUDE_HANDOFF.md`。
+- `src`は`strict`のまま通る。テストとスクリプトで型エラーのあった127本には`// @ts-nocheck`を付けた(Notionに別カード)。`tsconfig.test.json`は`scripts`と`tools`も検査する。
+- 固定した評価記録(`docs/RAG_*_RESULTS.json`)の`sourceHashes`は、移行前の`.js`のハッシュのまま残した。

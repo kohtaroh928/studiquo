@@ -21,12 +21,20 @@ export interface Env {
   RATE_COUNTER: DurableObjectNamespace<RateCounter>;
   MCP_INBOX: DurableObjectNamespace<MCPInbox>;
 
+  // Retrieval (RAG): Workers AI and Vectorize bindings, plus the private PDF processor service.
+  AI: Ai;
+  RAG_VECTORIZE: VectorizeIndex;
+  DOCLING_PROCESSOR?: Fetcher;
+
   // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc (both environments).
   RATE_LIMIT_ADMIN_WEBHOOK: RateLimit;
   RATE_LIMIT_ANNOUNCEMENTS: RateLimit;
   RATE_LIMIT_APPLE_AUTH: RateLimit;
   RATE_LIMIT_APP_ERROR: RateLimit;
   RATE_LIMIT_ATTEST_ASSERT: RateLimit;
+  RATE_LIMIT_RAG_INDEX: RateLimit;
+  RATE_LIMIT_RAG_PDF: RateLimit;
+  RATE_LIMIT_RAG_SEARCH: RateLimit;
   RATE_LIMIT_ATTEST_CHALLENGE: RateLimit;
   RATE_LIMIT_ATTEST_REGISTER: RateLimit;
   RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: RateLimit;
@@ -54,6 +62,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   SLACK_ISSUE_REPORT_WEBHOOK_URL?: string;
+  // "staging" on the staging Worker (marks Slack, push, e-mail and admin pages); unset on production.
+  ENVIRONMENT_LABEL?: string;
   APNS_TEAM_ID?: string;
   APNS_TOPIC?: string;
   APNS_SANDBOX_KEY_ID?: string;
@@ -82,6 +92,13 @@ export interface Env {
   APP_ATTEST_APP_ID?: string;
   APP_ATTEST_MODE?: string;
   APP_ATTEST_ALLOW_DEVELOP?: string;
+  /** WebAuthn relying-party configuration. Production defaults live in passkeys.ts. */
+  PASSKEY_RP_ID?: string;
+  PASSKEY_ORIGIN?: string;
+  PASSKEY_APP_ID?: string;
+  GOOGLE_OAUTH_SERVER_CLIENT_ID?: string;
+  APPLE_OAUTH_CLIENT_ID?: string;
+  DEPLOYMENT_ENVIRONMENT?: string;
   PWNED_PASSWORDS_FETCH?: string;
   PAYWALL_ENABLED?: string;
   ARGON2_WRITE?: string;
@@ -103,6 +120,15 @@ export interface Env {
   ALLOW_SANDBOX_PURCHASES?: string;
   AI_PROVIDER_APPROVED?: string;
   AI_MODERATION?: string;
+  RAG_ENABLED?: string;
+  RAG_AUTO_INDEX_ENABLED?: string;
+  RAG_CONTEXT_AS_INPUT?: string;
+  RAG_PDF_PROCESSING_ENABLED?: string;
+  RAG_PDF_CLEANUP_ENABLED?: string;
+  RAG_PDF_RETENTION_ENABLED?: string;
+  RAG_PDF_JOB_PURGE_ENABLED?: string;
+  RAG_PDF_ADMISSION_POLICY?: string;
+  RAG_PDF_INTAKE_LIMITS?: string;
 
   // Cloudflare Access's key set; only tests supply it, otherwise it is fetched.
   ACCESS_JWKS?: JWTVerifyGetKey;

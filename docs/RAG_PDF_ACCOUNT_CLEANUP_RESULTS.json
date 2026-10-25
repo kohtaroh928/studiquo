@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-20",
+  "step": "5-C",
+  "branch": "codex/rag-wip",
+  "preservedDirty": "Step6-A/B and Project synchronization",
+  "serverTests": {
+    "tests": 1936,
+    "pass": 1936,
+    "fail": 0,
+    "skipped": 0
+  },
+  "focusedTests": 83,
+  "newTests": 13,
+  "localWorkerd": {
+    "localWorkerd": true,
+    "migrations": 17,
+    "independentErasureWhilePending": true,
+    "minimalCheckpoint": true,
+    "flagsOffEvidenceRecovery": true,
+    "tokenFreeRetry": true,
+    "evidenceRetained": true,
+    "remote": "synthetic_adapter_only",
+    "remoteChanges": false
+  },
+  "reviews": {
+    "planner": "completed",
+    "code": "legacy deleted bypass and excess checkpoint metadata fixed; rereview no findings",
+    "security": "checkpoint minimization, strict owner export, legacy nonuser fence fixed; rereview no findings",
+    "independentTestRerun": false
+  },
+  "priorFailure": "Intermediate existing no-PDF checkpoint shape test failed; implementation preserves prior checkpoint shape without modifying old tests; final rerun passed",
+  "remaining": [
+    "DO finite tombstone/receipt prerequisites",
+    "real KV propagation and real Docling/remote retry",
+    "resource/cost calibration and rollout",
+    "executor loss before durable local proof remains pending"
+  ],
+  "newMigration": false,
+  "remoteChanges": false,
+  "paidAI": false,
+  "commitOrPush": false,
+  "sourceHashes": {
+    "mcp-server/src/account-deletion.js": "911fd195274be1f38450161bbee1b633a3fe6c27372c8c4775520514abdfa153",
+    "mcp-server/src/rag/pdf-account-cleanup.js": "196eb997dd972495e6719ee17e9f55a12ba39faca22cb7d3698d1af5afebdf46",
+    "mcp-server/src/rag/pdf-job-recovery.js": "ba01b025da4aafea4893efbdd6a50afa047aaf37fa1d92cf62b6e99599d81895",
+    "mcp-server/src/rag-pdf-account-cleanup.test.js": "7aed0b77b1fa5b51912801539e4c120e84eef77cdc9ca19884f5baf9c5ae396f",
+    "mcp-server/tools/rag-pdf-account-cleanup-local-smoke.mjs": "51aaa7d9176cee719114b16adcef21aff3d718b500f7066f7efd9a2ae23e88d1"
+  }
+}

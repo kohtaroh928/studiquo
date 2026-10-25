@@ -1,0 +1,263 @@
+{
+  "date": "2026-10-16",
+  "scope": "stage1 three-pair real API evaluation with independent semantic review",
+  "directory": "/private/tmp/studiquo-rag-subject-role-live-20261016-01",
+  "runId": "b0fc8f2f-cda7-4aa7-afd4-ca8d2bab73fd",
+  "manifestHash": "3be1b351bb6f7c9787415ea568e3710b0bc2dde17396cdec6285b8a81a100744",
+  "entryPath": "/private/tmp/studiquo-subject-role-stage1-entry-20261016.mjs",
+  "entryHash": "56ce302bd19bd9095a3f8fbfa9ca97d60fe01d1a0c5c3ffa540193070fafe049",
+  "stage": 1,
+  "stageStats": {
+    "requests": 6,
+    "usage": {
+      "input": 8375,
+      "output": 1429,
+      "reasoning": 459,
+      "cached": 0,
+      "cacheWrite": 8357
+    },
+    "usageDerivedUSDEstimate": 0.001760925,
+    "elapsedMs": {
+      "min": 2470.8408340000005,
+      "median": 2964.459625499999,
+      "max": 4154.28425,
+      "sum": 18509.829918
+    }
+  },
+  "cumulativeStats": {
+    "requests": 8,
+    "usage": {
+      "input": 11134,
+      "output": 2191,
+      "reasoning": 807,
+      "cached": 0,
+      "cacheWrite": 11110
+    },
+    "usageDerivedUSDEstimate": 0.00248665,
+    "elapsedMs": {
+      "min": 2470.8408340000005,
+      "median": 3079.380792,
+      "max": 5411.774874999999,
+      "sum": 26955.489918
+    }
+  },
+  "stageRows": [
+    {
+      "ordinal": 2,
+      "index": 1,
+      "variant": "candidate",
+      "responseHash": "bcf79511cff91c735fb041060cfc997ea1f4e71a8d7171cfd0849a7d864a0fb5",
+      "elapsedMs": 4154.28425,
+      "usage": {
+        "input": 1507,
+        "output": 293,
+        "reasoning": 141,
+        "total": 1800,
+        "cached": 0,
+        "cacheWrite": 1504
+      }
+    },
+    {
+      "ordinal": 3,
+      "index": 1,
+      "variant": "baseline",
+      "responseHash": "dee7f031c1c7bbfcfbe365b057d0ba21a7dbcb70e0886667e91e1915721008ec",
+      "elapsedMs": 2804.0427919999993,
+      "usage": {
+        "input": 1286,
+        "output": 271,
+        "reasoning": 119,
+        "total": 1557,
+        "cached": 0,
+        "cacheWrite": 1283
+      }
+    },
+    {
+      "ordinal": 4,
+      "index": 2,
+      "variant": "baseline",
+      "responseHash": "b68c8d994d889a1d2ec28847b880706943acc467f0659e5c5e60e90c5b6d6e44",
+      "elapsedMs": 3459.196083,
+      "usage": {
+        "input": 1262,
+        "output": 186,
+        "reasoning": 53,
+        "total": 1448,
+        "cached": 0,
+        "cacheWrite": 1259
+      }
+    },
+    {
+      "ordinal": 5,
+      "index": 2,
+      "variant": "candidate",
+      "responseHash": "58647ee329d9cb4bf453ea2a5ab0ec7eebef8e90419ea9fb739502e7ae95176c",
+      "elapsedMs": 2470.8408340000005,
+      "usage": {
+        "input": 1483,
+        "output": 170,
+        "reasoning": 37,
+        "total": 1653,
+        "cached": 0,
+        "cacheWrite": 1480
+      }
+    },
+    {
+      "ordinal": 6,
+      "index": 3,
+      "variant": "candidate",
+      "responseHash": "76f9ec6a31de710bfc26c37e28145bc4df503987b0e7df19aeff818bb6f33413",
+      "elapsedMs": 3124.876458999999,
+      "usage": {
+        "input": 1529,
+        "output": 254,
+        "reasoning": 54,
+        "total": 1783,
+        "cached": 0,
+        "cacheWrite": 1526
+      }
+    },
+    {
+      "ordinal": 7,
+      "index": 3,
+      "variant": "baseline",
+      "responseHash": "cb87d1b97a8b1652746ba8f7e8bcb89535ee18ff6cd2cac7ce111433d264c60d",
+      "elapsedMs": 2496.589500000002,
+      "usage": {
+        "input": 1308,
+        "output": 255,
+        "reasoning": 55,
+        "total": 1563,
+        "cached": 0,
+        "cacheWrite": 1305
+      }
+    }
+  ],
+  "technicalFailures": 0,
+  "stageReservedMicroUSD": 49152,
+  "totalReservedMicroUSD": 65536,
+  "actualBillingUSD": null,
+  "reservationIsBillingCap": false,
+  "priceSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "priceChecked": "2026-10-16",
+  "pricesUSDPerMillion": {
+    "input": 0.1,
+    "cached": 0.01,
+    "cacheWrite": 0.125,
+    "output": 0.5
+  },
+  "semanticReview": "all six reviewed_match and reviewComplete; original review registered",
+  "releaseAccepted": false,
+  "testsRerun": false,
+  "priorWorkerTests": {
+    "pass": 1659,
+    "fail": 0,
+    "skip": 0
+  },
+  "modelQualityImprovement": "not established",
+  "humanGoldReview": "pending",
+  "journalRecords": 23,
+  "journalHash": "7a1a13b03fa75a5068cf1e827f717760592d8e7f129914573722ef714331287d",
+  "tailHash": "8ef7907cd23d96b95b27c6148d33877bb723b7e09cb88e105be3bb74a45b8269",
+  "auditDocument": "docs/RAG_SUBJECT_ROLE_COMPARISON_STAGE1_AUDIT.md",
+  "auditHash": "d9b7c2d7897fc645d5ae8f33f1a4eb0e277ae90d2741b71ea1270bc69acb46cd",
+  "artifactHash": "4cd064a4f3739cb38e2652bd4ce6a4162c86542b140ba4e967859ccedf4ffa15",
+  "reviewSubmissionHash": "a97b8a002bbe3946fb0b65971f1940b65b89062d3ca113ad9cd97d87a1a5cf51",
+  "comparisonDecision": "continue",
+  "cases": [
+    {
+      "variant": "candidate",
+      "index": 1,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 1,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 2,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 2,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 3,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 3,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    }
+  ],
+  "stageCandidateAllMatched": true,
+  "stageBaselineMismatchCount": 0,
+  "cumulativeComparablePairs": 4,
+  "nextStage": 2,
+  "laterStageReservations": 0,
+  "oldFiveLocksRetained": true,
+  "priorStageAuditHashUnchanged": true,
+  "sourceManifestUnchanged": true,
+  "safetyReview": "entry, pre-review state and final 23-row chain/two original review artifacts/cases/audit document hashes independently verified; no High/Medium remaining",
+  "next": "verify source/run/two original review stages; then stage2 four pairs (eight jobs) with stage2-only fetch-side cap; first technical/unknown/candidate semantic failure stops"
+}

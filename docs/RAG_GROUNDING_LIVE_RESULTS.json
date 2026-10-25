@@ -1,0 +1,112 @@
+{
+  "model": "gpt-6-luna",
+  "rows": [
+    {
+      "question": "fact",
+      "expect": "grounded",
+      "sample": 0,
+      "productionEvent": {
+        "event": "rag_grounding",
+        "status": "grounded",
+        "checkedNumbers": 1,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "offline": {
+        "checkedNumbers": 1,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "電流計の価格は5,000円です。"
+    },
+    {
+      "question": "fact",
+      "expect": "grounded",
+      "sample": 1,
+      "productionEvent": {
+        "event": "rag_grounding",
+        "status": "grounded",
+        "checkedNumbers": 1,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "offline": {
+        "checkedNumbers": 1,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "電流計の価格は5,000円です。"
+    },
+    {
+      "question": "derived",
+      "expect": "derived-number",
+      "sample": 0,
+      "productionEvent": null,
+      "offline": {
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "取得した抜粋では、電流計3個の合計金額を確認できません。電流計の正式名称・型番、または価格が記載された資料の箇所を教えてください。"
+    },
+    {
+      "question": "derived",
+      "expect": "derived-number",
+      "sample": 1,
+      "productionEvent": null,
+      "offline": {
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "取得した抜粋では、電流計の価格を確認できません。商品名・型番、または価格が載った資料の該当箇所を教えてください。"
+    },
+    {
+      "question": "missing",
+      "expect": "not-confirmed",
+      "sample": 0,
+      "productionEvent": {
+        "event": "rag_grounding",
+        "status": "grounded",
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "offline": {
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "取得した資料では、電流計の保証期間は確認できません。"
+    },
+    {
+      "question": "missing",
+      "expect": "not-confirmed",
+      "sample": 1,
+      "productionEvent": {
+        "event": "rag_grounding",
+        "status": "grounded",
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "offline": {
+        "checkedNumbers": 0,
+        "ungroundedNumbers": 0,
+        "checkedTokens": 0,
+        "ungroundedTokens": 0
+      },
+      "preview": "取得した資料では、電流計の保証期間は確認できません。"
+    }
+  ],
+  "stopped": false
+}

@@ -1,0 +1,627 @@
+{
+  "date": "2026-10-10",
+  "method": "Actual Workers AI/D1/Vectorize and Gemini. Natural queries use public API; controlled read omission uses a private loopback helper. No model rank modification.",
+  "checks": {
+    "total": 17,
+    "passed": 17
+  },
+  "cases": [
+    {
+      "id": "natural-0",
+      "kind": "natural-real-ranking",
+      "http": 200,
+      "elapsedMs": 5461,
+      "status": "grounded",
+      "pages": [
+        9,
+        5,
+        6,
+        8,
+        7
+      ],
+      "trace": [
+        {
+          "event": "selection",
+          "candidatePages": [
+            9,
+            5,
+            6,
+            7,
+            8,
+            2,
+            3,
+            1,
+            4,
+            10
+          ],
+          "selectedPages": [
+            5,
+            9,
+            6,
+            8,
+            7
+          ]
+        },
+        {
+          "event": "before-reserve",
+          "referencePages": [
+            5,
+            9,
+            6,
+            8,
+            7
+          ],
+          "missing": []
+        },
+        {
+          "event": "after-reserve",
+          "poolPages": [
+            5,
+            9,
+            6,
+            8,
+            7
+          ],
+          "referencePages": [
+            9,
+            5,
+            6,
+            8,
+            7
+          ],
+          "missing": [],
+          "attempted": 0
+        }
+      ],
+      "reads": [
+        {
+          "page": 5,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 9,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 6,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 8,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 7,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        }
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 388,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 368,
+          "ok": true
+        }
+      ],
+      "reserveObserved": false,
+      "answerChecks": {
+        "model": true,
+        "price": true,
+        "shipping": true,
+        "corporate": true
+      }
+    },
+    {
+      "id": "natural-1",
+      "kind": "natural-real-ranking",
+      "http": 200,
+      "elapsedMs": 10764,
+      "status": "grounded",
+      "pages": [
+        9,
+        6,
+        5,
+        7,
+        8
+      ],
+      "trace": [
+        {
+          "event": "selection",
+          "candidatePages": [
+            9,
+            6,
+            5,
+            7,
+            8,
+            2,
+            3,
+            1,
+            4,
+            10
+          ],
+          "selectedPages": [
+            6,
+            5,
+            9,
+            7,
+            8
+          ]
+        },
+        {
+          "event": "before-reserve",
+          "referencePages": [
+            6,
+            5,
+            9,
+            7,
+            8
+          ],
+          "missing": []
+        },
+        {
+          "event": "after-reserve",
+          "poolPages": [
+            6,
+            5,
+            9,
+            7,
+            8
+          ],
+          "referencePages": [
+            9,
+            6,
+            5,
+            7,
+            8
+          ],
+          "missing": [],
+          "attempted": 0
+        }
+      ],
+      "reads": [
+        {
+          "page": 6,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 5,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 9,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 7,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 8,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        }
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 207,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 364,
+          "ok": true
+        }
+      ],
+      "reserveObserved": false,
+      "answerChecks": {
+        "model": true,
+        "price": true,
+        "shipping": true,
+        "corporate": true
+      }
+    },
+    {
+      "id": "controlled",
+      "kind": "controlled-initial-model-excerpt-missing-real-models",
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        9,
+        2
+      ],
+      "trace": [
+        {
+          "event": "selection",
+          "candidatePages": [
+            9,
+            5,
+            6,
+            7,
+            8,
+            2,
+            3,
+            1,
+            4,
+            10
+          ],
+          "selectedPages": [
+            5,
+            9,
+            6,
+            8,
+            7
+          ]
+        },
+        {
+          "event": "before-reserve",
+          "referencePages": [
+            9
+          ],
+          "missing": [
+            "detail:0:model"
+          ]
+        },
+        {
+          "event": "after-reserve",
+          "poolPages": [
+            9,
+            2
+          ],
+          "referencePages": [
+            9,
+            2
+          ],
+          "missing": [],
+          "attempted": 1
+        }
+      ],
+      "probeReads": [
+        {
+          "page": 5,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 9,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 6,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 8,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 7,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 2,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        }
+      ],
+      "chatReads": [
+        {
+          "page": 5,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 9,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        },
+        {
+          "page": 6,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 8,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 7,
+          "ownerChecked": true,
+          "rows": 0,
+          "injected": true
+        },
+        {
+          "page": 2,
+          "ownerChecked": true,
+          "rows": 1,
+          "injected": false
+        }
+      ],
+      "probeCalls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 235,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 1052,
+          "ok": true
+        }
+      ],
+      "chatCalls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 130,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 346,
+          "ok": true
+        }
+      ],
+      "reserveObserved": true,
+      "citationDatabaseValid": true,
+      "answerChecks": {
+        "model": true,
+        "price": true,
+        "shipping": true,
+        "corporate": true
+      }
+    }
+  ],
+  "readiness": [
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 352
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 255
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 357
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 442
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 405
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 314
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 207
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 469
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 214
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 205
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 204
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 230
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 731
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 518
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 215
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 244
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 268
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 239
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 252
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 221
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 211
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 236
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 235
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 242
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 241
+    },
+    {
+      "state": "waiting",
+      "reason": "vector_pending",
+      "http": 200,
+      "elapsedMs": 245
+    },
+    {
+      "state": "waiting",
+      "reason": "query_pending",
+      "http": 200,
+      "elapsedMs": 1528
+    },
+    {
+      "state": "ready",
+      "http": 200,
+      "elapsedMs": 528
+    }
+  ],
+  "firstAttempt": {
+    "stoppedBeforeQueries": true,
+    "cause": "readiness did not become ready within 24 polls; no reason recorded, so cause unconfirmed",
+    "cleanupSuccessful": true
+  },
+  "diagnostic": {
+    "records": 10,
+    "vectorCount": 10,
+    "metadataUnexpected": 0,
+    "checked": 10,
+    "allMetadataAndDimensionsValid": true
+  },
+  "final": {
+    "version": "6c18c267-1fb9-4612-b9d8-55796819c66e",
+    "flags": {
+      "AI_PROVIDER_APPROVED": "false",
+      "RAG_ENABLED": "false"
+    },
+    "geminiSecretAbsent": true,
+    "D1": {
+      "chunks": 0,
+      "pages": 0,
+      "sources": 0,
+      "total_fts_rows": 0,
+      "deletion_barriers": 4
+    },
+    "vectorCount": 0,
+    "disabledHTTP": {
+      "http": 200,
+      "disabled": true
+    },
+    "sessionsRemoved": true,
+    "temporaryCredentialFilesRemoved": true,
+    "privateHelpersStopped": true
+  },
+  "limitations": [
+    "Natural queries had no initial missing information; natural reserve success rate remains unmeasured",
+    "Controlled test injects initial model-excerpt omissions only; no production incident reproduced",
+    "No fresh OCR/real-user documents or physical iPad test",
+    "No measured invoice amount",
+    "Production code unchanged; 864-test prior snapshot byte-identical"
+  ]
+}

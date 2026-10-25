@@ -58,6 +58,60 @@ export class RateCounter extends DurableObject<Env> {
   }
 
   /**
+   * Makes a request-scoped reservation. Repeating the same operation ID is
+   * safe after a lost RPC response: it adjusts this counter to `amount`,
+   * instead of taking the amount twice. A new rate window receives the full
+   * amount, never merely a delta from the expired window.
+   */
+  async reserve(operationID: string, limit: number, windowSeconds: number, amount: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const now = Date.now();
+      const reservationKey = `reservation:${operationID}`;
+      const previous = await this.ctx.storage.get<{ amount: number; windowEndsAt: number }>(reservationKey);
+      const stored = await this.ctx.storage.get<CounterState>("state");
+      const current = stored && now < stored.windowEndsAt ? stored : null;
+      // An active counter may start many windows before its reclamation alarm
+      // can run. Reservations from an expired window can no longer affect the
+      // current count, so remove them before recording the new window instead
+      // of retaining one storage key for every successful request forever.
+      if (!current) {
+        const reservations = await this.ctx.storage.list<{ amount: number; windowEndsAt: number }>({ prefix: "reservation:" });
+        const expired = [...reservations.entries()]
+          .filter(([, reservation]) => reservation.windowEndsAt <= now)
+          .map(([key]) => key);
+        if (expired.length) await this.ctx.storage.delete(expired);
+      }
+      const sameWindow = previous && current && previous.windowEndsAt === current.windowEndsAt;
+      const before = sameWindow ? previous.amount : 0;
+      const delta = amount - before;
+      let state = current ?? { count: 0, windowEndsAt: now + windowSeconds * 1000 };
+      if (delta > 0) {
+        if (state.count + delta > limit) return { ok: false };
+        state = { ...state, count: state.count + delta };
+      } else if (delta < 0) {
+        state = { ...state, count: Math.max(0, state.count + delta) };
+      }
+      const record = { amount, windowEndsAt: state.windowEndsAt };
+      await this.ctx.storage.put({ state, [reservationKey]: record });
+      await this.ctx.storage.setAlarm(state.windowEndsAt + windowSeconds * 1000);
+      return { ok: true, windowEndsAt: state.windowEndsAt };
+    });
+  }
+
+  /** Releases a request-scoped reservation exactly once. */
+  async release(operationID: string) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const reservationKey = `reservation:${operationID}`;
+      const reservation = await this.ctx.storage.get<{ amount: number; windowEndsAt: number }>(reservationKey);
+      if (!reservation) return false;
+      const next = giveTo(await this.ctx.storage.get<CounterState>("state"), Date.now(), reservation.amount, reservation.windowEndsAt);
+      if (next) await this.ctx.storage.put("state", next);
+      await this.ctx.storage.delete(reservationKey);
+      return true;
+    });
+  }
+
+  /**
    * Gives back what an earlier `take` took, for when a later check in the same
    * request refused it. Only touches the window it was taken from (see
    * counter-state.ts).

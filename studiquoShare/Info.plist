@@ -32,5 +32,7 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
 	</dict>
+	<key>StudiquoAppGroup</key>
+	<string>$(STUDIQUO_APP_GROUP)</string>
 </dict>
 </plist>

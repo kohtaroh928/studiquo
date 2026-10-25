@@ -5,6 +5,7 @@
 // cross-provider linking — exactly the same "only a verified email may join
 // two accounts" rule Apple and Google already get from their own tokens.
 import { sha256Hex } from "./auth.ts";
+import { tagged } from "./environment.ts";
 import { featureDisabled } from "./features.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
 import type { Env } from "./env.ts";
@@ -60,7 +61,7 @@ export async function sendVerificationCode(env: Env, email: string) {
     body: JSON.stringify({
       from: env.RESEND_FROM_EMAIL ?? "Studiquo <onboarding@resend.dev>",
       to: normalized,
-      subject: "Studiquo確認コード",
+      subject: tagged(env, "Studiquo確認コード"),
       text: `確認コード: ${code}\n\nこのコードは15分間有効です。心当たりがない場合はこのメールを無視してください。`,
     }),
   });
