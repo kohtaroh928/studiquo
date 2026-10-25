@@ -366,6 +366,23 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.needsPasskeyEnrollment)
     }
 
+    func testASignInScreenOnlyAutoStartsPasskeyOnceAnAccountIsKnownToHaveOne() async {
+        let without = makeSignedInStore(registered: false)
+        await without.checkPasskeyRequirement()
+        XCTAssertFalse(without.knowsPasskeyOnThisDevice, "an account that skipped the passkey keeps the ordinary form")
+
+        let with = makeSignedInStore(registered: true)
+        XCTAssertFalse(with.knowsPasskeyOnThisDevice)
+        await with.checkPasskeyRequirement()
+        XCTAssertTrue(with.knowsPasskeyOnThisDevice)
+        with.logout()
+        XCTAssertTrue(with.knowsPasskeyOnThisDevice, "signing out must not forget it")
+
+        let reset = makeSignedInStore(registered: false)
+        await reset.checkPasskeyRequirement()
+        XCTAssertFalse(reset.knowsPasskeyOnThisDevice, "an account whose passkeys were removed is no longer known to have one")
+    }
+
     func testAFailedLookupNeverBlocksAnyone() async {
         let store = makeSignedInStore(registered: nil)
         await store.checkPasskeyRequirement()
@@ -378,12 +395,14 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.needsPasskeyEnrollment, "a passkey is tied to an e-mail address")
     }
 
-    func testTheRequestCannotBeSkippedBeforeSettingUpHasFailed() async {
+    func testTheRequestCanAlwaysBePutOffAndComesBackAtTheNextSignIn() async {
         let store = makeSignedInStore(registered: false)
         await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment)
         store.skipPasskeyEnrollmentForNow()
-        XCTAssertTrue(store.needsPasskeyEnrollment, "only offered once a try has failed")
-        XCTAssertFalse(store.passkeyEnrollmentFailed)
+        XCTAssertFalse(store.needsPasskeyEnrollment, "a passkey is offered, not required")
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment, "asked again the next time the state is checked")
     }
 
     func testAPrivateRelayAddressIsNotAskedForAPasskey() async {

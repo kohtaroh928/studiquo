@@ -11,7 +11,7 @@ import { handleDocumentCollab } from "./document-collab.ts";
 import { handleLegal } from "./legal.ts";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.ts";
 import { libraryIdObjectName } from "./library-id.ts";
-import { accountHasEstablishedPasskey, gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.ts";
+import { accountHasEstablishedPasskey, accountHasPasskey, passkeyResetHoldActive, refuseDuringPasskeyResetHold, requireRecentPasskey, resolveAccountKey, sendPasskeyNotice, startPasskeyResetHold, RESET_HOLD_SECONDS } from "./passkey-policy.ts";
 import { handleChat } from "./chat.ts";
 import { handleIssueReports } from "./issue-reports.ts";
 import { handleAppErrors } from "./app-errors.ts";
@@ -506,6 +506,8 @@ const handler = {
       }
       if (url.pathname === "/api/account" && request.method === "DELETE") {
         if (!session) return json({ error: "Sign in again." }, 401);
+        const onHold = await refuseDuringPasskeyResetHold(env, session.sub);
+        if (onHold) return onHold;
         const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
         if (needsPasskey) return needsPasskey;
         // Accounts without a passkey have no second check: a stolen or left-behind
@@ -527,6 +529,8 @@ const handler = {
       }
       if (url.pathname === "/api/mcp/pairing-code" && request.method === "POST") {
         if (!session) return json({ error: "Sign in again." }, 401);
+        const onHold = await refuseDuringPasskeyResetHold(env, session.sub);
+        if (onHold) return onHold;
         const needsPasskey = await requireRecentPasskey(env, token, session, "approve-app");
         if (needsPasskey) return needsPasskey;
         if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash!))) return json({ error: "Too many attempts." }, 429);
@@ -796,9 +800,6 @@ async function handleAppleSignIn(request: Request, env: Env, ctx: ExecutionConte
 
   const deleting = await accountDeletingResponse(env, identityKey);
   if (deleting) return deleting;
-  // An account with a passkey signs in with that instead (passkey-policy.ts).
-  const passkeyGate = await gatePasskeyAccount(env, identityKey, accountEmail && accountEmailVerified && !accountUsesPrivateRelay ? accountEmail : null, { notify: work => inBackground(ctx, work) });
-  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   return json({ token });
@@ -860,9 +861,6 @@ async function handleGoogleSignIn(request: Request, env: Env, ctx: ExecutionCont
 
   const deleting = await accountDeletingResponse(env, identityKey);
   if (deleting) return deleting;
-  // An account with a passkey signs in with that instead (passkey-policy.ts).
-  const passkeyGate = await gatePasskeyAccount(env, identityKey, email && emailVerified ? email : null, { notify: work => inBackground(ctx, work) });
-  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
 
@@ -1008,21 +1006,31 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
   const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
-  // An account with a passkey does not accept a code that could have been
-  // relayed by a look-alike site, neither to sign in nor to reset the password
-  // (which would sign in): checked before anything is changed.
   // Nothing is stored for an account whose deletion is still running: the
   // password would be saved and then the sign-in below refused with a message
-  // that says nothing about why. Say so, before anything changes — and before
-  // the passkey rule, which still sees the passkey the deletion has yet to remove.
+  // that says nothing about why. Say so, before anything changes.
   const deleting = await accountDeletingResponse(env, accountKey);
   if (deleting) return deleting;
-  const passkeyGate = await gatePasskeyAccount(env, accountKey, normalizedEmail, { notify: work => inBackground(ctx, work) });
-  if (passkeyGate) return passkeyGate;
   // A passkey registered for any address of this account signs in as the
   // account, so all of them go with a reset (see revokePasskeysForAccount).
   const accountEmails = [normalizedEmail, ...(link.linkedIdentities ?? []).map(identityKey).filter(key => key.startsWith("email:")).map(key => key.slice("email:".length))];
-  if (replacedPassword) {
+  // A reset also covers an account that only signs in with Apple or Google and
+  // lost its passkey: the code is the way back, and it removes the passkeys just
+  // as a reset of an existing password does.
+  let hadPasskey;
+  try {
+    // Every address of the account (the removal below covers all of them), and a
+    // hold left by an earlier attempt that failed part-way: the passkeys it
+    // already cut off no longer count, but the owner still has to be told.
+    hadPasskey = await passkeyResetHoldActive(env, accountKey);
+    for (const address of accountEmails) {
+      if (!hadPasskey) hadPasskey = await accountHasPasskey(env, accountKey, address);
+    }
+  } catch {
+    return json({ error: "Could not complete the password reset. Please try again." }, 503);
+  }
+  const isReset = replacedPassword || hadPasskey;
+  if (isReset) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they
     // may have connected, which hold their own tokens (an app approved before
@@ -1038,6 +1046,9 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+      // Before the passkeys go: with them gone, deleting the account and
+      // approving an app would no longer ask for one (see startPasskeyResetHold).
+      if (hadPasskey) await startPasskeyResetHold(env, accountKey);
       await revokePasskeysForAccount(env, { accountKey, emails: accountEmails });
     } catch {
       return json({ error: "Could not complete the password reset. Please try again." }, 503);
@@ -1050,7 +1061,7 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
     // store was busy or unavailable. Retryable, so not a 400.
     return json({ error: "Could not save the account. Please try again." }, 503);
   }
-  if (replacedPassword) {
+  if (isReset) {
     // Storing the password takes a while (a deliberately slow hash). Someone
     // who still knew the OLD password could have signed in during it, after the
     // first cut-off but before the old password stopped working, and would
@@ -1075,6 +1086,15 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
         if (attempt === 3) console.warn("password reset: second passkey pass failed");
       }
     }
+  }
+  if (hadPasskey) {
+    inBackground(ctx, sendPasskeyNotice(env, normalizedEmail, "Studiquoのパスキーを削除しました", [
+      "お使いのStudiquoアカウントで、メールのコードによるパスワードの設定または再設定があり、設定済みのパスキーをすべて削除しました。",
+      "",
+      `安全のため、これから${Math.round(RESET_HOLD_SECONDS / 3600)}時間は、アカウントの削除とアプリの承認ができません。`,
+      "ご本人の場合は、Studiquoを開いて、新しいパスキーを設定してください。",
+      "心当たりがない場合は、すぐにメールアカウントのパスワードを変更し、Studiquoでパスワードを再設定してください。",
+    ]));
   }
   const token = await mintSession(env, accountKey);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
@@ -1161,12 +1181,8 @@ async function handleLocalLogin(request: Request, env: Env, ctx: ExecutionContex
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
-  // The password was right, but a password can be relayed by a look-alike
-  // site: an account with a passkey signs in with that instead.
   const deleting = await accountDeletingResponse(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
   if (deleting) return deleting;
-  const passkeyGate = await gatePasskeyAccount(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, normalizedEmail, { notify: work => inBackground(ctx, work) });
-  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // A sign-in from a country+network this account hasn't used lately emails
