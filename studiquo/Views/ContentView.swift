@@ -3017,7 +3017,7 @@ struct ContentView: View {
                                 Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
                                     .font(.footnote).foregroundStyle(.secondary)
                                 Button("コードをコピー", systemImage: "doc.on.doc") {
-                                    UIPasteboard.general.string = issued.code
+                                    SecretPasteboard.copy(issued.code, localOnly: false, expiresAt: expiresAt)
                                 }
                             }
                         } else {
