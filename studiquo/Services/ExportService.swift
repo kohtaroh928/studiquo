@@ -262,7 +262,7 @@ enum ExportService {
     }
 
     @MainActor
-    private static func pdfData(pages: [NotePage]) -> Data? {
+    static func pdfData(pages: [NotePage]) -> Data? {
         guard !pages.isEmpty else { return nil }
 
         let pdfRenderer = UIGraphicsPDFRenderer(bounds: .zero)
