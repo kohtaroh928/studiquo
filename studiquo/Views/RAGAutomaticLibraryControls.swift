@@ -35,12 +35,14 @@ struct RAGAutomaticLibraryControls: View {
     var body: some View {
         Group {
         Section("ホームのPDFを自動で検索可能にする") {
-            Text("許可した範囲のPDFを、アプリ使用中に小分けで自動登録します。本文・文字認識結果・タイトル・ページ番号をCloudflareへ送信し、本文と検索用データを保存します。質問もCloudflareへ送り、関連する抜粋をOpenAIへ送信して回答します。ロック・暗号化・ゴミ箱の資料と通常の手書きノートは対象外です。")
-                .font(.footnote)
-            Text("この端末の資料には、別アカウントで保存したものが含まれる場合があります。送信する権限があるPDFだけを対象にしてください。初回の許可で従来の手動検索データは失効し、新しい登録へ切り替わります。")
-                .font(.footnote)
-            Text("構造解析済みの資料では、見出し、要素の種類・位置、解析方式などの情報もCloudflareへ送信し、本文と一緒に保存します。検索で使う位置情報は出典と共にOpenAIへ送信します。原PDFはこの処理では送信しません。")
-                .font(.footnote)
+            RAGDetailDisclosure(
+                summary: "許可した範囲のPDFを、アプリ使用中に自動で登録して資料検索に使います。本文などをCloudflareへ送信し、回答のため関連する抜粋をOpenAIへ送信します。送信内容の全文は「詳細」で確認できます。",
+                details: [
+                    "許可した範囲のPDFを、アプリ使用中に小分けで自動登録します。本文・文字認識結果・タイトル・ページ番号をCloudflareへ送信し、本文と検索用データを保存します。質問もCloudflareへ送り、関連する抜粋をOpenAIへ送信して回答します。ロック・暗号化・ゴミ箱の資料と通常の手書きノートは対象外です。",
+                    "この端末の資料には、別アカウントで保存したものが含まれる場合があります。送信する権限があるPDFだけを対象にしてください。初回の許可で従来の手動検索データは失効し、新しい登録へ切り替わります。",
+                    "構造解析済みの資料では、見出し、要素の種類・位置、解析方式などの情報もCloudflareへ送信し、本文と一緒に保存します。検索で使う位置情報は出典と共にOpenAIへ送信します。原PDFはこの処理では送信しません。"
+                ],
+                identifier: "rag-auto-detail")
             if !service.isManaged || !service.enabled {
                 Picker("登録対象", selection: $scopeKind) {
                     Text("ホームのPDF全体").tag("all")
@@ -145,4 +147,29 @@ struct RAGLibrarySyncModifier: ViewModifier {
 }
 private extension ScenePhase {
     var descriptionForRAG: String { self == .active ? "active" : (self == .inactive ? "inactive" : "background") }
+}
+
+
+/// Long privacy and specification text stays one tap away so the permission
+/// screen is readable at a glance. The full text is shown on demand, not removed.
+struct RAGDetailDisclosure: View {
+    let summary: String
+    let details: [String]
+    let identifier: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(summary).font(.footnote)
+            Button(expanded ? "詳細を閉じる" : "詳細") {
+                withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() }
+            }
+            .font(.footnote)
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier(identifier)
+            if expanded {
+                ForEach(details.indices, id: \.self) { Text(details[$0]).font(.footnote) }
+            }
+        }
+    }
 }
