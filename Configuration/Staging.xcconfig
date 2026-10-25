@@ -13,3 +13,7 @@ STUDIQUO_GOOGLE_SERVER_CLIENT_ID =
 STUDIQUO_GOOGLE_URL_SCHEME =
 
 #include? "Staging.local.xcconfig"
+// A git worktree (.worktrees/<task>) has no copy of the ignored file above, so
+// fall back to the main checkout's. Without it the app launches with an empty
+// RevenueCat key and stops at launch (SubscriptionStore.configureSDK).
+#include? "../../../Configuration/Staging.local.xcconfig"
