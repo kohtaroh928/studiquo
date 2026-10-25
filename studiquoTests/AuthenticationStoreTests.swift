@@ -383,6 +383,31 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(reset.knowsPasskeyOnThisDevice, "an account whose passkeys were removed is no longer known to have one")
     }
 
+    func testAccountDeletionClearsKnownPasskeyFlagAndSurfacesPasskeyResetHoldError() async {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        let holdStore = AuthenticationStore(
+            service: storeService,
+            defaults: testDefaults,
+            deleteAccountOnServer: { throw AccountDeletionError.passkeyResetHold },
+            authenticationSession: testSession,
+            passkeyRegistered: { true }
+        )
+        await holdStore.checkPasskeyRequirement()
+        XCTAssertTrue(holdStore.knowsPasskeyOnThisDevice)
+
+        let rejected = await holdStore.requestAccountDeletion()
+        XCTAssertFalse(rejected)
+        XCTAssertEqual(
+            holdStore.errorMessage,
+            "パスワードの再設定でパスキーを削除したため、安全のため、48時間はアカウントを削除できません。しばらくしてからもう一度お試しください。"
+        )
+        XCTAssertTrue(holdStore.knowsPasskeyOnThisDevice, "refused deletion during hold must not wipe local state")
+
+        holdStore.finishAccountDeletion()
+        XCTAssertFalse(holdStore.knowsPasskeyOnThisDevice, "finishing account deletion must forget the passkey flag")
+        XCTAssertEqual(holdStore.state, AuthenticationStore.State.needsLogin)
+    }
+
     func testAFailedLookupNeverBlocksAnyone() async {
         let store = makeSignedInStore(registered: nil)
         await store.checkPasskeyRequirement()

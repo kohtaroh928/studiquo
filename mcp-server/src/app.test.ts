@@ -2614,6 +2614,27 @@ test("a reset of an account without passkeys starts no wait", async () => {
   assert.notEqual(response.status, 403);
 });
 
+test("a reset on an account with a linked secondary email that holds a passkey still starts the 48-hour hold", async () => {
+  const env = environment({ strictSessions: true });
+  const { linkVerifiedEmail } = await import("./oauth-links.ts");
+  await linkVerifiedEmail(env, { provider: "apple", sub: "linked-apple-sub", email: "primary@example.com", emailVerified: true });
+  // Attach a secondary email identity to the email-accounts index for primary@example.com and seed a passkey on that secondary address.
+  const linkKey = "email-accounts:primary@example.com";
+  const existing = JSON.parse((await env.STUDIQUO_DATA.get(linkKey)) ?? "[]");
+  existing.push({ provider: "email", sub: "secondary@example.com" });
+  await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(existing));
+  await seedPasskey(env, "secondary@example.com", "linked-secondary-passkey", "device-sec", 1);
+
+  const reset = await resetPasswordWith(env, "primary@example.com", "new-passphrase-123", "p".repeat(40));
+  assert.equal(reset.status, 200);
+  const token = (await reset.json()).token;
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:linked-secondary-passkey"), null, "secondary email passkey is removed");
+
+  const refused = await worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).code, "passkey_reset_hold");
+});
+
 test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be removed changes nothing", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
