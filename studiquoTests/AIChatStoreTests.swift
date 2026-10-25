@@ -66,8 +66,11 @@ final class AIChatStoreTests: XCTestCase {
     private var cleared: [String] = []
 
     /// Polls the main actor until `condition` holds, so a test can wait for
-    /// the store's reply task without exposing it.
-    private func waitUntil(_ description: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
+    /// the store's reply task without exposing it. The limit is generous: the
+    /// first test of a cold CI simulator can stall the main actor for several
+    /// seconds while the app's store is recovered, and a passing test returns
+    /// as soon as the condition holds, so a long limit costs nothing.
+    private func waitUntil(_ description: String, timeout: TimeInterval = 30, _ condition: () -> Bool) async {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() && Date() < deadline {
             try? await Task.sleep(for: .milliseconds(10))
