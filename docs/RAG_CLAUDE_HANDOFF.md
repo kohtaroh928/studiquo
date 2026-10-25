@@ -1,3 +1,7 @@
+## 2026-10-25 Codex 攻撃試験
+
+今回: main 7a16648からcodex/rag-security-attackでローカル試験101成功。合成メールがマスク前にrerank引数へ渡ることを動的再現（外部AIはモック）。詳細RAG_SECURITY_ATTACK_REPORT_20261025.md。実LLM/remote/VM/実機は未実施。次は送信前マスクと実モデル注入評価。常駐processなし。GitHub Projectはunknown owner typeで未記録。ユーザー依頼で試験記録2ファイルをコミット・ブランチpushする。実装変更なし。
+
 ## 2026-10-23: 別資料での探索評価
 
 固定した地理教材44問をshadow/on各1回測定。答えなし出典なしは12/15→15/15、答えありは新規停止0/29だがgrounded→partialが3/29。比較5問は全根拠を得ても両設定で全問partial。判定前から答えあり2/29が停止。shadow判定timeout 1件。質問はリポジトリ外の私有領域に保存。詳細 `docs/RAG_SECOND_MATERIAL_REPORT_20261023.md`、条件 `docs/RAG_SECOND_MATERIAL_PREREGISTRATION.md`。別worktree `codex/rag-comparison-analysis`、未コミット。最終回答・ステージング実質問・iPad/PDFは未検証。
