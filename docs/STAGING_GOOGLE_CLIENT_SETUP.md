@@ -1,0 +1,14 @@
+# ステージングGoogle認証の設定反映（2026-10-26）
+
+Google Cloudのstudiquoプロジェクトに専用iOS／serverクライアントを作成。
+通常チェックアウトのgit管理外Configuration/Staging.local.xcconfigへ3値を追記。既存RevenueCat値は保持。
+Cloudflareダッシュボードでstudiquo-mcp-stagingのGOOGLE_OAUTH_SERVER_CLIENT_IDのみ更新し、反映値を確認。CLIのsecret putは同名の通常変数があるため失敗し、変更は発生していない。
+
+検証: 通常チェックアウトのstudiquo-stagingのshowBuildSettingsで3値一致、generic iOS署名付きビルド成功。独立セキュリティレビューで指摘なし。実機サインインは未確認。Apple設定は変更なし。
+
+次の一手: Xcodeで通常チェックアウトをstudiquo-stagingで再RunしGoogle／Appleログインを確認する。wrangler.jsoncにも同じClient IDを保存し、mainへ統合する。古いブランチからstagingを再deployすると空値へ戻る可能性があるため、配備元はこの設定を含むmainへ追従すること。
+
+ロールバック: 追記したGoogleの3設定のみ除去し、Workerの同変数を以前の空値へ戻す（Googleログインは使えなくなる）。本番設定は変更していない。
+
+GitHub Project: CLI認証エラーで未記録。認証復旧後に既存項目を検索し、実機確認待ちとして更新する。
+Projectの資料の更新: なし。
