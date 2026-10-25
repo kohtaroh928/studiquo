@@ -199,9 +199,13 @@ struct RAGCitationLinks: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                    }.font(.caption).accessibilityIdentifier("rag-citation-\(citation.pageNumber)")
+                    }
+                    .font(.caption)
+                    .multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("rag-citation-\(citation.pageNumber)")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
