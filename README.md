@@ -78,4 +78,4 @@ studiquo/
 - 運用手順・リリース: [docs/RUNBOOK.md](docs/RUNBOOK.md)、[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)
 - 開発の進め方（エージェントを含む）: [AGENTS.md](AGENTS.md)、[docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)
 
-残タスクと未解決の問題はNotionの「Studiquo タスク」で管理しています。
+残タスクと未解決の問題はGitHub Projectの「Studiquo タスク」(非公開)で管理しています。
