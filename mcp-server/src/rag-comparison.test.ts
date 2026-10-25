@@ -74,7 +74,7 @@ test('the topic marker ends the subjects: the predicate is never part of a subje
   ['鉄道と船舶は、それぞれ貨物輸送でどのように使われますか', ['鉄道', '船舶']],
   ['河川の氾濫と地盤の液状化は、それぞれ何が原因ですか', ['河川の氾濫', '地盤の液状化']],
   ['火山灰と溶岩では、広がり方にどのような違いがありますか', ['火山灰', '溶岩']],
-  ['赤の旗と青の旗の例は、それぞれ何を示しますか', ['赤の旗', '青の旗の例']],
+  ['赤の旗と青の旗の例は、それぞれ何を示しますか', ['赤の旗', '青の旗']],
   ['光と音の違いは何ですか', ['光', '音']],
  ] as const) {
   const plan = queryPlan(query);
@@ -87,4 +87,26 @@ test('the topic marker ends the subjects: the predicate is never part of a subje
  assert.equal(queryPlan('鉄道とは、貨物と旅客の違いを説明して').coverageGroups.length, 2); // unchanged from before: not collapsed to []
  assert.deepEqual(queryPlan('鉄道および船舶は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶']);
  assert.deepEqual(queryPlan('鉄道と船舶と航空機は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶', '航空機']);
+});
+
+test('the topic cut keeps shared aspects shared and never drops named subjects silently', () => {
+ // The shared aspect after the cut is not part of the second subject's name (it stays in the per-subject queries).
+ for (const [query, groups, query1] of [
+  ['水と油の特徴は、それぞれ何ですか', ['水', '油'], '水の特徴'],
+  ['鉛直と水平は、距離の代表値を比較して', ['鉛直', '水平'], '鉛直について'], // the predicate's aspect is not inferred
+  ['河川と湖沼の原因は、それぞれ何ですか', ['河川', '湖沼'], '河川の原因'],
+ ] as const) {
+  const plan = queryPlan(query);
+  assert.deepEqual(plan.coverageGroups, groups, query);
+  assert.ok(plan.queries.includes(query1), `${query}: ${plan.queries}`);
+ }
+ // A repeated attribute belongs to each subject, so it is not stripped as a shared aspect.
+ assert.deepEqual(queryPlan('犬の特徴と猫の特徴は、それぞれ何ですか').coverageGroups, ['犬の特徴', '猫の特徴']);
+ // More names after the topic marker: no subject is named, instead of silently dropping 牛 and 馬.
+ for (const query of ['羊と山羊は、牛と馬との違いを説明して', 'AとBは、CとDの違いを説明して'])
+  assert.deepEqual(queryPlan(query).coverageGroups, [], query);
+ // A predicate with an aspect (と inside, but also a particle) keeps the cut: the two subjects stay.
+ assert.deepEqual(queryPlan('亜熱帯低気圧とポーラーロウでは、上層と下層の気温構造がどう違いますか').coverageGroups, ['亜熱帯低気圧', 'ポーラーロウ']);
+ // それぞれ starts a predicate; the と inside it does not name another subject.
+ assert.deepEqual(queryPlan('大圏と等角は、それぞれ東京とパリを結ぶ例でどのように比較されますか').coverageGroups, ['大圏', '等角']);
 });
