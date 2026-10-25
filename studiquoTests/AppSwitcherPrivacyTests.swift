@@ -115,6 +115,17 @@ final class SecretPasteboardTests: XCTestCase {
         XCTAssertEqual(pasteboard.items.first?["public.utf8-plain-text"] as? String, "ABCD1234EFGH")
     }
 
+    func testCrossDeviceCopyWithoutExplicitExpirationFallsBackToDefaultLifetime() {
+        let pasteboard = RecordingPasteboard()
+        let now = Date(timeIntervalSince1970: 2_000_000)
+
+        SecretPasteboard.copy("PAIR5678", localOnly: false, expiresAt: nil, to: pasteboard, now: now)
+
+        XCTAssertEqual(pasteboard.options[.localOnly] as? Bool, false)
+        XCTAssertEqual(pasteboard.options[.expirationDate] as? Date, now.addingTimeInterval(SecretPasteboard.lifetime))
+        XCTAssertEqual(pasteboard.items.first?["public.utf8-plain-text"] as? String, "PAIR5678")
+    }
+
     func testARealPasteboardReadsTheSecretBackAsAString() {
         let pasteboard = UIPasteboard.withUniqueName()
         SecretPasteboard.copy("secret-token", to: pasteboard)
