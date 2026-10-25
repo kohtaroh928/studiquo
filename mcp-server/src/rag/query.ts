@@ -71,7 +71,7 @@ function comparisonParts(query: any): any {
   // predicate, not part of the second subject's name. Cut only when the head alone names two or more subjects
   // and nothing is quoted (a quoted name may contain は).
   if (!shared && !/[「『"]/u.test(prefix)) {
-    const topic = /(?:では|は)[、,]?/u.exec(prefix);
+    const topic = /(?<!と)(?:では|は)[、,]?/u.exec(prefix); // not the は of "Xとは"
     const head = topic ? prefix.slice(0, topic.index).trim() : '';
     if (head && head.split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu).length >= 2) prefix = head;
   }
