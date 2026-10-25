@@ -1,0 +1,43 @@
+# Unit plan v4：独立意味レビューと一対一照合
+
+2026-10-15。Standardのオフライン評価ledger。AIによる意味採点や追加APIは実装しない。既存開発8問/13要求の代表oracleを保持し、提出された独立レビューの判定を集計する仕組みを追加する。本番/モデル入力へoracleやreviewを渡さない。
+
+## 意味の確認基準
+
+候補taskとoracleの要求のpairごとに、operation/attribute/subjects/conditions/intent/scope/provenance/noInventedDetailsの8観点をpass/fail/uncertainで判定する。
+
+- operation：値・説明・計算・比較等、求められた操作に合っている。operation enumが許容範囲外ならlocalで不一致を確認できる。labelが似ているだけで操作を合格にしない。
+- attribute/subjects/conditions：求める属性と対象、適用状況が対応する。言い換えは意味が等しければ許すが、対象と条件の役割交換や架空対象を許さない。条件そのものを尋ねる質問と、条件付きで値を尋ねる質問を分ける。
+- intent/scope：要求の目的を保ち、その要求1項目を満たす。比較方法の説明を実比較へ変えない。独立値を結合しない。比較/共同要約を文数や対象数だけで分割しない。taskが別の独立要求も含むならscopeをpassにしない。
+- provenance：roleごとのunit参照が元質問の該当箇所を含み、無関係な参照で対応を偽装していない。unitが粗いことだけでfailにせず、単なる全unit参照を意味合格にもしない。
+- noInventedDetails：質問にない対象/条件/値・解答を足していない。解釈labelは引用でなく候補であり、資料の支持や比較許可はunknownのまま。
+
+完全一致文字列、ID coverage、task件数だけで8観点を代替しない。代表注釈以外の妥当な表現は独立レビューで確認する。元oracleの人間確認pendingを上書きしない。
+
+## 入力とbinding
+
+question、v4 plan JSON、oracle case JSON、review JSON（またはnull）を受けるpure module。planは既存v4 validatorで確認する。oracleは質問一致・r1..r16の一意ID・最大16要求・全allowedOperations・span/役割配列・exact fieldsを旧v2検証と合わせて確認する。現在の対象は要求1..16のpositive oracleで、要求ゼロの質問評価はこのledgerの対象外と明示する。
+
+reviewはversion/questionHash/planHash/oracleHash/reviewerRole/artifactHash/representability/pairsの固定schema。各hashを対象へ結び付け、task/要求IDとpairの重複・未知IDを拒否する。plan/oracle hashは検証済みJSONのobject key順を正規化したもの（array順は保持）。任意の本文・コメントは受けない。review JSONは最大256KiB、oracle/planは各32KiB。
+
+representabilityは全oracle要求についてrepresentable/unsupported/uncertainを必須にする。null reviewは全てuncertainとして扱う。unsupportedやuncertainを母数から除かず、意味不一致と併存し得るflagsを返す。
+
+reviewerRoleとartifactHashは信頼した呼出元が実成果物を確認して登録するための識別であり、本人性・独立性・artifactの実在や判定の正しさを証明しない。reviewerAuthenticated/humanReviewVerified/releaseAcceptedはfalseを維持する。
+
+## 一対一照合と上下限
+
+全8観点passを承認edge、いずれかfailを除外edge、それ以外（未review/uncertain）を可能edgeとする。既知のoperation enum不一致も除外する。不一致operationへpassを付けたreviewは矛盾として拒否する。ラベルやroleをlocalで意味推測しない。
+
+承認集合と、それを含む可能集合でそれぞれ最大二部matchingを行う。要求数R、task数T、承認matching A、可能matching Pに対し、oracle相対missingはR−P〜R−A、extraはT−P〜T−A。これは各IDの欠落確定ではなく、提出レビューを信頼した対応数の上下限である。任意の最大matchingで未割当となったIDは「その承認assignmentの未割当」とだけ示す。
+
+1pairのfailだけで全体を不一致にしない。代替対応で全件を満たせるならpending。可能matchingでも全件対応できなければmismatch_detectedとし、表現不能/未確定のflagsも併記する。全要求がrepresentableで、全task/全要求を承認edgeで覆えた場合だけreviewed_matchとする。unsupportedがあればcontract_unsupportedを優先し、対応不可能flagは消さない。完全なmatrix reviewは必須にせず、全件を確定対応できたreviewも完了扱いにできる。
+
+reviewed_matchは「提出レビューに基づくoracle相対の対応確認」であり、モデル精度・自動意味検証・本番採用の合格ではない。ここで精度の百分率を出さない。形式拒否はこの集計のmissingへ自動変換せず、別の形式/契約上限の結果として記録する。
+
+## 回帰・次
+
+null/部分review、競合edge、greedyでは誤るmatching、複数の最大matching、fail pairの代替対応、unsupported混在、binding/未知/重複pair、既知operation矛盾、形式が通る架空label/role誤りを確認する。旧oracleの書換え・case固有語の自動採点・未使用20問・実学習内容を使わない。
+
+独立設計レビュー後に新module/テストを追加した。対象17件成功（2×2の全81判定graphの総当たり照合を含む）。全Workerは追加16件を含む1,466件成功、失敗/skip 0。最後に追加した総当たり1件は対象17件で確認し、全Workerへの再実行はしていない。独立コードレビューは対象16件成功、未解決High/Mediumなし。次段階のv4 request/responseはこの評価データをimportしない。今回追加API/キー/本番接続0。Projectの資料の更新: なし。
+
+Lowの残件：集計結果はplan/oracle/question bindingを返すがreview自体のhash/artifactHashは返さない。複数reviewの追跡では呼出元が元reviewと成果物を保持する必要があり、将来の記録入口でreview hashを追加検討する。これは本人性の保証にはならない。

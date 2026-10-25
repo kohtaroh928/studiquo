@@ -221,7 +221,7 @@ final class LibraryDropInteractionTests: XCTestCase {
             for title in ["Drag me", "Cards", "Document", "Y"] {
                 let source = app.descendants(matching: .any)["library-entry-\(title)"]
                 XCTAssertTrue(source.waitForExistence(timeout: 5), "\(title) is missing in \(mode)")
-                drag(source, to: folder)
+                drag(source, to: folder, pressDuration: mode == "column" ? 0.5 : 1)
                 XCTAssertFalse(source.waitForExistence(timeout: 2), "\(title) did not leave the root in \(mode)")
             }
 
@@ -247,7 +247,7 @@ final class LibraryDropInteractionTests: XCTestCase {
             XCTAssertEqual(hover.label, "hidden")
             XCTAssertTrue(source.exists)
             XCTAssertTrue(folder.exists)
-            drag(source, to: folder)
+            drag(source, to: folder, pressDuration: mode == "column" ? 0.5 : 1)
             XCTAssertEqual(hover.label, "shown", "The add cue never appeared in \(mode) view")
             app.terminate()
         }
@@ -435,7 +435,7 @@ final class LibraryDropInteractionTests: XCTestCase {
 
     private func exerciseDocumentTabDrops(in app: XCUIApplication, openSplit: (XCUIApplication) -> Void) {
         openLibraryEntry(titled: "Document", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["tab-document-Document"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(identifier: "tab-document-Document").matching(NSPredicate(format: "label == %@", "Document")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
 
         openNotebookRow(titled: "Drag me", in: app)
@@ -791,7 +791,14 @@ private extension XCUIElement {
 }
 
 private func darkPixelCount(in elementFrame: CGRect, of image: UIImage, appFrame: CGRect) -> Int {
-    guard let cgImage = image.cgImage, appFrame.width > 0, appFrame.height > 0 else { return 0 }
+    // XCTest screenshots may retain UIImage orientation after rotation;
+    // draw first so the pixel coordinates match the accessibility frames.
+    let format = UIGraphicsImageRendererFormat.default()
+    format.scale = image.scale
+    let normalized = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+        image.draw(in: CGRect(origin: .zero, size: image.size))
+    }
+    guard let cgImage = normalized.cgImage, appFrame.width > 0, appFrame.height > 0 else { return 0 }
     let scaleX = CGFloat(cgImage.width) / appFrame.width
     let scaleY = CGFloat(cgImage.height) / appFrame.height
     let crop = CGRect(

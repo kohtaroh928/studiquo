@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-16",
+  "scope": "read-only neutral packet preparation and submission target binding only",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-review-packets.mjs": "bdcafc9b7be8d4cdd2ca72bb08669bc6441d2381d3adc442833a20174a4ce04c",
+    "mcp-server/src/rag-subject-role-packets.test.js": "925b19986ab6543c5c955987b593cac45319c589d2a4abff1ebc47f384fbe4fa"
+  },
+  "stage": 0,
+  "packets": 2,
+  "transportAttached": false,
+  "persistenceAttached": false,
+  "reviewGateAttached": false,
+  "semanticGradingAttached": false,
+  "tests": {
+    "target": {
+      "pass": 8,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1590,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCode": {
+      "pass": 8,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 8,
+      "fail": 0
+    }
+  },
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "priorCandidateLedgerJournalSourceHashesUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "priorStopJournalHashUnchanged": true,
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "limits": [
+    "submitted rawReview is ungraded and not checked for secrets",
+    "caller must export packets only, not private mapping",
+    "first collection authenticity needs durable fixed collection hash",
+    "no reviewer authentication or strict blinding",
+    "no continuation authority"
+  ],
+  "next": "private fixed-hash collection persistence plus original review grading/artifact/revalidation gate under new manifest"
+}

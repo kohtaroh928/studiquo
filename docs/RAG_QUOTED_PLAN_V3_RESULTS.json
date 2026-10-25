@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_quoted_task_plan_v3",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/task-plan-quoted-v3.mjs": "86307dc0cbdc51ec3b0dd1486b8a7b379e085b846bd1e19f3134d82209d2213c",
+    "mcp-server/src/rag-task-plan-quoted-v3.test.js": "c25b166211c8b9d3ca4454bca6d22fd12f05275bec91ccdc92b89fd2e0d88bfb"
+  },
+  "tests": {
+    "targetPassed": 13,
+    "workerPassed": 1393,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-quoted-v3-all-final.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": {
+    "status": "passed_after_fix",
+    "resolvedMedium": "hostile thrown Proxy must not escape fixed error handling",
+    "unresolvedHighMedium": 0
+  },
+  "oracleRoundTrip": {
+    "developmentQuestions": 8,
+    "scopes": 13,
+    "meaning": "annotation compatibility only, not model evaluation"
+  },
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "modelQuality": "not_evaluated",
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "next": "offline_v3_request_response_binding"
+}

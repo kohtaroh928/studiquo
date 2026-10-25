@@ -1,0 +1,288 @@
+{
+  "recordedAtUTC": "2026-10-11T06:00:03.886Z",
+  "actualTestTimes": "not_collected",
+  "environment": {
+    "surface": "ChatGPT ordinary chat",
+    "model": "unknown",
+    "reasoningEffort": "medium",
+    "reasoningEffortProvenance": "User reported medium for initial ordinary-chat tests; subsequent tests instructed to use same setting, individual settings not independently verified.",
+    "webToolsExtraInstructions": "not_verified",
+    "inputCopyExactness": "not_verified",
+    "responseSource": "User-pasted chat responses; generated answer text not stored in repository."
+  },
+  "scope": "Fixed synthetic reference answering only; not retrieval, real OCR, API, Gemini, app navigation or general accuracy.",
+  "instructionSha256": "c8b2a52253a66c80bda809a437e26ecf59d5bc7aa3964d820310e593bc759ddc",
+  "summary": {
+    "uniqueCases": 11,
+    "sharedResponses": 13,
+    "baselineResponses": 2,
+    "revisedResponses": 11,
+    "revisedCorePasses": 11,
+    "generalAccuracyEstimate": null,
+    "repeatedTrialStability": "not_measured",
+    "externalAPICallsInThisOrganizationStep": 0,
+    "revisedResponsesWithNotedProvenanceIssue": 1
+  },
+  "cases": [
+    {
+      "id": "ohm",
+      "title": "オームの法則",
+      "promptVersion": "v2",
+      "materialSet": "v2-directory",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v2-20261011/01_オームの法則_ChatGPTへ貼る.txt",
+        "sha256": "59b41045c88ef4857a10e2ad072e7cce2b5bd81daa34e3d4e06bf6499d4aa591",
+        "referenceCount": 2
+      },
+      "baseline": {
+        "inputSha256": "4b992b212f7c23484cd67f5f07463ad5797a97b274dacc9ed1788f1ebf7f9f8c",
+        "sharedResponses": 1,
+        "verdict": "core_pass"
+      },
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "All five required items retained; no numeric resistance/current invention."
+      ]
+    },
+    {
+      "id": "ocr",
+      "title": "OCR不明数式",
+      "promptVersion": "v2",
+      "materialSet": "v2-directory",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v2-20261011/02_OCR不明数式_ChatGPTへ貼る.txt",
+        "sha256": "1747dbf24aa9e522312d764743642c8cf31154892d27ae23b3616784f954c529",
+        "referenceCount": 2
+      },
+      "baseline": {
+        "inputSha256": "0f305699fb3cbc46199d8f6a16ac45122d7976b91a3da40cc2cab20efa152e5f",
+        "sharedResponses": 1,
+        "verdict": "needs_revision"
+      },
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "Unsupported dimensionless-exponent and k-unit discussion removed.",
+        "Intermediate substitution omits m; clarity issue, not core failure."
+      ]
+    },
+    {
+      "id": "terms",
+      "title": "料金・対象者・返金",
+      "promptVersion": "v2",
+      "materialSet": "v3-directory-same-v2-instructions",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v3-20261011/03_料金と返金条件_ChatGPTへ貼る.txt",
+        "sha256": "0423d64bda9445752df4cd27bae23cf1d0517da8e96e4ec450597eb94a4dc07e",
+        "referenceCount": 3
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "Prices, enrolment/student-ID conditions, exclusion and refund exception retained.",
+        "600-yen difference is directly derived from supplied prices, not unsupported external knowledge.",
+        "Unrequested missing-information list is a brevity issue."
+      ]
+    },
+    {
+      "id": "conflict",
+      "title": "矛盾する資料",
+      "promptVersion": "v2",
+      "materialSet": "v3-directory-same-v2-instructions",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v3-20261011/04_矛盾する資料_ChatGPTへ貼る.txt",
+        "sha256": "4c58dfd53e8d85d992541bd9cc7be214c4da2de12d47a5ab4be3195bfe448165",
+        "referenceCount": 3
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "Both conflicting opening/reservation descriptions retained; no arbitrary priority.",
+        "Common drink condition retained.",
+        "Calendar date expansion is outside reference text; actual chat date context unknown, so correctness is not established."
+      ]
+    },
+    {
+      "id": "similar",
+      "title": "似た製品名の区別",
+      "promptVersion": "v2",
+      "materialSet": "v3-directory-same-v2-instructions",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v3-20261011/05_似た製品名の区別_ChatGPTへ貼る.txt",
+        "sha256": "a615c146ab24dd8de8291d03d7adea788888ac48b478a9ad7f9fc0babd0e7d42",
+        "referenceCount": 3
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "Target model retained; no Pro specification/price substitution; only missing price withheld."
+      ]
+    },
+    {
+      "id": "absent",
+      "title": "資料に答えがない場合",
+      "promptVersion": "v2",
+      "materialSet": "v3-directory-same-v2-instructions",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-v3-20261011/06_資料に答えがない場合_ChatGPTへ貼る.txt",
+        "sha256": "f8d3f45c0ae8cc05d4e662617dc723adf03ab58799af04b5136635a847912df0",
+        "referenceCount": 3
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with fixed synthetic references by the development assistant; not independent human/expert grading.",
+      "notes": [
+        "Both requested specifications withheld within supplied-reference scope; no other-model or typical-value substitution."
+      ]
+    },
+    {
+      "id": "table-units",
+      "title": "表と単位",
+      "promptVersion": "v2",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/07_表と単位_ChatGPTへ貼る.txt",
+        "sha256": "8504f48cb4314b83d948d25ee480e8bd36bbe0c5c3f3855aa751764d63a8c033"
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with synthetic references; no independent expert grading.",
+      "notes": [
+        "A1800円/B1920円/合計3720円の税抜計算を保持。前年注文を含めず、税率と送料の不足から最終額を保留。"
+      ]
+    },
+    {
+      "id": "effective-date",
+      "title": "日付と適用条件",
+      "promptVersion": "v2",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/08_日付と適用条件_ChatGPTへ貼る.txt",
+        "sha256": "2d9f85683d11cf327381c37f058e4ff1bc7bcab5da784218a9c3360696c9079d"
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with synthetic references; no independent expert grading.",
+      "notes": [
+        "利用日に応じて旧版/改訂版を使い分け、10月19日/11月17日と算出。施設都合の当日変更例外を保持。"
+      ]
+    },
+    {
+      "id": "partial-comparison",
+      "title": "一部不足する比較",
+      "promptVersion": "v2",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/09_情報が一部不足する比較_ChatGPTへ貼る.txt",
+        "sha256": "e0b2ab2b16a02c35f0a69451d3a15eed2dd2f56f8dbfb8354ba33ae529414091"
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with synthetic references; no independent expert grading.",
+      "notes": [
+        "C/Dの段階数と弱い明るさの時間を比較。Cの強い明るさ時間だけを保留し、別製品Eを流用しない。"
+      ]
+    },
+    {
+      "id": "implicit-missing-capacity",
+      "title": "不足を明記しない資料",
+      "promptVersion": "v2",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-implicit-20261011/10_不足を明記しない資料_ChatGPTへ貼る.txt",
+        "sha256": "e5a90a0d239fa848d82aa431749057810280cc17d50ecdf0b54be39eebe18284"
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass",
+      "reviewBasis": "User-pasted response manually compared with synthetic references; no independent expert grading.",
+      "notes": [
+        "Mの寸法/料金は保持、Mの重量上限を保留。Lの15kgや寸法からの耐荷重推定を使わない。"
+      ]
+    },
+    {
+      "id": "implicit-conflicting-facts",
+      "title": "矛盾を明記しない資料",
+      "promptVersion": "v2",
+      "input": {
+        "path": "/private/tmp/studiquo-chat-manual-tests-implicit-20261011/11_矛盾を明記しない資料_ChatGPTへ貼る.txt",
+        "sha256": "6cc1a6db8605294354d71751b3c830d800f7f369b4246ea63cb8e2bc687df25c"
+      },
+      "baseline": null,
+      "sharedResponses": 1,
+      "verdict": "core_pass_with_provenance_issue",
+      "reviewBasis": "User-pasted response manually compared with synthetic references; no independent expert grading.",
+      "notes": [
+        "受付/開始/会場の矛盾を自力で検出し、優先順位を保留。",
+        "持ち物は単一資料にのみ記載されるのに「一致」と表現する問題あり。主要判定とは別に指示改善の対象。"
+      ]
+    }
+  ],
+  "remaining": [
+    "Record exact model/settings where available and retain raw first answers privately.",
+    "Repeat fixed cases in independent new chats; retain all trials.",
+    "Prepare a separate unexposed evaluation set with human-verified labels.",
+    "Recheck revised instructions through the actual API roles and backend.",
+    "Measure retrieval/citation correctness separately; evaluate real OCR and iPad."
+  ],
+  "productionPromptModified": false,
+  "plannedNewSet": {
+    "instructionVersion": "v2 unchanged",
+    "instructionSha256": "c8b2a52253a66c80bda809a437e26ecf59d5bc7aa3964d820310e593bc759ddc",
+    "cases": [
+      {
+        "id": "table-units",
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/07_表と単位_ChatGPTへ貼る.txt",
+        "sha256": "8504f48cb4314b83d948d25ee480e8bd36bbe0c5c3f3855aa751764d63a8c033",
+        "status": "reviewed_user_response"
+      },
+      {
+        "id": "effective-date",
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/08_日付と適用条件_ChatGPTへ貼る.txt",
+        "sha256": "2d9f85683d11cf327381c37f058e4ff1bc7bcab5da784218a9c3360696c9079d",
+        "status": "reviewed_user_response"
+      },
+      {
+        "id": "partial-comparison",
+        "path": "/private/tmp/studiquo-chat-manual-tests-newset-20261011/09_情報が一部不足する比較_ChatGPTへ貼る.txt",
+        "sha256": "e0b2ab2b16a02c35f0a69451d3a15eed2dd2f56f8dbfb8354ba33ae529414091",
+        "status": "reviewed_user_response"
+      }
+    ],
+    "externalCalls": 0,
+    "resultsAvailable": true,
+    "note": "Newly authored synthetic probes, not independent blind holdout. User will run each in new ChatGPT chat with requested medium effort. Excluded from measured six-case summary."
+  },
+  "latestInstructionRevision": {
+    "recordedAtUTC": "2026-10-11T05:59:26.499Z",
+    "instructionVersion": "v3 source-agreement amendment to v2",
+    "externalCalls": 0,
+    "productionPromptModified": false,
+    "cases": [
+      {
+        "inputPath": "/private/tmp/studiquo-chat-manual-tests-evidence-v3-20261011/11_矛盾を明記しない資料_修正版.txt",
+        "inputSha256": "f0b59a24502e53dbb93031a2d70eb7b7c4a20b921f3e06bb1eb5d75299330328",
+        "baselineInputSha256": "6cc1a6db8605294354d71751b3c830d800f7f369b4246ea63cb8e2bc687df25c",
+        "status": "not_evaluated"
+      },
+      {
+        "inputPath": "/private/tmp/studiquo-chat-manual-tests-evidence-v3-20261011/04_共通事項も保持する_回帰確認.txt",
+        "inputSha256": "6ba5cee28dc84b7463afb59cf511794acfc6af7a9f935c7f6b3311404d482092",
+        "baselineInputSha256": "4c58dfd53e8d85d992541bd9cc7be214c4da2de12d47a5ab4be3195bfe448165",
+        "status": "not_evaluated"
+      }
+    ],
+    "instructionSha256": "f3340ae32021dca8e28b27d003b5c5464019221a4343f0ebcfe6137d53fe1692",
+    "reason": "Avoid describing single-source assertions as agreement across sources; retain actual common facts and single-source facts.",
+    "modelValidation": "not_evaluated"
+  }
+}

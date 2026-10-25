@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "model": "gemini-3.6-flash",
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "method": "Paragraph-ID selection-only shadow on fixed synthetic references. Full excerpts retained. No labels sent, no product integration. Sequential/no retry/max20 calls/5sec; stop on auth/quota/5xx.",
+  "summary": {
+    "planned": 4,
+    "attempts": 3,
+    "notAttempted": 1,
+    "valid": 2,
+    "fallbacks": 1,
+    "validButMissingRequired": 0,
+    "validRequiredFacts": 3,
+    "validTotalRequiredFacts": 3,
+    "baselineReferences": 13,
+    "shadowReferences": 7
+  },
+  "cases": [
+    {
+      "id": "biology-comparison",
+      "split": "dev",
+      "status": "shadow",
+      "reason": "structurally_valid",
+      "elapsedMs": 3082,
+      "provider": {
+        "requestedModel": "gemini-3.6-flash",
+        "httpStatus": 200,
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 1632,
+          "output": 352,
+          "thoughts": null,
+          "total": 1984,
+          "cached": null
+        }
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          3,
+          5,
+          1
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 1162,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "witnessCount": 3
+    },
+    {
+      "id": "biology-input-output",
+      "split": "dev",
+      "status": "shadow",
+      "reason": "structurally_valid",
+      "elapsedMs": 2867,
+      "provider": {
+        "requestedModel": "gemini-3.6-flash",
+        "httpStatus": 200,
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 1631,
+          "output": 321,
+          "thoughts": null,
+          "total": 1952,
+          "cached": null
+        }
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r3"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 390,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "witnessCount": 1
+    },
+    {
+      "id": "split-materials",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 277,
+      "provider": {
+        "requestedModel": "gemini-3.6-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "witnessCount": 0
+    }
+  ],
+  "cost": {
+    "observedPaidStandardEquivalentUSD": 0.004971,
+    "observedPromptTokens": 3263,
+    "observedOutputTokens": 673,
+    "observedTotalTokens": 3936,
+    "rateInputUSDPerMillion": 0.75,
+    "rateOutputIncludingThinkingUSDPerMillion": 3.75,
+    "pricingSource": "https://ai.google.dev/gemini-api/docs/pricing",
+    "asOf": "2026-10-10",
+    "note": "Two successful calls only, non-cached paid standard equivalent, not invoice. Account tier unknown and429 usage/cost unknown. Thoughts field absent; observed total equals prompt+output."
+  },
+  "limitations": [
+    "Only two dev questions succeeded. No blind holdout, conditions or formula cases validated remotely.",
+    "Fact retention measures selected FULL reference texts, not witness-paragraph relevance or final answer quality.",
+    "Required/supporting labels are independent-agent reviewed but not human/teacher reviewed.",
+    "No product integration. Baseline always preserved for safe output."
+  ]
+}

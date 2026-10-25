@@ -15,6 +15,13 @@
 import { affordableInputChars, consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES, type CreditRequest } from "./ai-credits.ts";
 import { aiLimits, globalDailyCredits, subscriberCounts, PAID_PLANS, type AILimits, type PaidPlan } from "./ai-limits.ts";
 import { PRODUCT_PLAN_MAP, paywallEnabled } from "./entitlements.ts";
+import { structuredOutputJSONSchema, parseStructuredOutput, MAX_STRUCTURED_OUTPUT_BYTES } from './ai-output-validation.ts';
+import { retrieve } from "./rag/index.ts";
+import { revalidateRetrieval } from "./rag/authorization.ts";
+import { ragAnswerPolicy } from "./rag/answer-policy.ts";
+import { normalizeRetrieval } from "./rag/contract.ts";
+import { filterReply } from "./rag/output-filter.ts";
+import { groundingCheck } from "./rag/grounding-check.ts";
 import type { SessionRecord } from "./records.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
@@ -180,12 +187,21 @@ async function creditGate(env: Env, { account, plan, kind, model, inputChars }: 
   const limits = aiLimits(env);
   const globalLimit = await planGlobalLimit(env, plan, limits);
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, inputChars, globalLimit, limits });
-  if (result.ok) return { response: null, refund: result.refund! };
+  if (result.ok) return { response: null, refund: result.refund!, reserve: result.reserve! };
+  return { response: creditLimitResponse(result.window!), refund: async () => {}, reserve: result.reserve };
+}
+
+function creditLimitResponse(window: string) {
   // Too long for the plan at all: waiting will not help, so not a 429.
-  if (result.window === "input") return { response: json({ error: LIMIT_MESSAGES.input, code: "input_too_long", window: "input" }, 413), refund: async () => {} };
-  const response = json({ error: LIMIT_MESSAGES[result.window!], code: "ai_limit", window: result.window }, 429);
-  if (result.window === "minute" || result.window === "global") response.headers.set("retry-after", "60");
-  return { response, refund: async () => {} };
+  if (window === "input") return json({ error: LIMIT_MESSAGES.input, code: "input_too_long", window: "input" }, 413);
+  const response = json({ error: LIMIT_MESSAGES[window], code: "ai_limit", window }, 429);
+  if (window === "minute" || window === "global") response.headers.set("retry-after", "60");
+  return response;
+}
+
+class CreditLimitError extends Error {
+  readonly response: Response;
+  constructor(response: Response) { super("AI credit limit reached"); this.response = response; }
 }
 
 /** The plan's service-wide credits per day; 0 for a plan with no AI. */
@@ -255,9 +271,11 @@ const MATH_RULES = `
 
 const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれた学習パートナーです。相手は勉強中の学生です。
 
-- 答えだけを渡さず、考え方の筋道を示してから答えに導いてください。
+- 解き方の支援では、答えだけを渡さず、考え方の筋道を示して答えに導いてください。事実質問では以下の直接回答の規則を優先してください。
 - 相手が解いている途中なら、次の一手をひとつだけ示すこと。
+- 事実・定義・値を尋ねる質問には、求められた結論を先に直接答え、必要なら短い理由を添えること。ヒントを求める場合と区別すること。
 - 用語は定義してから使うこと。
+- 説明を補うときは定義と成立条件を確認し、確かでない説明を加えないこと。
 - わからないことは推測せず、わからないと言うこと。
 - 返答は日本語で、簡潔に。長い前置きは書かないこと。`
   + MATH_RULES;
@@ -268,7 +286,7 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
+async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string, session?: Pick<SessionRecord, "sub"> | null) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
@@ -303,9 +321,10 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
     text: String(turn?.text ?? "").slice(0, 20_000),
   })), context.length + images.length * limits.input.imageChars, sendable);
 
+  const baseInputChars = inputSize(limits, [...recentTurns.map(turn => turn.text), context], images.length);
   const gate = await creditGate(env, {
     account, plan, kind: "chat", model: requestedModel || DEFAULT_MODEL,
-    inputChars: inputSize(limits, [...recentTurns.map(turn => turn.text), context], images.length),
+    inputChars: baseInputChars,
   });
   if (gate.response) return gate.response;
 
@@ -315,12 +334,18 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   // one flagged reply would block the whole conversation for as long as it
   // stayed in the history.
   const latestAssistant = new Set(recentTurns.map((turn, index) => (turn.role === "assistant" ? index : -1)).filter(index => index >= 0).slice(-2));
-  const rejected = await moderateOrRefund(env, gate, [
-    ...recentTurns
-      .filter((turn, index) => turn.role !== "assistant" || latestAssistant.has(index))
-      .map(turn => turn.text),
-    context,
-  ]);
+  let rejected: Response | null;
+  try {
+    rejected = await moderateOrRefund(env, gate, [
+      ...recentTurns
+        .filter((turn, index) => turn.role !== "assistant" || latestAssistant.has(index))
+        .map(turn => turn.text),
+      context,
+    ]);
+  } catch (error) {
+    await gate.refund();
+    throw error;
+  }
   if (rejected) return rejected;
 
   console.log(JSON.stringify({
@@ -338,6 +363,42 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
 
   const chatModel = requestedModel || DEFAULT_MODEL;
   const provider = providerFor(chatModel);
+  const baseSystem = system;
+  let rag: any = { context: "", citations: [] };
+  let ragRequested = false;
+  // What the model was actually sent on the last attempt. The final re-check below can
+  // empty `rag` (a timeout, a deleted source) after the excerpts have already gone out,
+  // and the reply built from them must still have its links removed.
+  let referencesSent = "";
+  // Explicit renewed consent authorizes retrieval for OpenAI.
+  if (provider === "openai" && env.RAG_ENABLED === "true" && payload?.rag && session &&
+      request.headers.get("X-Studiquo-RAG-Consent") === "rag-openai-v1") {
+    ragRequested = true;
+    const retrievalStartedAt = Date.now();
+    try {
+      rag = normalizeRetrieval(await retrieve(env, session, payload));
+    } catch {
+      // Fail open only to ordinary chat; never expose provider errors or text.
+      rag = { context: "", citations: [], status: "fallback" };
+    }
+    console.log(JSON.stringify({
+      event: "rag_retrieval",
+      used: rag.citations.length > 0,
+      citationCount: rag.citations.length,
+      status: rag.status,
+      reason: rag.reason ?? null,
+      detail: rag.detail ?? null,
+      truncated: rag.truncated ?? null,
+      sanitized: rag.sanitized ?? null,
+      injectionHints: rag.injectionHints ?? null,
+      redacted: rag.redacted ?? null,
+      aiCalls: rag.aiCalls ?? null,
+      termAbsentKept: rag.termAbsentKept ?? null,
+      judge: rag.judge ? { mode: rag.judge.mode, outcome: rag.judge.outcome, bucket: rag.judge.bucket, action: rag.judge.action } : null,
+      elapsedMs: Date.now() - retrievalStartedAt,
+    }));
+  }
+
   let upstream: Response;
   let extractText;
   try {
@@ -361,7 +422,26 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
         turns: recentTurns,
         images,
         safetyId: account,
+        ...(ragRequested ? { beforeDispatch: async () => {
+          rag = await revalidateRetrieval(env, session, rag);
+          const reservedContext = rag.context;
+          const extra = await gate.reserve!(baseInputChars + reservedContext.length);
+          if (!extra.ok) throw new CreditLimitError(creditLimitResponse(extra.window!));
+          // Reservation may wait on counters while the source is revoked. Do not
+          // send, or use an obsolete reservation, if authorization changed.
+          rag = await revalidateRetrieval(env, session, rag);
+          if (rag.context !== reservedContext) {
+            throw new CreditLimitError(json({ error: "参照資料の利用状態が変わりました。もう一度お試しください。", code: "rag_authorization_changed" }, 503));
+          }
+          referencesSent = rag.context;
+          const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          // Off by default: moving the excerpts changes what the model sees, so
+          // it is compared against the current layout (docs/RAG_PROMPT_CONTRACT.md §7) first.
+          if (env.RAG_CONTEXT_AS_INPUT === "true" && rag.context) return { instructions: baseSystem + policy, reference: rag.context };
+          return baseSystem + (rag.context ? "\n\n" + rag.context : "") + policy;
+        } } : {}),
       });
+      if (ragRequested) rag = await revalidateRetrieval(env, session, rag);
       extractText = openaiDeltaText;
     }
 
@@ -374,12 +454,21 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   } catch (error) {
     // A missing key or a network failure must not cost the student credits.
     await gate.refund();
+    if (error instanceof CreditLimitError) return error.response;
     throw error;
   }
 
+  // Text the student did not write reaches the model through retrieved excerpts and
+  // through an attached note (which may be a friend's shared note). Either can plant a
+  // link or an instruction, so a reply built from them keeps no links and, for a teen,
+  // is screened once complete (see streamNormalizedText).
+  const untrustedInput = referencesSent !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== "");
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  }, gate.refund);
+  }, gate.refund, rag.citations, rag.status, untrustedInput,
+  untrustedInput && provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen",
+  // What the model was shown, for the shadow grounding check (counts only).
+  referencesSent ? `${referencesSent}\n${turns.at(-1)?.text ?? ""}` : null, rag.status);
 }
 
 /**
@@ -396,7 +485,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream: Response, extractText: (event: unknown) => string, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}) {
+function streamNormalizedText(upstream: Response, extractText: (event: unknown) => string, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}, citations: unknown[] = [], ragStatus?: string, redactRagLinks = false, moderateOutput = false, groundingSource: string | null = null, groundingStatus?: string) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -414,6 +503,46 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
     // A real failure (not just running out of output room) always refunds.
     let hardFailed = false;
     let produced = 0;
+    let providerCompleted = false;
+    const requiresCompletion = extractText === openaiDeltaText;
+
+    // A reply built from retrieved documents or an attached note is held until it is complete
+    // and its links are removed once, on the whole text (rag/output-filter.ts). Filtering the
+    // stream piece by piece kept failing: two harmless pieces could join into a link. Every
+    // other reply streams as before.
+    const holdReply = redactRagLinks;
+    const heldPieces: string[] = [];
+    let keepalive: ReturnType<typeof setInterval> | null = null;
+    let answer = ""; // what the student saw, kept (bounded) for the teen output screen
+    // What the screen reads: the first 24000 characters, cut by character (never in the middle of a
+    // surrogate pair) and sent to moderation in pieces of at most 8000, the size it reads per input.
+    const SCREEN_CAP = 24000, SCREEN_PIECE = 8000;
+    const clip = (text: string) => {
+      const head = text.slice(0, SCREEN_CAP);
+      const last = head.charCodeAt(head.length - 1);
+      return text.length > SCREEN_CAP && last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head;
+    };
+    const pieces = (text: string) => {
+      const out: string[] = [];
+      for (let start = 0; start < text.length;) {
+        let end = Math.min(start + SCREEN_PIECE, text.length);
+        const last = text.charCodeAt(end - 1);
+        if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+        out.push(text.slice(start, end));
+        start = end;
+      }
+      return out;
+    };
+    // A teen's reply that was built from outside text is screened once it is complete (or, if
+    // the connection broke, once what arrived has been sent).
+    const screenForTeen = async () => {
+      if (!moderateOutput || !answer) return;
+      // Only a refusal (a string) is a flag; "moderation unavailable" is not, and the reply is already shown.
+      if (typeof await moderationRejection(env, pieces(answer), undefined, { timeoutMs: 4000 }) === "string") {
+        console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
+        await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
+      }
+    };
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -430,6 +559,18 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
     };
 
     try {
+      if (holdReply) {
+        // Nothing is shown until the reply is done, which can take a while. A comment line is
+        // ignored by the app (it reads only lines that start with "data:") and keeps the
+        // connection from looking idle to anything in between.
+        keepalive = setInterval(() => {
+          if (clientGone) return;
+          writer.write(encoder.encode(": keepalive\n\n")).catch(() => { clientGone = true; });
+        }, 15000);
+        (keepalive as any).unref?.();
+      }
+      if (ragStatus) await writer.write(encoder.encode(`data: ${JSON.stringify({ ragStatus })}\n\n`));
+      if (citations.length) await writer.write(encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`));
       for await (const chunk of upstream.body!) {
         buffer += decoder.decode(chunk, { stream: true });
         // A chunk can split mid-line, so only whole `data:` lines are parsed
@@ -443,6 +584,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
           let text = "";
           try {
             const event = JSON.parse(raw);
+            if (event?.type === "response.completed" && event.response?.status === "completed") providerCompleted = true;
             if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
               truncated = true;
             }
@@ -460,16 +602,37 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
           }
           if (text) {
             produced += text.length;
-            await send(text);
+            if (holdReply) heldPieces.push(text);
+            else {
+              if (answer.length < SCREEN_CAP) answer = clip(answer + text);
+              await send(text);
+            }
           }
         }
+      }
+      if (holdReply) {
+        const safe = filterReply(heldPieces.join(""));
+        heldPieces.length = 0; // sent (or empty): the catch below must not send it again
+        if (safe) {
+          answer = clip(safe);
+          await send(safe);
+        }
+      }
+      // The text is already on the student's screen and cannot be taken back, so a
+      // flagged reply gets a plain notice after it and a log line (no text).
+      // A reply that failed or was cut off still shows what arrived, so it is screened like a finished one.
+      const delivered = !failed || (truncated && !hardFailed);
+      await screenForTeen();
+      if (groundingSource && delivered && answer) {
+        // Shadow mode: counts go to the log, the answer is untouched.
+        console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
       }
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
       // answer: tell the student, give the credits back, and send no "done" push.
       if (truncated && produced > 0 && !hardFailed) {
         await send("\n\n（回答が長さの上限で途中までになりました。続きは「続けて」と送ってください）");
-      } else if (failed || produced === 0) {
+      } else if (failed || produced === 0 || (requiresCompletion && !providerCompleted)) {
         completed = false;
         if (!failed) console.error(JSON.stringify({ message: "AI stream ended with no text" }));
         await send("\n\n（AIが回答を完了できませんでした。もう一度お試しください）");
@@ -477,8 +640,24 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
       }
     } catch (error) {
       console.error(JSON.stringify({ message: "AI stream interrupted", error: error instanceof Error ? error.message : String(error) }));
+      // A held reply that was cut off midway still shows what arrived, filtered, as the
+      // streamed kind would have.
+      if (holdReply && heldPieces.length) {
+        try {
+          const safe = filterReply(heldPieces.join(""));
+          heldPieces.length = 0;
+          if (safe) {
+            answer = clip(safe);
+            await send(safe);
+            await screenForTeen();
+          }
+        } catch {
+          // nothing more can be done for the held text
+        }
+      }
       await send("\n\n（通信が中断しました。もう一度お試しください）");
     } finally {
+      if (keepalive) clearInterval(keepalive);
       // Never allowed to reject: an unsettled close is exactly what hung the
       // request before.
       try {
@@ -528,24 +707,7 @@ const RUBRIC_SYSTEM = `あなたは数学の証明を採点する教員です。
 - 基準は4〜8個に収めること。`
   + MATH_RULES;
 
-const RUBRIC_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    criteria: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          name: { type: "STRING" },
-          maxPoints: { type: "INTEGER" },
-          requirement: { type: "STRING" },
-        },
-        required: ["name", "maxPoints", "requirement"],
-      },
-    },
-  },
-  required: ["criteria"],
-};
+const RUBRIC_SCHEMA = structuredOutputJSONSchema("rubric");
 
 const GRADE_SYSTEM = `あなたは数学の証明を採点する教員です。学生の答案は、手書きを撮影した画像で渡されることも、文字で入力されることもあります。
 
@@ -569,52 +731,7 @@ const GRADE_SYSTEM = `あなたは数学の証明を採点する教員です。�
 - 日本語で書くこと。`
   + MATH_RULES;
 
-const GRADE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    score: { type: "INTEGER" },
-    maxScore: { type: "INTEGER" },
-    verdict: { type: "STRING" },
-    criteria: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          name: { type: "STRING" },
-          earnedPoints: { type: "INTEGER" },
-          maxPoints: { type: "INTEGER" },
-          comment: { type: "STRING" },
-        },
-        required: ["name", "earnedPoints", "maxPoints", "comment"],
-      },
-    },
-    issues: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          step: { type: "INTEGER" },
-          kindRawValue: {
-            type: "STRING",
-            enum: [
-              "logical_gap",
-              "counterexample",
-              "definition_error",
-              "calculation_error",
-              "unjustified_assumption",
-              "presentation",
-            ],
-          },
-          excerpt: { type: "STRING" },
-          explanation: { type: "STRING" },
-          suggestion: { type: "STRING" },
-        },
-        required: ["step", "kindRawValue", "excerpt", "explanation", "suggestion"],
-      },
-    },
-  },
-  required: ["score", "maxScore", "verdict", "criteria", "issues"],
-};
+const GRADE_SCHEMA = structuredOutputJSONSchema("grade");
 
 async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
@@ -727,10 +844,13 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
       } else {
         let buffer = "";
         let assembled = "";
-        let upstreamError = null;
+        let upstreamError: string | null = null;
+        let providerCompleted = false;
+        let refusalObserved = false;
         let truncated = false;
         for await (const chunk of upstream.body!) {
           buffer += decoder.decode(chunk, { stream: true });
+          if (buffer.length > MAX_STRUCTURED_OUTPUT_BYTES * 4) throw new Error("structured_stream_limit");
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
           for (const line of lines) {
@@ -739,31 +859,38 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
             if (!raw || raw === "[DONE]") continue;
             try {
               const event = JSON.parse(raw);
+              if (event?.type === "response.completed" && event.response?.status === "completed") {
+                providerCompleted = true;
+                if (event.response.error != null || event.response.incomplete_details != null) upstreamError = failureMessage;
+                refusalObserved ||= (event.response.output ?? []).some((item: any) => item.type === "message" && item.content?.some((part: any) => part.type === "refusal"));
+              }
+              if (event?.type === "response.refusal.delta" || event?.type === "response.refusal.done") refusalObserved = true;
               if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
                 truncated = true;
               }
-              if (event?.type === "response.failed" || event?.type === "error") {
+              if (event?.type === "response.failed" || (event?.type === "response.incomplete" && !truncated) || event?.type === "error") {
                 upstreamError = failureMessage;
                 console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error) }));
               }
               assembled += openaiDeltaText(event);
             } catch {
-              continue;
+              upstreamError = failureMessage;
             }
           }
+          if (assembled.length > MAX_STRUCTURED_OUTPUT_BYTES) throw new Error("structured_output_limit");
           // Doubles as the keep-alive: every piece of upstream progress is
           // one more reason for the client's connection to stay open.
           await emit({ phase: "working", received: assembled.length });
         }
-        if (upstreamError) {
+        if (upstreamError || (!providerCompleted && !truncated) || refusalObserved) {
           await refund();
-          await emit({ error: upstreamError });
+          await emit({ error: failureMessage });
         } else {
           let parsed;
           try {
-            parsed = JSON.parse(assembled);
+            parsed = parseStructuredOutput(schemaName, assembled);
           } catch {
-            console.error(JSON.stringify({ message: "AI structured output was not valid JSON", length: assembled.length, truncated }));
+            console.error(JSON.stringify({ message: "AI structured output validation failed", length: assembled.length, truncated }));
             // Cut off after producing output is work the model already did;
             // an empty answer (e.g. all room spent reasoning) is refunded.
             const keepCredits = truncated && assembled.length > 0;
@@ -884,25 +1011,7 @@ const REVIEW_SYSTEM = `あなたは学習アプリ「Studiquo」の復習教材�
 日本語で書くこと。`
   + MATH_RULES;
 
-const REVIEW_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    isStudyRelevant: { type: "BOOLEAN" },
-    explanationMarkdown: { type: "STRING" },
-    quiz: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          question: { type: "STRING" },
-          answer: { type: "STRING" },
-        },
-        required: ["question", "answer"],
-      },
-    },
-  },
-  required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
-};
+const REVIEW_SCHEMA = structuredOutputJSONSchema("review");
 
 async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
@@ -987,7 +1096,7 @@ export async function handleAI(url: URL, request: Request, env: Env, key: string
     // Credits are counted per account; a caller with no session (only tests)
     // falls back to its device key.
     const account = await accountCounterKey(session?.sub, key);
-    return await handler(request, env, key, ctx, effectivePlan, account);
+    return await handler(request, env, key, ctx, effectivePlan, account, session);
   } catch (error) {
     // Without this, a missing OPENAI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.

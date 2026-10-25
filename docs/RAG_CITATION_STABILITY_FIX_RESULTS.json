@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-09",
+  "syntheticOnly": true,
+  "workersAI": {
+    "model": "@cf/baai/bge-reranker-base",
+    "calls": 1,
+    "http": 200,
+    "elapsedMs": 799,
+    "ranking": [
+      {
+        "id": 1,
+        "score": 0.018376080319285393,
+        "pageNumber": 1
+      },
+      {
+        "id": 2,
+        "score": 0.00003961856054957025,
+        "pageNumber": 87
+      },
+      {
+        "id": 0,
+        "score": 0.00003736223516170867,
+        "pageNumber": 86
+      }
+    ]
+  },
+  "before": [
+    86,
+    1,
+    87
+  ],
+  "after": [
+    1
+  ],
+  "tests": {
+    "targetPass": 63,
+    "workerPass": 827,
+    "workerFail": 0,
+    "workerSkipped": 0,
+    "preFixReproductionPass": 1,
+    "preFixReproductionFail": 6
+  },
+  "limits": {
+    "full100PageLiveRecheck": false,
+    "stagingDeployed": false,
+    "physicalIPadTested": false,
+    "rerankerRankIsConfidence": false,
+    "readinessCertifiesAllPages": false
+  }
+}

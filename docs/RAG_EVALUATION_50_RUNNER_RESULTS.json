@@ -1,0 +1,136 @@
+{
+  "date": "2026-10-13",
+  "suiteId": "studiquo-rag-e50-2026-10-13",
+  "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+  "method": "fixed synthetic answer-layer only; shared production request builder and grounded answer policy; separate minimal base prompt; no retrieval or full handleAI",
+  "settings": {
+    "version": 1,
+    "model": "gpt-6-luna",
+    "outputTokens": 2048,
+    "inputReservation": 32768,
+    "maxBodyBytes": 24576,
+    "maxDispatches": 60,
+    "budgetMicroUSD": 500000,
+    "inputMicroUSDPerToken": 0.125,
+    "outputMicroUSDPerToken": 0.5,
+    "pricingDate": "2026-10-13",
+    "pricingURL": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "pricingBasis": "cache-write input ceiling; Standard output; conservative estimate, not billing guarantee"
+  },
+  "stage": "development-1",
+  "questions": 3,
+  "answers": 6,
+  "apiDispatches": 6,
+  "remainingDevelopmentAnswers": 54,
+  "holdoutAnswersAttempted": 0,
+  "usage": {
+    "input": 15671,
+    "output": 293,
+    "reasoning": 0,
+    "total": 15964
+  },
+  "latencyMs": {
+    "min": 1292,
+    "max": 2780,
+    "mean": 2081.1666666666665
+  },
+  "reservedMicroUSD": 30720,
+  "uncachedStandardEstimateUSD": 0.0017136,
+  "estimateNotInvoice": true,
+  "semanticAutomatedChecks": "not_configured",
+  "manualReview": "Codex and independent AI reviewed target criteria; five answers met all listed claims; first source-only answer has a membership-qualification coverage caveat; human review pending",
+  "workerTests": {
+    "pass": 1236,
+    "fail": 0,
+    "skip": 0
+  },
+  "targetTests": {
+    "pass": 10,
+    "fail": 0
+  },
+  "rows": [
+    {
+      "id": "e50-conditions-01:source_only",
+      "usage": {
+        "input": 2501,
+        "output": 45,
+        "reasoning": 0,
+        "total": 2546
+      },
+      "elapsedMs": 2716,
+      "manualReview": "primary answer correct; explicit members-only qualification coverage pending"
+    },
+    {
+      "id": "e50-conditions-01:explain",
+      "usage": {
+        "input": 2718,
+        "output": 52,
+        "reasoning": 0,
+        "total": 2770
+      },
+      "elapsedMs": 2347,
+      "manualReview": "target claims confirmed by Codex and independent AI; human review pending"
+    },
+    {
+      "id": "e50-conditions-02:explain",
+      "usage": {
+        "input": 2727,
+        "output": 51,
+        "reasoning": 0,
+        "total": 2778
+      },
+      "elapsedMs": 2023,
+      "manualReview": "target claims confirmed by Codex and independent AI; human review pending"
+    },
+    {
+      "id": "e50-conditions-02:source_only",
+      "usage": {
+        "input": 2510,
+        "output": 50,
+        "reasoning": 0,
+        "total": 2560
+      },
+      "elapsedMs": 1292,
+      "manualReview": "target claims confirmed by Codex and independent AI; human review pending"
+    },
+    {
+      "id": "e50-conditions-03:source_only",
+      "usage": {
+        "input": 2499,
+        "output": 42,
+        "reasoning": 0,
+        "total": 2541
+      },
+      "elapsedMs": 1329,
+      "manualReview": "target claims confirmed by Codex and independent AI; human review pending"
+    },
+    {
+      "id": "e50-conditions-03:explain",
+      "usage": {
+        "input": 2716,
+        "output": 53,
+        "reasoning": 0,
+        "total": 2769
+      },
+      "elapsedMs": 2780,
+      "manualReview": "target claims confirmed by Codex and independent AI; human review pending"
+    }
+  ],
+  "limitations": [
+    "fixed evidence and minimal base prompt only",
+    "no retrieval/citations/production session or credits check",
+    "all jobs use grounded policy; no runtime partial/clarification gate evaluation",
+    "one trial per style, first three development questions only",
+    "human gold review pending",
+    "one journal directory budget scope",
+    "input token reservation estimate, not invoice guarantee",
+    "model alias, not immutable provider snapshot"
+  ],
+  "newFindings": [
+    {
+      "id": "e50-conditions-01:source_only",
+      "severity": "minor_coverage_candidate",
+      "finding": "members-only entry qualification not independently stated; question already assumes membership. Do not count as strict full-coverage pass without resolving criterion."
+    }
+  ]
+}

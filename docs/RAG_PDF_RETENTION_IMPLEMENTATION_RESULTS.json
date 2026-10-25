@@ -1,0 +1,57 @@
+{
+  "scope": "Step5-A local implementation only",
+  "date": "2026-10-19",
+  "files": [
+    {
+      "path": "mcp-server/migrations/0014_rag_pdf_retention.sql",
+      "sha256": "e37a7ae23bbc168ac857e9953b90e43b5a939b95e5173fc3fa239667a437d788"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-jobs.js",
+      "sha256": "5d6e2ae226d29acb417ff42fe231bbd7bd2031898651fd52d25acd35bf838b7c"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-job-recovery.js",
+      "sha256": "c627ae9812a27e79f0140360b605c039c9156271082d72b8a648c6cae925bd2c"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-process.js",
+      "sha256": "5a46dcfa063617ba88fa9eebf86f794d34b417e3c7690e8c94eac2988dcd7bef"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-retention.js",
+      "sha256": "5dc51f5d636fbab558e6d8f878d618afd3d422a374557311eb04541e261253c5"
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-retention.test.js",
+      "sha256": "42ef0b555881f84582c2e6c1425b38aba121dbc59a9cf8e1b2befd019cd10bee"
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-migration.test.js",
+      "sha256": "825e8a7f811380f7c0ef692be60f43bbcb2f4fe035db00101bb3cef09a9455f3"
+    },
+    {
+      "path": "mcp-server/tools/rag-pdf-retention-local-smoke.mjs",
+      "sha256": "afa195d1b8291f73002c441a5f32c84e836cd37179c5c59d37d6f11927f1d941"
+    }
+  ],
+  "serverTests": {
+    "pass": 1865,
+    "fail": 0,
+    "skip": 0
+  },
+  "retentionTests": 14,
+  "migrationToolchainTest": true,
+  "localWorkerdD1": {
+    "migrations": 14,
+    "expiredIntakeMinimized": true,
+    "jobRetained": true,
+    "dbSettlementTime": true,
+    "aggregateOnly": true,
+    "replaceFloorRejected": true
+  },
+  "remoteChanges": false,
+  "physicalJobPurgeImplemented": false,
+  "schedulerConnected": false,
+  "answerQualityEvaluation": false
+}

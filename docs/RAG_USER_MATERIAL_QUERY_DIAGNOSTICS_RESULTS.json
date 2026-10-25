@@ -1,0 +1,64 @@
+{
+  "scope": "Local production chunk context/search text/BM25 SQL/query plan/lexical eligible predicate; no vector, reranker or generated answer",
+  "dataset": {
+    "pages": 114,
+    "positiveQuestions": 8,
+    "negativeQuestions": 2,
+    "groundTruth": "Selected physical pages visually inspected with PDFKit; private question text not committed",
+    "holdout": false
+  },
+  "baseline": {
+    "positiveQueries": 8,
+    "negativeQueries": 2,
+    "canonicalTop5Coverage": 7,
+    "expandedCandidateRecall": 8,
+    "productionLexicalEligibleCoverage": 7,
+    "negativeLexicalGate": 2
+  },
+  "temporaryHypothesis": {
+    "positiveQueries": 8,
+    "negativeQueries": 2,
+    "canonicalTop5Coverage": 8,
+    "expandedCandidateRecall": 8,
+    "productionLexicalEligibleCoverage": 8,
+    "negativeLexicalGate": 2
+  },
+  "cause": {
+    "component": "searchTokens multilingual run segmentation",
+    "syntheticInput": "ABCの概要",
+    "baselineTokens": [
+      "ab",
+      "bc",
+      "cの",
+      "の概",
+      "概要"
+    ],
+    "hypothesisTokens": [
+      "abc",
+      "の概",
+      "概要"
+    ],
+    "status": "Private experiment only, not adopted"
+  },
+  "productionChanged": false,
+  "externalCalls": 0,
+  "physicalIPad": "unavailable_not_executed",
+  "tests": {
+    "existingTargeted": {
+      "passed": 27,
+      "failed": 0
+    },
+    "privateSyntheticControls": {
+      "passed": 4
+    }
+  },
+  "limitations": [
+    "Not a whole Hybrid RAG pass/fail or accuracy rate",
+    "Vector score could retain a candidate rejected in lexical-only checks",
+    "No generated answer, formula transcription or semantic correctness checked",
+    "Comparison lexical eligibility covers subject-specific branch; not only canonical gate",
+    "Hypothesis uses the same observed sample; not a holdout evaluation",
+    "No account/source/folder isolation claim from one private source",
+    "Normalizer changes require stored index compatibility or explicit reindexing before adoption"
+  ]
+}

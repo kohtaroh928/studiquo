@@ -1,0 +1,27 @@
+# Unit planner v4：stage2 独立意味監査
+
+2026-10-16。固定合成開発問 index4..7 の実planを原質問・凍結oracle・8観点規約で独立確認。追加API・キー読取・登録・plan補正なし。
+
+最終判断：stop。生成8件完了と、全件の意味監査合格は異なる。今回stage2は4問7要求のうち、index5に構造化role欠落があり、全case reviewed_matchのgateを満たさない。
+
+- index4：t1→r1、t2→r2。状況ごとに値要求を分け、状況をconditionsへ保持。対象の捏造なし。8観点pass。
+- index5：t1→r1、t2→r2の対応意図と2要求の分割、conditions操作は保持。だが原質問に明示された各対象をsubjectsへ分離せず、両taskともsubjectsが空。対象に相当する語はattributeラベル内に残っているため、情報全体の消失や質問の完全な誤解とは判定しない。一方、現契約はattributeとsubjectsを別roleとして保持し、対象が明示される場合に空配列を許容するものではない。代表spanの差でなくrole欠落なので、両taskのsubjects観点fail。対角対応の他7観点はpass。交差対応もsubjectsが欠落し、属性・目的・scopeも別要求と一致しないため除外。
+- index6：t1→r1。両対象の共同要約を1要求として保持し、不必要に分割していない。8観点pass。
+- index7：t1→r1、t2→r2。比較の2観点を分け、両対象と扱う規則のscopeを保持。8観点pass。
+
+全要求は現契約でrepresentable。helperではindex4/6/7がreviewed_match・complete・missing/extra上下限0。index5は全pairにsubjects failがあるためmismatch_detected・completeで、承認/可能matchingとも0、oracle相対missing/extra上下限は各2。この数は構造化された完全対応の欠落であり、対象語が回答候補から消えた数や捏造の数を表さない。修正・救済採点・自動再送はしない。
+
+全8問は各unitCount=1の単文。複数unit間の役割参照や長文質問の意味品質は未検証。小標本の既知開発問であり、汎用精度の百分率を主張しない。oracle人間確認pending、本番採用・RAG全体品質は未判定。role/hashはworkflow追跡用で本人性や独立性の暗号学的証明ではない。
+
+journal22行のchain、現行source manifest、8件job binding、provenance再生成、先行stage0/1の保存artifactと元review再評価、最終checkpointを照合。8予約・8完了、generationComplete、最終監査待ち、lock解除を確認した。stop登録は親エージェントが別途行う。
+
+- runId: c94c8934-2185-4b21-b13e-5741d876736c
+- journal SHA256: 91f15b0822897db363d22a5b1c16523ce54bcf4dd07b7e386838afc5b6b120ea
+- manifestHash: 85976f488f5b6fe9c54cc57d53e7ffeea0cc96fb041d246031822a5a38e855fa
+- checkpointHash: cbacd219b50ce455272405a4010a2c3c55065e9dc5e0e5781d5b9eec51ca0304
+- index4 questionHash: 446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f / planHash: 26f75d70a77ff31653199e787cb97421969e0dc9f21c91359801154b95ab387c / oracleHash: 4334fd31fa71fb3b4eb357c392f6eeda69bbaac6d1c4087cce5ce2d2b265c837
+- index5 questionHash: a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787 / planHash: 77b74495ae29a7483863cd26fd00f643e90b643aa0b19229835413fb4ee7f63f / oracleHash: 9a9a5efd47659742fb5eac5c550b0c1290c674479d2b88f792acd4bbf35fe20d
+- index6 questionHash: 9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88 / planHash: a1ddc913790a65131532ee3898ac99e6023fe525aa0f5436108af6fe49b68e99 / oracleHash: e95bd3e45a91d52ef2d5405e32a1c5ac2663e9274d5637a7ba5ca2b1625feced
+- index7 questionHash: ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d / planHash: 7f627217dfef29fae6f9fd537c6affbc08dad921094640fcab7b16b7aba25edf / oracleHash: 52d22d23d4532b8508f5de39ceef9a3a290f7e1ad15877c0695157e97fc8dd54
+
+原質問・plan全文・quote・offsetは本書へ転記していない。Projectの資料の更新: なし。

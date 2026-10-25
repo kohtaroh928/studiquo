@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-16",
+  "scope": "local Docling developer adapter and Zod structured-output validation; no production deployment",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/clarification-candidate.mjs": "a8e27fde2420066a5d6b1a21380b91d66007d3e79e1b0c85135c475b5fcd1229",
+    "mcp-server/src/ai-output-validation.js": "b1404f755c563b633909933bf2465738e0d2a890b5a545ab4ef13e3e7cd633f0",
+    "mcp-server/src/ai-output-validation.test.js": "ef9527555d1503472cfde1e700fe71774b0a2e09122d0df79ab00f59d03279cd",
+    "mcp-server/src/ai.js": "0b6d5dce3dcf9dc91a2fc7e8c990d8875af92d2a7cae690021571b6060b7202f",
+    "mcp-server/src/rag-clarification-candidate.test.js": "1331985afa93f71be3c5a681684a3280d496531a983f3bb7e0fe8bacde04406c",
+    "tools/docling/.gitignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+    "tools/docling/README.md": "19c04f32a26e609639098fa74181659024a7a9986954dbffb06ffd0c275ac4f0",
+    "tools/docling/VALIDATION.md": "c1e314f2fb2bb3e4ae88df7ab72b8d0e1137425d2579a11640e1d5c605016c47",
+    "tools/docling/extract_pdf.py": "bff84ef1eff062bd0f4c1c450ac8b61108ae7763108d74e3fb75b25314604368",
+    "tools/docling/prepare_manifest.py": "49055430806e1f268dd69fcf3f93fd4b77ff9ca7da03476695a79922d97bcd14",
+    "tools/docling/requirements.lock.txt": "36d3e26b6f3657340896d616d3d1c828dafbad7297a8d5329b679746eb018c49",
+    "tools/docling/requirements.txt": "da25e920090fc82c2907b7b978260126f334e814d2a6e32168d79dafc85e05cf",
+    "tools/docling/smoke.py": "c4528cf0593dd6153cac66761ddf05eeb72c45e0533c8937cd0baab5bb75b031",
+    "tools/docling/test_extract_pdf.py": "8f6f34f10c8967f680eedb59091474b77490f72bdfcdb5bde1577f2acb586ecf"
+  },
+  "tests": {
+    "targetJS": {
+      "pass": 50,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1707,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "pass": 16,
+      "fail": 0
+    },
+    "independentContract": {
+      "pass": 50,
+      "fail": 0
+    },
+    "independentSafety": {
+      "passJS": 50,
+      "passPython": 16,
+      "unresolvedHighMedium": 0
+    }
+  },
+  "wireParity": "all three existing structured output schemas exact after strict conversion",
+  "docling": {
+    "version": "2.139.0",
+    "profile": "native-layout-table-v1",
+    "actualSyntheticPages": 2,
+    "actualTables": 2,
+    "actualInferenceSmoke": "implementer and parent independently succeeded",
+    "mockBoundaryPages": 100,
+    "existingChunkerCompatibility": "pass on real synthetic extraction",
+    "pipCheck": "pass",
+    "iPadConnected": false,
+    "OCR": false,
+    "formulaEnrichment": false
+  },
+  "openaiAPICalls": 0,
+  "keyReads": 0,
+  "deploy": false,
+  "automation": "PAUSED",
+  "frozenFixtureValidatorReviewAndCompletedManifest": "unchanged",
+  "modelQualityImprovement": "not evaluated",
+  "remaining": [
+    "Docling automatic application integration and consent/authorization lifecycle",
+    "Japanese OCR/formulas and actual 100-page inference quality/performance",
+    "dependency/model license and vulnerability audit",
+    "clarification finite transport and actual API/semantic evaluation",
+    "human gold confirmation"
+  ],
+  "projectCopiesNeedingUpdate": [
+    "HYBRID_RAG.md"
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "observedAtUTC": "2026-10-11T02:41:36.739Z",
+  "prior": {
+    "caseId": "hidden-condition",
+    "outcome": "timeout",
+    "elapsedMs": 5006,
+    "httpStatus": null,
+    "usage": null
+  },
+  "diagnostic": {
+    "schemaVersion": 1,
+    "timeoutMs": 20000,
+    "intervalMs": 31000,
+    "method": "Synthetic paragraph protocol2 timing comparison, max3 sequential calls/no retries. Same target prompt/schema/settings, diagnostic deadline only. Controls differ in content; causal attribution and DNS/TLS/service split are not established. No raw text saved, no public/resume changes.",
+    "requests": [
+      {
+        "id": "control_before",
+        "httpStatus": 200,
+        "outcome": "completed",
+        "elapsedMs": 1310,
+        "headersMs": 1308,
+        "completeMs": 1310,
+        "phase": "complete",
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 340,
+          "output": 122,
+          "thoughts": null,
+          "total": 462
+        },
+        "error": null,
+        "hint": null,
+        "controlValidity": null,
+        "proposalValidity": {
+          "valid": true,
+          "reason": "structurally_valid"
+        },
+        "taskSnapshot": "e0c13ecf4ee96479214786d1a442dfa070e884e20f73129742e2c1be3b006c00",
+        "requestHash": "e5cb0d718e71ceb3d3f60c9c93fcba8ca909add4b6343f642899616e8446173c",
+        "requestBytes": 2295
+      },
+      {
+        "id": "hidden_condition_target",
+        "httpStatus": 200,
+        "outcome": "completed",
+        "elapsedMs": 3040,
+        "headersMs": 3039,
+        "completeMs": 3040,
+        "phase": "complete",
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 348,
+          "output": 119,
+          "thoughts": null,
+          "total": 467
+        },
+        "error": null,
+        "hint": null,
+        "controlValidity": null,
+        "proposalValidity": {
+          "valid": true,
+          "reason": "structurally_valid"
+        },
+        "taskSnapshot": "9f982a8f7262dabe296110a98194efb3457728e9cf1de8948632c12bd57ae275",
+        "requestHash": "d5cae6fa120a46f929fe94daa91610f543603e69db99ba2bcc5571d169dadc45",
+        "requestBytes": 2360
+      },
+      {
+        "id": "control_after",
+        "httpStatus": 200,
+        "outcome": "completed",
+        "elapsedMs": 2088,
+        "headersMs": 2087,
+        "completeMs": 2088,
+        "phase": "complete",
+        "finishReason": "STOP",
+        "modelVersion": "gemini-3.6-flash",
+        "usage": {
+          "prompt": 340,
+          "output": 122,
+          "thoughts": null,
+          "total": 462
+        },
+        "error": null,
+        "hint": null,
+        "controlValidity": null,
+        "proposalValidity": {
+          "valid": true,
+          "reason": "structurally_valid"
+        },
+        "taskSnapshot": "e0c13ecf4ee96479214786d1a442dfa070e884e20f73129742e2c1be3b006c00",
+        "requestHash": "e5cb0d718e71ceb3d3f60c9c93fcba8ca909add4b6343f642899616e8446173c",
+        "requestBytes": 2295
+      }
+    ]
+  },
+  "usage": {
+    "prompt": 1028,
+    "output": 363,
+    "total": 1391
+  },
+  "conclusions": {
+    "localDeadlineTriggered": true,
+    "priorResponseHeadersNotObserved": true,
+    "permanentInputFailureReproduced": false,
+    "originalNetworkVsServiceCauseEstablished": false,
+    "originalFiveSecondRunReclassified": false
+  }
+}

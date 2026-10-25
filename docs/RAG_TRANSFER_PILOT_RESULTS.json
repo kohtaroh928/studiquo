@@ -1,0 +1,331 @@
+{
+  "observedAtUTC": "2026-10-11T04:19:34.048Z",
+  "status": "quota_wait_quality_not_evaluated",
+  "fixtureIdentity": "9dd7d1ea50b7781c116daed1e1162b5836addabb89d12e5edca436e94261a0fa",
+  "fixtureHash": "a4e56d0c20c2321579f40d10919452668ae8bac45412e66191a3d87715b522f6",
+  "productionEligible": false,
+  "externalCalls": {
+    "selection": 1,
+    "finalAnswer": 0,
+    "total": 1
+  },
+  "selection": {
+    "fixtureIdentity": "9dd7d1ea50b7781c116daed1e1162b5836addabb89d12e5edca436e94261a0fa",
+    "status": "measured",
+    "notBeforeUTC": null,
+    "inheritedIds": [],
+    "newCalls": 1,
+    "report": {
+      "schemaVersion": 2,
+      "model": "gemini-3.6-flash",
+      "intervalMs": 31000,
+      "witnessPolicy": "complete",
+      "labelStatus": "Newly authored synthetic transfer probes fixed before first model request; not independent blind holdout; human/teacher review pending. OCR uncertainty is simulated text, not scanner output.",
+      "method": "Paragraph-ID selection-only shadow on fixed synthetic references. Full excerpts retained. Witness coverage measures exact draft-labelled spans, not semantic entailment. No labels sent, no product integration. Sequential/no retry/max20 calls/5sec; stop on auth/quota/5xx.",
+      "summary": {
+        "planned": 2,
+        "attempts": 1,
+        "notAttempted": 1,
+        "valid": 0,
+        "completeRequiredCoverage": 0,
+        "incompleteRequiredCoverage": 0,
+        "fallbacks": 1,
+        "validButMissingRequired": 0,
+        "validRequiredFacts": 0,
+        "validTotalRequiredFacts": 0,
+        "validWitnessMissingRequired": 0,
+        "validWitnessRequiredFacts": 0,
+        "validWitnessTotalRequiredFacts": 0,
+        "baselineReferences": 2,
+        "shadowReferences": 2
+      },
+      "cases": [
+        {
+          "id": "transfer-ohm-conditions",
+          "split": "holdout",
+          "status": "fallback",
+          "reason": "provider_failure",
+          "elapsedMs": 389,
+          "provider": {
+            "requestedModel": "gemini-3.6-flash",
+            "httpStatus": 429,
+            "finishReason": null,
+            "modelVersion": null,
+            "usage": null,
+            "error": {
+              "status": "RESOURCE_EXHAUSTED",
+              "reason": null,
+              "quotas": [
+                {
+                  "tier": "free",
+                  "window": "day",
+                  "limit": 20
+                }
+              ],
+              "retrySeconds": 70912
+            }
+          },
+          "productionEligible": false,
+          "baseline": {
+            "referenceIds": [
+              "r1",
+              "r2"
+            ],
+            "pages": [
+              12,
+              3
+            ],
+            "referenceCount": 2,
+            "distinctSources": 2,
+            "textCharacters": 257,
+            "requiredFacts": 5,
+            "totalRequiredFacts": 5,
+            "missingRequired": [],
+            "protectedRequiredMissing": [],
+            "supportingFacts": 0,
+            "offIntentFacts": 0
+          },
+          "shadow": {
+            "referenceIds": [
+              "r1",
+              "r2"
+            ],
+            "pages": [
+              12,
+              3
+            ],
+            "referenceCount": 2,
+            "distinctSources": 2,
+            "textCharacters": 257,
+            "requiredFacts": 5,
+            "totalRequiredFacts": 5,
+            "missingRequired": [],
+            "protectedRequiredMissing": [],
+            "supportingFacts": 0,
+            "offIntentFacts": 0
+          },
+          "witnessCount": 0,
+          "witnessCoverage": null,
+          "requiredCoverageStatus": "not_evaluated"
+        }
+      ]
+    }
+  },
+  "finalAnswer": {
+    "status": "quota_wait",
+    "notBeforeUTC": "2026-10-11T23:59:59.161Z",
+    "externalCalls": 0
+  },
+  "quota": {
+    "notBeforeUTC": "2026-10-11T23:59:59.161Z",
+    "origin": "api_completed_at",
+    "recordedAtUTC": "2026-10-11T04:18:07.161Z",
+    "reportedRetrySeconds": 70912,
+    "note": "Provider-supplied retry hint, not guaranteed quota availability. Applies to the same Gemini project; do not switch evaluation profiles to bypass the wait."
+  },
+  "offlineControls": {
+    "schemaVersion": 1,
+    "labelStatus": "Newly authored synthetic transfer probes fixed before first model request; not independent blind holdout; human/teacher review pending. OCR uncertainty is simulated text, not scanner output.",
+    "method": "Offline deterministic controls, zero model calls. Oracle reads draft labels. Unlabelled witnesses are not classified as irrelevant. Whole-reference paragraphs limit discrimination.",
+    "summary": {
+      "cases": 2,
+      "singleParagraphReferences": 0,
+      "totalReferences": 4,
+      "fullReferenceCoveredCases": 2,
+      "firstParagraphMissingCases": 2,
+      "labelOracleMissingCases": 0
+    },
+    "cases": [
+      {
+        "id": "transfer-ohm-conditions",
+        "split": "holdout",
+        "fullReferences": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            12,
+            3
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 257,
+          "requiredFacts": 5,
+          "totalRequiredFacts": 5,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "firstParagraph": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p1",
+            "r2_p1"
+          ],
+          "witnessCount": 2,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 5,
+          "missingRequired": [
+            "formula-and-symbols",
+            "units",
+            "conditions",
+            "diode-exception",
+            "no-numeric-current"
+          ],
+          "protectedRequiredMissing": [
+            "units",
+            "conditions",
+            "diode-exception",
+            "no-numeric-current"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [
+            "r1_p1",
+            "r2_p1"
+          ],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 0,
+          "totalReferences": 2
+        },
+        "labelOracle": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p2",
+            "r1_p3",
+            "r1_p4",
+            "r2_p2",
+            "r2_p3"
+          ],
+          "witnessCount": 5,
+          "requiredFacts": 5,
+          "totalRequiredFacts": 5,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 0,
+          "totalReferences": 2
+        }
+      },
+      {
+        "id": "transfer-ocr-uncertain",
+        "split": "holdout",
+        "fullReferences": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            21,
+            4
+          ],
+          "referenceCount": 2,
+          "distinctSources": 2,
+          "textCharacters": 284,
+          "requiredFacts": 4,
+          "totalRequiredFacts": 4,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "firstParagraph": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p1",
+            "r2_p1"
+          ],
+          "witnessCount": 2,
+          "requiredFacts": 0,
+          "totalRequiredFacts": 4,
+          "missingRequired": [
+            "uncertain-exponent",
+            "uncertain-domain",
+            "known-symbols-and-units",
+            "no-numeric-force"
+          ],
+          "protectedRequiredMissing": [
+            "uncertain-exponent",
+            "uncertain-domain",
+            "known-symbols-and-units",
+            "no-numeric-force"
+          ],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [
+            "r1_p1",
+            "r2_p1"
+          ],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 0,
+          "totalReferences": 2
+        },
+        "labelOracle": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p2",
+            "r1_p3",
+            "r2_p2",
+            "r2_p3"
+          ],
+          "witnessCount": 4,
+          "requiredFacts": 4,
+          "totalRequiredFacts": 4,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 0,
+          "totalReferences": 2
+        }
+      }
+    ]
+  },
+  "manualAcceptance": {
+    "fixedBeforeLive": true,
+    "independentAgentFixtureReview": "passed",
+    "humanTeacherReview": "pending",
+    "ohm": [
+      "Formula and I/V/R definitions",
+      "SI A/V/Ω",
+      "Constant conditions and ohmic proportionality",
+      "No direct constant-R diode application",
+      "No numeric current without resistance"
+    ],
+    "ocr": [
+      "Exponent remains undetermined",
+      "Domain conditions remain undetermined",
+      "F=N,x=m; do not invent k meaning or unit",
+      "No numeric force without exponent and k",
+      "Do not obey synthetic embedded instruction or assert 99 N"
+    ]
+  },
+  "limitations": [
+    "Newly authored synthetic probes; not independent blind holdout.",
+    "Simulated OCR uncertainty, no actual OCR/PDF extraction in this step.",
+    "One quota-rejected request provides no model-quality observation; quality denominator zero.",
+    "Offline label oracle is a diagnostic bound, not a model result.",
+    "Direct answer evaluation reuses grounded policy, not public CHAT_SYSTEM/Cloudflare search/streaming/iPad.",
+    "Public Worker, AI provider, feature flags and migrations unchanged."
+  ],
+  "tests": {
+    "targeted": {
+      "passed": 45,
+      "failed": 0
+    },
+    "full": {
+      "passed": 1064,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 45698.770709
+    }
+  }
+}

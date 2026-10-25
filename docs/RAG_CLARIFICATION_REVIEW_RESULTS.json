@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-16",
+  "scope": "aggregate supplied external clarification judgments only",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/clarification-semantic-review.mjs": "a2f29a963f800f956534112972ed633b72a84aa004cf7f494c43b0e6665ce618",
+    "mcp-server/src/rag-clarification-semantic-review.test.js": "73291d16db19b42dd06e7d9a57350ca2bfd34cab017e6ea6ef7c986e069dc590"
+  },
+  "tests": {
+    "target": {
+      "pass": 13,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1693,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentContract": {
+      "pass": 13,
+      "fail": 0
+    },
+    "independentCodeSafetyFinalTarget": {
+      "pass": 13,
+      "fail": 0
+    },
+    "independentCodeSafetyRelatedBeforeLastTest": {
+      "pass": 33,
+      "fail": 0
+    }
+  },
+  "unresolvedHighMedium": 0,
+  "syntheticReviewRoundtrips": 30,
+  "apiCalls": 0,
+  "keyReads": 0,
+  "runtimeOrPromptChanged": false,
+  "previousFixtureContractValidatorUnchanged": true,
+  "completedRunAndFourArtifactsUnchanged": true,
+  "autoExecutionRemainsPaused": true,
+  "harnessAuthenticated": false,
+  "reviewerAuthenticated": false,
+  "humanGoldVerified": false,
+  "releaseAccepted": false,
+  "modelQualityImprovement": "not evaluated",
+  "limits": [
+    "action counts aggregate external judgments, not automatically inferred correctness",
+    "artifactHash does not verify original artifact contents or reviewer independence",
+    "case status must remain visible in any future batch denominator",
+    "human gold and real model clarification quality pending"
+  ],
+  "next": "design separate candidate request/output schema from input only, excluding gold/harness/review; independent safety review before any new finite paid evaluation or runtime integration"
+}

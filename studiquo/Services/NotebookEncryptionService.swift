@@ -218,6 +218,9 @@ enum NotebookEncryptionService {
             var imageData: Data?
         }
         var pages: [Page]
+        var ragStructuredData: Data?
+        var ragStructuredFingerprint: String?
+        var ragOriginalPDFHash: String?
     }
 
     /// Seals every page/element's content into `notebook.encryptedContent`
@@ -249,7 +252,9 @@ enum NotebookEncryptionService {
                     EncryptedContent.Element(layerIndex: $0.layerIndex, text: $0.text, imageData: $0.imageData)
                 }
             )
-        })
+        }, ragStructuredData: notebook.ragStructuredData,
+           ragStructuredFingerprint: notebook.ragStructuredFingerprint,
+           ragOriginalPDFHash: notebook.ragOriginalPDFHash)
         guard let plainData = try? JSONEncoder().encode(content),
               let sealingKey = NotebookEncryptionKeyStore.keyForSealing(service: keyService),
               let sealed = try? AES.GCM.seal(plainData, using: sealingKey.key),
@@ -259,6 +264,9 @@ enum NotebookEncryptionService {
         // Content that was sealed with the original (id-less) key stays in the
         // old format, so a build from before this change can still open it.
         notebook.encryptedContent = blob
+        notebook.ragStructuredData = nil
+        notebook.ragStructuredFingerprint = nil
+        notebook.ragOriginalPDFHash = nil
         for page in pages {
             page.drawingData = nil
             page.backgroundImageData = nil
@@ -306,6 +314,9 @@ enum NotebookEncryptionService {
                 element.imageData = elementContent.imageData
             }
         }
+        notebook.ragStructuredData = content.ragStructuredData
+        notebook.ragStructuredFingerprint = content.ragStructuredFingerprint
+        notebook.ragOriginalPDFHash = content.ragOriginalPDFHash
         notebook.encryptedContent = nil
         return true
     }

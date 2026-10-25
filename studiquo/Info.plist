@@ -52,22 +52,32 @@
 			<string>com.yabuko.studiquo.google-signin</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd</string>
+				<string>$(STUDIQUO_GOOGLE_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>GIDClientID</key>
-	<string>812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com</string>
+	<string>$(STUDIQUO_GOOGLE_IOS_CLIENT_ID)</string>
 	<key>GIDServerClientID</key>
-	<string>812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com</string>
+	<string>$(STUDIQUO_GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>授業資料やQRコードを読み取るためにカメラを使用します。</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>ロックしたノートを安全に開くためにFace IDを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ノートを見ながら資料写真を表示するために写真ライブラリを使用します。</string>
+	<key>StudiquoAppGroup</key>
+	<string>$(STUDIQUO_APP_GROUP)</string>
+	<key>StudiquoCloudKitContainer</key>
+	<string>$(STUDIQUO_CLOUDKIT_CONTAINER)</string>
+	<key>StudiquoEnvironment</key>
+	<string>$(STUDIQUO_ENVIRONMENT)</string>
+	<key>StudiquoRevenueCatPublicAPIKey</key>
+	<string>$(STUDIQUO_REVENUECAT_PUBLIC_API_KEY)</string>
+	<key>StudiquoWorkerEndpoint</key>
+	<string>$(STUDIQUO_WORKER_ENDPOINT)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

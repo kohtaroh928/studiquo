@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-20",
+  "step": "Step5-D2a",
+  "scope": "local_only",
+  "branch": "codex/rag-wip",
+  "syntheticDataOnly": true,
+  "newTests": {
+    "pass": 12,
+    "fail": 0,
+    "skip": 0
+  },
+  "existingFocused": {
+    "pass": 61,
+    "fail": 0
+  },
+  "serverPriorFull": {
+    "pass": 1946,
+    "fail": 0,
+    "skip": 0
+  },
+  "serverFinalFull": {
+    "pass": 1948,
+    "fail": 0,
+    "skip": 0,
+    "durationMs": 60887.151125
+  },
+  "privateWorker": {
+    "pass": 41,
+    "fail": 0,
+    "skip": 0
+  },
+  "localRuntime": {
+    "localWorkerd": true,
+    "d1Migrations": 18,
+    "serviceBindingRPC": true,
+    "sqliteDO": true,
+    "mcpPipeline": true,
+    "immutableEnvelope": true,
+    "bothStopProofs": true,
+    "intakeErasedStop": true,
+    "flagOffStop": true,
+    "legacyParseRejected": true,
+    "replayRejected": true,
+    "vm": "synthetic_io_adapter_only",
+    "remoteChanges": false
+  },
+  "reviews": {
+    "planner": "completed_read_only",
+    "code": "no_findings_read_only_no_independent_test",
+    "security": "low_retention_documentation_fixed_recheck_no_findings"
+  },
+  "sourceSha256": {
+    "mcp-server/migrations/0018_rag_pdf_rpc_v2.sql": "e0524ebdaf4f8d8f1fe4f007ccfaaae2cd4d393971241db6410c21037a5662d9",
+    "mcp-server/src/rag/pdf-jobs.js": "80297fa515daa5a84cc5c652878ef6ea7d3588ecfdadc89f1530f5b465821134",
+    "mcp-server/src/rag/pdf-rpc.js": "9fa7cde8938434862a81de81fc897b7da8d607f79c47faa2016ddeb92a379a96",
+    "mcp-server/src/rag/pdf-process.js": "4fc9e9f07bba7e8a0b78d45dafaefcf01da06894c42967167f17ebaf9a76d456",
+    "mcp-server/src/rag/pdf-stop-evidence.js": "3de34651b7ea44e90bfc251c463c2fa81d99a21be4ca3b77206b92ba70fcbe57",
+    "mcp-server/src/rag/pdf-job-recovery.js": "15bd6fc5e6b2ea6c8bc646ff320c4ac93759e9d66821cbae377e0675625847a9",
+    "mcp-server/src/rag-pdf-rpc-v2.test.js": "41c210955dca27425f58c6ff6038e9b31ba1fda56bfa51cd1ded9b35eca4a8b0",
+    "mcp-server/tools/rag-pdf-rpc-v2-local-smoke.mjs": "1056678285974c44888595cb8a3ab3e5ec93ea5cecb3e01f6742a46aa253b227"
+  },
+  "notPerformed": [
+    "remote_migration",
+    "deploy",
+    "flag_activation",
+    "physical_DO_purge",
+    "real_Container_stop",
+    "real_PDF",
+    "paid_AI",
+    "commit",
+    "push",
+    "merge"
+  ],
+  "automation": "PAUSED",
+  "intermediateFailures": [
+    "new_purge_test_strftime_fixture_arity_fixed",
+    "runtime_RPC_proxy_deepEqual_corrected",
+    "runtime_sync_rejection_test_async_wrapper_corrected"
+  ],
+  "answerQualityClaim": false,
+  "processesStartedThisTurn": "all_completed"
+}

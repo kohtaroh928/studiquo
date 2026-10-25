@@ -1,0 +1,201 @@
+{
+ "date": "2026-10-21",
+ "codeRef": "claude/rag-ts 960f83d + 未コミット(be4cc6c の上の detail-presence 修正)",
+ "changeFiles": [
+  "mcp-server/src/rag/detail-presence.ts",
+  "mcp-server/src/rag/retrieval.ts",
+  "mcp-server/src/rag-detail-presence.test.ts"
+ ],
+ "environment": "real Workers AI REST (bge-m3, bge-reranker-base); D1=local SQLite FTS5, Vectorize=local exact cosine",
+ "workerTests": {
+  "tests": 2370,
+  "pass": 2369,
+  "fail": 0,
+  "skipped": 1,
+  "newTests": 12
+ },
+ "manifestSha256": "8ca0f727158f741a7ae69df121584f254162c083ca30958807e5c2fd79c4b8df",
+ "comparison": {
+  "main60": {
+   "before": {
+    "pos": {
+     "n": 55,
+     "recall": 100.0,
+     "full": 55,
+     "mrr": 0.949
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0,
+     "status": {
+      "fallback": 5
+     }
+    },
+    "status": {
+     "grounded": 55,
+     "fallback": 5
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 55,
+     "recall": 100.0,
+     "full": 55,
+     "mrr": 0.968
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0,
+     "status": {
+      "fallback": 5
+     }
+    },
+    "status": {
+     "grounded": 55,
+     "fallback": 5
+    }
+   },
+   "changed": []
+  },
+  "validation20": {
+   "before": {
+    "pos": {
+     "n": 10,
+     "recall": 100.0,
+     "full": 10,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0,
+     "status": {
+      "insufficient": 5,
+      "fallback": 5
+     }
+    },
+    "status": {
+     "grounded": 10,
+     "insufficient": 5,
+     "fallback": 5
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 10,
+     "recall": 100.0,
+     "full": 10,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0,
+     "status": {
+      "insufficient": 5,
+      "fallback": 5
+     }
+    },
+    "status": {
+     "grounded": 10,
+     "insufficient": 5,
+     "fallback": 5
+    }
+   },
+   "changed": []
+  },
+  "real30": {
+   "before": {
+    "posAllEvidence": 22,
+    "pos": 24,
+    "meanEvidenceRecall": 0.9375,
+    "negSuppressed": 2,
+    "neg": 6,
+    "status": {
+     "grounded": 25,
+     "insufficient": 1,
+     "partial": 2,
+     "fallback": 2
+    }
+   },
+   "after": {
+    "posAllEvidence": 22,
+    "pos": 24,
+    "meanEvidenceRecall": 0.9375,
+    "negSuppressed": 6,
+    "neg": 6,
+    "status": {
+     "grounded": 21,
+     "insufficient": 5,
+     "partial": 2,
+     "fallback": 2
+    }
+   },
+   "changed": [
+    [
+     "v2-s2",
+     [
+      "grounded",
+      null,
+      false
+     ],
+     [
+      "insufficient",
+      null,
+      true
+     ]
+    ],
+    [
+     "v2-s3",
+     [
+      "grounded",
+      null,
+      false
+     ],
+     [
+      "insufficient",
+      null,
+      true
+     ]
+    ],
+    [
+     "v2-s4",
+     [
+      "grounded",
+      null,
+      false
+     ],
+     [
+      "insufficient",
+      null,
+      true
+     ]
+    ],
+    [
+     "v2-u1",
+     [
+      "grounded",
+      null,
+      false
+     ],
+     [
+      "insufficient",
+      null,
+      true
+     ]
+    ]
+   ],
+   "elapsedMedian": 1225
+  }
+ },
+ "intermediateVersions": {
+  "firstVersion": {
+   "main60": "54/55 (ocr-7 grounded->insufficient)",
+   "validation20": "unchanged",
+   "real30": "negSuppressed 6/6"
+  },
+  "rerankGuard": {
+   "main60": "54/55 (same ocr-7)",
+   "note": "rerank top scores of answerable synthetic questions: 12 of 55 <= 0.005; rerank timeout (2s) makes the guard nondeterministic"
+  }
+ },
+ "note": "質問・正解・本文・anchorは含まない。real30のcase idは質問IDのみ。"
+}

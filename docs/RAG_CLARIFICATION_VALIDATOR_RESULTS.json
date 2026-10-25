@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-16",
+  "scope": "pure structural validation only, no semantic judge or runtime integration",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/clarification-decision.mjs": "b1d94f84725a0890efbdbc1188be181dfced85b1c081205aecd869ceab31cc6d",
+    "mcp-server/src/rag-clarification-decision.test.js": "431abeb05e0de6808661d3f35300c98d0f5f83add5dcc1ce190b8cef9294cc07"
+  },
+  "tests": {
+    "target": {
+      "pass": 13,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1680,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentContract": {
+      "pass": 13,
+      "fail": 0
+    },
+    "independentCodeSafetyIncludingFixture": {
+      "pass": 21,
+      "fail": 0
+    }
+  },
+  "fixtureRoundtrips": 30,
+  "unresolvedHighMedium": 0,
+  "apiCalls": 0,
+  "keyReads": 0,
+  "oracleImportedByValidator": false,
+  "runtimeOrPromptChanged": false,
+  "previousFixtureAndContractUnchanged": true,
+  "frozenSourcesAndCompletedRunUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "returnedGuarantees": {
+    "semantics": "pending",
+    "technicalStateVerified": false,
+    "authorizationVerified": false,
+    "releaseAccepted": false
+  },
+  "limits": {
+    "inputBytes": 65536,
+    "questionBytes": 16384,
+    "contextBytesEach": 8192,
+    "contextCount": 16,
+    "decisionBytes": 32768,
+    "decisionCount": 16,
+    "labelUTF16": 256,
+    "revisionUTF16": 64,
+    "targetRefs": 17
+  },
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "semanticReviewAggregatorImplemented": false,
+  "next": "bind and aggregate external semantic reviews against separate oracle, match requirements without order assumptions, preserve unknown/unsupported/technical failure and compare harness state before new model input or paid run"
+}

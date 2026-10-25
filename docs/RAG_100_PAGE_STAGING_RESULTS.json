@@ -1,0 +1,1728 @@
+{
+  "date": "2026-10-09",
+  "environment": "staging",
+  "syntheticOnly": true,
+  "attempts": [
+    {
+      "stage": "finished",
+      "elapsedMs": 336270,
+      "requestCount": 43,
+      "results": [
+        {
+          "name": "enabled-status",
+          "ok": true
+        },
+        {
+          "name": "consent-gate",
+          "ok": true
+        },
+        {
+          "name": "fabricated-token-gate",
+          "ok": true
+        },
+        {
+          "name": "upload-5",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6492
+        },
+        {
+          "name": "upload-10",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6392
+        },
+        {
+          "name": "upload-15",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6136
+        },
+        {
+          "name": "upload-20",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5584
+        },
+        {
+          "name": "upload-25",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6360
+        },
+        {
+          "name": "upload-30",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5619
+        },
+        {
+          "name": "upload-35",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5851
+        },
+        {
+          "name": "upload-40",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6208
+        },
+        {
+          "name": "upload-45",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5899
+        },
+        {
+          "name": "upload-50",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6119
+        },
+        {
+          "name": "half-upload-is-incomplete",
+          "ok": true
+        },
+        {
+          "name": "invalid-batch-rejected",
+          "ok": true
+        },
+        {
+          "name": "upload-55",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5851
+        },
+        {
+          "name": "upload-60",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6121
+        },
+        {
+          "name": "upload-65",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6186
+        },
+        {
+          "name": "upload-70",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6225
+        },
+        {
+          "name": "upload-75",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6143
+        },
+        {
+          "name": "upload-80",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5967
+        },
+        {
+          "name": "upload-85",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5786
+        },
+        {
+          "name": "upload-90",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5948
+        },
+        {
+          "name": "upload-95",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6250
+        },
+        {
+          "name": "upload-100",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6344
+        },
+        {
+          "name": "100-page-upload",
+          "ok": true,
+          "elapsedMs": 121807,
+          "embedded": 100
+        },
+        {
+          "name": "search-visibility",
+          "ok": false
+        },
+        {
+          "name": "evaluation-failed",
+          "ok": false,
+          "stage": "readiness"
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": false
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "restore-disabled-deployment",
+          "ok": true
+        },
+        {
+          "name": "temporary-secret-removed",
+          "ok": true
+        },
+        {
+          "name": "generated-sessions-removed",
+          "ok": true
+        }
+      ],
+      "batches": [
+        {
+          "pages": 5,
+          "elapsedMs": 6492,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541101235
+        },
+        {
+          "pages": 10,
+          "elapsedMs": 6392,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541107629
+        },
+        {
+          "pages": 15,
+          "elapsedMs": 6136,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541113765
+        },
+        {
+          "pages": 20,
+          "elapsedMs": 5584,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541119351
+        },
+        {
+          "pages": 25,
+          "elapsedMs": 6360,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541125712
+        },
+        {
+          "pages": 30,
+          "elapsedMs": 5619,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541131334
+        },
+        {
+          "pages": 35,
+          "elapsedMs": 5851,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541137186
+        },
+        {
+          "pages": 40,
+          "elapsedMs": 6208,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541143399
+        },
+        {
+          "pages": 45,
+          "elapsedMs": 5899,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541149298
+        },
+        {
+          "pages": 50,
+          "elapsedMs": 6119,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541155418
+        },
+        {
+          "pages": 55,
+          "elapsedMs": 5851,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541161567
+        },
+        {
+          "pages": 60,
+          "elapsedMs": 6121,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541167689
+        },
+        {
+          "pages": 65,
+          "elapsedMs": 6186,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541173876
+        },
+        {
+          "pages": 70,
+          "elapsedMs": 6225,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541180102
+        },
+        {
+          "pages": 75,
+          "elapsedMs": 6143,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541186247
+        },
+        {
+          "pages": 80,
+          "elapsedMs": 5967,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541192216
+        },
+        {
+          "pages": 85,
+          "elapsedMs": 5786,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541198002
+        },
+        {
+          "pages": 90,
+          "elapsedMs": 5948,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541203952
+        },
+        {
+          "pages": 95,
+          "elapsedMs": 6250,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541210204
+        },
+        {
+          "pages": 100,
+          "elapsedMs": 6344,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541216549
+        }
+      ],
+      "readiness": [
+        {
+          "attempt": 1,
+          "http": 503,
+          "elapsedMs": 406,
+          "sinceFinalUploadMs": 407
+        },
+        {
+          "attempt": 2,
+          "http": 503,
+          "elapsedMs": 764,
+          "sinceFinalUploadMs": 11174
+        },
+        {
+          "attempt": 3,
+          "http": 503,
+          "elapsedMs": 737,
+          "sinceFinalUploadMs": 21914
+        },
+        {
+          "attempt": 4,
+          "http": 503,
+          "elapsedMs": 565,
+          "sinceFinalUploadMs": 32481
+        },
+        {
+          "attempt": 5,
+          "http": 503,
+          "elapsedMs": 487,
+          "sinceFinalUploadMs": 42971
+        },
+        {
+          "attempt": 6,
+          "http": 503,
+          "elapsedMs": 404,
+          "sinceFinalUploadMs": 53378
+        },
+        {
+          "attempt": 7,
+          "http": 503,
+          "elapsedMs": 999,
+          "sinceFinalUploadMs": 64380
+        },
+        {
+          "attempt": 8,
+          "http": 503,
+          "elapsedMs": 421,
+          "sinceFinalUploadMs": 74802
+        },
+        {
+          "attempt": 9,
+          "http": 503,
+          "elapsedMs": 606,
+          "sinceFinalUploadMs": 85411
+        },
+        {
+          "attempt": 10,
+          "http": 503,
+          "elapsedMs": 500,
+          "sinceFinalUploadMs": 95915
+        },
+        {
+          "attempt": 11,
+          "http": 503,
+          "elapsedMs": 812,
+          "sinceFinalUploadMs": 106728
+        },
+        {
+          "attempt": 12,
+          "http": 503,
+          "elapsedMs": 504,
+          "sinceFinalUploadMs": 117235
+        },
+        {
+          "attempt": 13,
+          "http": 503,
+          "elapsedMs": 442,
+          "sinceFinalUploadMs": 127681
+        },
+        {
+          "attempt": 14,
+          "http": 503,
+          "elapsedMs": 405,
+          "sinceFinalUploadMs": 138090
+        },
+        {
+          "attempt": 15,
+          "http": 503,
+          "elapsedMs": 507,
+          "sinceFinalUploadMs": 148598
+        },
+        {
+          "attempt": 16,
+          "http": 503,
+          "elapsedMs": 330,
+          "sinceFinalUploadMs": 158930
+        },
+        {
+          "attempt": 17,
+          "http": 503,
+          "elapsedMs": 425,
+          "sinceFinalUploadMs": 169357
+        },
+        {
+          "attempt": 18,
+          "http": 503,
+          "elapsedMs": 372,
+          "sinceFinalUploadMs": 179730
+        }
+      ],
+      "questions": [],
+      "attempt": 1
+    },
+    {
+      "stage": "finished",
+      "elapsedMs": 412497,
+      "requestCount": 56,
+      "results": [
+        {
+          "name": "enabled-status",
+          "ok": true
+        },
+        {
+          "name": "consent-gate",
+          "ok": true
+        },
+        {
+          "name": "fabricated-token-gate",
+          "ok": true
+        },
+        {
+          "name": "upload-5",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7446
+        },
+        {
+          "name": "upload-10",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7989
+        },
+        {
+          "name": "upload-15",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6630
+        },
+        {
+          "name": "upload-20",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6824
+        },
+        {
+          "name": "upload-25",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7046
+        },
+        {
+          "name": "upload-30",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7352
+        },
+        {
+          "name": "upload-35",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7094
+        },
+        {
+          "name": "upload-40",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6842
+        },
+        {
+          "name": "upload-45",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7104
+        },
+        {
+          "name": "upload-50",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7412
+        },
+        {
+          "name": "half-upload-is-incomplete",
+          "ok": true
+        },
+        {
+          "name": "invalid-batch-rejected",
+          "ok": true
+        },
+        {
+          "name": "upload-55",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6868
+        },
+        {
+          "name": "upload-60",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6744
+        },
+        {
+          "name": "upload-65",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5751
+        },
+        {
+          "name": "upload-70",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5727
+        },
+        {
+          "name": "upload-75",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6587
+        },
+        {
+          "name": "upload-80",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6299
+        },
+        {
+          "name": "upload-85",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5583
+        },
+        {
+          "name": "upload-90",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6112
+        },
+        {
+          "name": "upload-95",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6428
+        },
+        {
+          "name": "upload-100",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6072
+        },
+        {
+          "name": "100-page-upload",
+          "ok": true,
+          "elapsedMs": 134340,
+          "embedded": 100
+        },
+        {
+          "name": "search-visibility",
+          "ok": true,
+          "afterFinalUploadMs": 94821
+        },
+        {
+          "name": "all-100-chunks",
+          "ok": true
+        },
+        {
+          "name": "vector-metadata",
+          "ok": true
+        },
+        {
+          "name": "repeat-5",
+          "ok": true
+        },
+        {
+          "name": "repeat-10",
+          "ok": true
+        },
+        {
+          "name": "repeat-15",
+          "ok": true
+        },
+        {
+          "name": "repeat-20",
+          "ok": true
+        },
+        {
+          "name": "repeat-25",
+          "ok": true
+        },
+        {
+          "name": "repeat-30",
+          "ok": true
+        },
+        {
+          "name": "repeat-35",
+          "ok": true
+        },
+        {
+          "name": "repeat-40",
+          "ok": true
+        },
+        {
+          "name": "repeat-45",
+          "ok": true
+        },
+        {
+          "name": "repeat-50",
+          "ok": true
+        },
+        {
+          "name": "repeat-55",
+          "ok": true
+        },
+        {
+          "name": "repeat-60",
+          "ok": true
+        },
+        {
+          "name": "repeat-65",
+          "ok": true
+        },
+        {
+          "name": "repeat-70",
+          "ok": true
+        },
+        {
+          "name": "repeat-75",
+          "ok": true
+        },
+        {
+          "name": "repeat-80",
+          "ok": true
+        },
+        {
+          "name": "repeat-85",
+          "ok": true
+        },
+        {
+          "name": "repeat-90",
+          "ok": true
+        },
+        {
+          "name": "repeat-95",
+          "ok": true
+        },
+        {
+          "name": "repeat-100",
+          "ok": true
+        },
+        {
+          "name": "source-hash-idempotency",
+          "ok": true,
+          "reEmbedded": 0
+        },
+        {
+          "name": "other-owner-index",
+          "ok": true
+        },
+        {
+          "name": "other-owner-cannot-check-source",
+          "ok": true
+        },
+        {
+          "name": "chat-library",
+          "ok": false,
+          "expectedPagePresent": false
+        },
+        {
+          "name": "evaluation-failed",
+          "ok": false,
+          "stage": "questions"
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "restore-disabled-deployment",
+          "ok": true
+        },
+        {
+          "name": "temporary-secret-removed",
+          "ok": true
+        },
+        {
+          "name": "generated-sessions-removed",
+          "ok": true
+        }
+      ],
+      "batches": [
+        {
+          "pages": 5,
+          "elapsedMs": 7446,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541803208
+        },
+        {
+          "pages": 10,
+          "elapsedMs": 7989,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541811201
+        },
+        {
+          "pages": 15,
+          "elapsedMs": 6630,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541817832
+        },
+        {
+          "pages": 20,
+          "elapsedMs": 6824,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541824659
+        },
+        {
+          "pages": 25,
+          "elapsedMs": 7046,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541831707
+        },
+        {
+          "pages": 30,
+          "elapsedMs": 7352,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541839060
+        },
+        {
+          "pages": 35,
+          "elapsedMs": 7094,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541846158
+        },
+        {
+          "pages": 40,
+          "elapsedMs": 6842,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541853002
+        },
+        {
+          "pages": 45,
+          "elapsedMs": 7104,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541860107
+        },
+        {
+          "pages": 50,
+          "elapsedMs": 7412,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541867521
+        },
+        {
+          "pages": 55,
+          "elapsedMs": 6868,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541874785
+        },
+        {
+          "pages": 60,
+          "elapsedMs": 6744,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541881530
+        },
+        {
+          "pages": 65,
+          "elapsedMs": 5751,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541887283
+        },
+        {
+          "pages": 70,
+          "elapsedMs": 5727,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541893011
+        },
+        {
+          "pages": 75,
+          "elapsedMs": 6587,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541899600
+        },
+        {
+          "pages": 80,
+          "elapsedMs": 6299,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541905900
+        },
+        {
+          "pages": 85,
+          "elapsedMs": 5583,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541911485
+        },
+        {
+          "pages": 90,
+          "elapsedMs": 6112,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541917597
+        },
+        {
+          "pages": 95,
+          "elapsedMs": 6428,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541924026
+        },
+        {
+          "pages": 100,
+          "elapsedMs": 6072,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791541930100
+        }
+      ],
+      "readiness": [
+        {
+          "attempt": 1,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 4378,
+          "sinceFinalUploadMs": 4379
+        },
+        {
+          "attempt": 2,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 2976,
+          "sinceFinalUploadMs": 17357
+        },
+        {
+          "attempt": 3,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 3893,
+          "sinceFinalUploadMs": 31252
+        },
+        {
+          "attempt": 4,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 2763,
+          "sinceFinalUploadMs": 44018
+        },
+        {
+          "attempt": 5,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 1629,
+          "sinceFinalUploadMs": 55652
+        },
+        {
+          "attempt": 6,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 2079,
+          "sinceFinalUploadMs": 67731
+        },
+        {
+          "attempt": 7,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 3538,
+          "sinceFinalUploadMs": 81271
+        },
+        {
+          "attempt": 8,
+          "http": 200,
+          "state": "ready",
+          "elapsedMs": 3547,
+          "sinceFinalUploadMs": 94821
+        }
+      ],
+      "questions": [
+        {
+          "id": "library",
+          "http": 403,
+          "elapsedMs": 181,
+          "citationPages": [],
+          "citationCount": 0,
+          "scopeCorrect": true,
+          "expectedPagePresent": false,
+          "answerNonempty": false,
+          "streamError": false,
+          "streamConsumed": true
+        }
+      ],
+      "attempt": 2
+    },
+    {
+      "stage": "finished",
+      "elapsedMs": 395178,
+      "requestCount": 61,
+      "results": [
+        {
+          "name": "enabled-status",
+          "ok": true
+        },
+        {
+          "name": "consent-gate",
+          "ok": true
+        },
+        {
+          "name": "fabricated-token-gate",
+          "ok": true
+        },
+        {
+          "name": "upload-5",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7008
+        },
+        {
+          "name": "upload-10",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6370
+        },
+        {
+          "name": "upload-15",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5833
+        },
+        {
+          "name": "upload-20",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6051
+        },
+        {
+          "name": "upload-25",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6235
+        },
+        {
+          "name": "upload-30",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6301
+        },
+        {
+          "name": "upload-35",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6278
+        },
+        {
+          "name": "upload-40",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6055
+        },
+        {
+          "name": "upload-45",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6189
+        },
+        {
+          "name": "upload-50",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6198
+        },
+        {
+          "name": "half-upload-is-incomplete",
+          "ok": true
+        },
+        {
+          "name": "invalid-batch-rejected",
+          "ok": true
+        },
+        {
+          "name": "upload-55",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6722
+        },
+        {
+          "name": "upload-60",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6596
+        },
+        {
+          "name": "upload-65",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6405
+        },
+        {
+          "name": "upload-70",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6153
+        },
+        {
+          "name": "upload-75",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5725
+        },
+        {
+          "name": "upload-80",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 5795
+        },
+        {
+          "name": "upload-85",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6082
+        },
+        {
+          "name": "upload-90",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6040
+        },
+        {
+          "name": "upload-95",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 6244
+        },
+        {
+          "name": "upload-100",
+          "ok": true,
+          "embedded": 5,
+          "skipped": 0,
+          "elapsedMs": 7262
+        },
+        {
+          "name": "100-page-upload",
+          "ok": true,
+          "elapsedMs": 125809,
+          "embedded": 100
+        },
+        {
+          "name": "search-visibility",
+          "ok": true,
+          "afterFinalUploadMs": 70669
+        },
+        {
+          "name": "all-100-chunks",
+          "ok": true
+        },
+        {
+          "name": "vector-metadata",
+          "ok": true
+        },
+        {
+          "name": "repeat-5",
+          "ok": true
+        },
+        {
+          "name": "repeat-10",
+          "ok": true
+        },
+        {
+          "name": "repeat-15",
+          "ok": true
+        },
+        {
+          "name": "repeat-20",
+          "ok": true
+        },
+        {
+          "name": "repeat-25",
+          "ok": true
+        },
+        {
+          "name": "repeat-30",
+          "ok": true
+        },
+        {
+          "name": "repeat-35",
+          "ok": true
+        },
+        {
+          "name": "repeat-40",
+          "ok": true
+        },
+        {
+          "name": "repeat-45",
+          "ok": true
+        },
+        {
+          "name": "repeat-50",
+          "ok": true
+        },
+        {
+          "name": "repeat-55",
+          "ok": true
+        },
+        {
+          "name": "repeat-60",
+          "ok": true
+        },
+        {
+          "name": "repeat-65",
+          "ok": true
+        },
+        {
+          "name": "repeat-70",
+          "ok": true
+        },
+        {
+          "name": "repeat-75",
+          "ok": true
+        },
+        {
+          "name": "repeat-80",
+          "ok": true
+        },
+        {
+          "name": "repeat-85",
+          "ok": true
+        },
+        {
+          "name": "repeat-90",
+          "ok": true
+        },
+        {
+          "name": "repeat-95",
+          "ok": true
+        },
+        {
+          "name": "repeat-100",
+          "ok": true
+        },
+        {
+          "name": "source-hash-idempotency",
+          "ok": true,
+          "reEmbedded": 0
+        },
+        {
+          "name": "other-owner-index",
+          "ok": true
+        },
+        {
+          "name": "other-owner-cannot-check-source",
+          "ok": true
+        },
+        {
+          "name": "chat-library",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "chat-folder-ocr",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "chat-notebook-ocr",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "chat-current-page",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "chat-wrong-folder",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "chat-other-owner",
+          "ok": true,
+          "expectedPagePresent": true
+        },
+        {
+          "name": "public-source-deletion",
+          "ok": true
+        },
+        {
+          "name": "deleted-source-missing",
+          "ok": true
+        },
+        {
+          "name": "cleanup-owner",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "cleanup-other",
+          "ok": true,
+          "remainingRows": 0,
+          "remainingVectors": 0
+        },
+        {
+          "name": "restore-disabled-deployment",
+          "ok": true
+        },
+        {
+          "name": "temporary-secret-removed",
+          "ok": true
+        },
+        {
+          "name": "generated-sessions-removed",
+          "ok": true
+        }
+      ],
+      "batches": [
+        {
+          "pages": 5,
+          "elapsedMs": 7008,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542244537
+        },
+        {
+          "pages": 10,
+          "elapsedMs": 6370,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542250908
+        },
+        {
+          "pages": 15,
+          "elapsedMs": 5833,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542256743
+        },
+        {
+          "pages": 20,
+          "elapsedMs": 6051,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542262794
+        },
+        {
+          "pages": 25,
+          "elapsedMs": 6235,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542269030
+        },
+        {
+          "pages": 30,
+          "elapsedMs": 6301,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542275332
+        },
+        {
+          "pages": 35,
+          "elapsedMs": 6278,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542281611
+        },
+        {
+          "pages": 40,
+          "elapsedMs": 6055,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542287667
+        },
+        {
+          "pages": 45,
+          "elapsedMs": 6189,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542293858
+        },
+        {
+          "pages": 50,
+          "elapsedMs": 6198,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542300056
+        },
+        {
+          "pages": 55,
+          "elapsedMs": 6722,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542307022
+        },
+        {
+          "pages": 60,
+          "elapsedMs": 6596,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542313618
+        },
+        {
+          "pages": 65,
+          "elapsedMs": 6405,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542320026
+        },
+        {
+          "pages": 70,
+          "elapsedMs": 6153,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542326181
+        },
+        {
+          "pages": 75,
+          "elapsedMs": 5725,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542331906
+        },
+        {
+          "pages": 80,
+          "elapsedMs": 5795,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542337702
+        },
+        {
+          "pages": 85,
+          "elapsedMs": 6082,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542343786
+        },
+        {
+          "pages": 90,
+          "elapsedMs": 6040,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542349827
+        },
+        {
+          "pages": 95,
+          "elapsedMs": 6244,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542356072
+        },
+        {
+          "pages": 100,
+          "elapsedMs": 7262,
+          "embedded": 5,
+          "skipped": 0,
+          "completedAt": 1791542363336
+        }
+      ],
+      "readiness": [
+        {
+          "attempt": 1,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 4069,
+          "sinceFinalUploadMs": 4069
+        },
+        {
+          "attempt": 2,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 3535,
+          "sinceFinalUploadMs": 17607
+        },
+        {
+          "attempt": 3,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 2799,
+          "sinceFinalUploadMs": 30409
+        },
+        {
+          "attempt": 4,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 4240,
+          "sinceFinalUploadMs": 44650
+        },
+        {
+          "attempt": 5,
+          "http": 200,
+          "state": "waiting",
+          "reason": "vector_pending",
+          "elapsedMs": 2755,
+          "sinceFinalUploadMs": 57407
+        },
+        {
+          "attempt": 6,
+          "http": 200,
+          "state": "ready",
+          "elapsedMs": 3260,
+          "sinceFinalUploadMs": 70669
+        }
+      ],
+      "questions": [
+        {
+          "id": "library",
+          "http": 200,
+          "elapsedMs": 5568,
+          "ragStatus": "grounded",
+          "citationPages": [
+            86,
+            1,
+            87
+          ],
+          "citationCount": 3,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        },
+        {
+          "id": "folder-ocr",
+          "http": 200,
+          "elapsedMs": 2370,
+          "ragStatus": "grounded",
+          "citationPages": [
+            5
+          ],
+          "citationCount": 1,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        },
+        {
+          "id": "notebook-ocr",
+          "http": 200,
+          "elapsedMs": 2207,
+          "ragStatus": "grounded",
+          "citationPages": [
+            7,
+            10
+          ],
+          "citationCount": 2,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        },
+        {
+          "id": "current-page",
+          "http": 200,
+          "elapsedMs": 4224,
+          "ragStatus": "grounded",
+          "citationPages": [
+            11
+          ],
+          "citationCount": 1,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        },
+        {
+          "id": "wrong-folder",
+          "http": 200,
+          "elapsedMs": 5364,
+          "ragStatus": "fallback",
+          "citationPages": [],
+          "citationCount": 0,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        },
+        {
+          "id": "other-owner",
+          "http": 200,
+          "elapsedMs": 2439,
+          "ragStatus": "grounded",
+          "citationPages": [
+            1
+          ],
+          "citationCount": 1,
+          "scopeCorrect": true,
+          "expectedPagePresent": true,
+          "answerNonempty": true,
+          "streamError": false,
+          "streamConsumed": true
+        }
+      ],
+      "attempt": 3
+    }
+  ],
+  "firstCleanupRecovery": {
+    "remainingRows": 0,
+    "remainingVectors": 0,
+    "ok": true
+  },
+  "modelMeasurements": [
+    {
+      "http": 200,
+      "elapsedMs": 1368,
+      "status": "fallback",
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 355,
+          "ok": true,
+          "dimensions": 1024
+        }
+      ],
+      "vectorCalls": [
+        {
+          "operation": "query",
+          "ownerFilter": true,
+          "scopeKeys": [
+            "accountKey"
+          ],
+          "matches": 20,
+          "elapsedMs": 217
+        }
+      ],
+      "citationPages": []
+    },
+    {
+      "http": 200,
+      "elapsedMs": 2799,
+      "status": "grounded",
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 179,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 520,
+          "ok": true
+        }
+      ],
+      "vectorCalls": [
+        {
+          "operation": "query",
+          "ownerFilter": true,
+          "scopeKeys": [
+            "accountKey"
+          ],
+          "matches": 20,
+          "elapsedMs": 235
+        }
+      ],
+      "citationPages": [
+        5
+      ]
+    }
+  ],
+  "costEstimate": {
+    "method": "Chunker token estimator; not BGE model token counts or a billing invoice",
+    "pageCount": 100,
+    "chunkCount": 100,
+    "embeddingInputCharacters": 46641,
+    "estimatedEmbeddingTokens": 25737,
+    "embeddingListPriceUSD": 0.000308844,
+    "storedDimensions": 102400,
+    "storageMonthlyListPriceUSD": 5.12e-05,
+    "workersAIPriceURL": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+    "vectorizePriceURL": "https://developers.cloudflare.com/vectorize/platform/pricing/",
+    "notes": [
+      "Free/included allocations not deducted; whole-account usage unavailable.",
+      "Reranking, query embeddings, D1, Workers and Gemini are separate.",
+      "Gemini usageMetadata is not exposed by the public chat endpoint; final charge is unverified."
+    ]
+  },
+  "finalVerification": {
+    "activeVersionId": "9f03da7e-8c3b-4d81-9e7e-bce0e0853e87",
+    "activePercentage": 100,
+    "RAG_ENABLED": false,
+    "AI_PROVIDER_APPROVED": false,
+    "temporaryGeminiSecretAbsent": true,
+    "d1": {
+      "chunks": 0,
+      "pages": 0,
+      "sources": 0,
+      "total_fts_rows": 0,
+      "deletion_barriers": 6
+    },
+    "vectorCount": 0
+  },
+  "qualityLimitations": [
+    "Only six synthetic public chat cases; not a general accuracy estimate.",
+    "Photosynthesis citations also include plant-root pages 86 and 87.",
+    "Early private retrieval returned fallback for a paraphrase later grounded by public chat.",
+    "No real-paper OCR or physical iPad run in this stage."
+  ]
+}

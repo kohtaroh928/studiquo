@@ -1,0 +1,272 @@
+{
+ "date": "2026-10-22",
+ "code": "9fb2552 (変更なし)",
+ "decision": "コードは変更していない。別名の誤判定を直す方法は、データ上、効果が測れなかった。",
+ "newQuestions17": {
+  "manifestSha256": "fa2878914bf2eeb77b461edc6fd28a32036697e05ea854e377d6f4efac0e665d",
+  "labels": {
+   "al": "英字の別名の答えあり",
+   "n": "英字の固有語が資料にない答えなし(前半は大文字を含む、後半は小文字だけ)"
+  },
+  "summary": {
+   "aliasPositives": {
+    "n": 7,
+    "before": 7,
+    "after": 4
+   },
+   "negatives": {
+    "n": 10,
+    "before": 3,
+    "after": 9
+   }
+  },
+  "cases": {
+   "v5-al1": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al2": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al3": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al4": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al5": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al6": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-al7": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-n1": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": false
+   },
+   "v5-n2": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": false
+   },
+   "v5-n3": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": false
+   },
+   "v5-n4": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": false
+   },
+   "v5-n5": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": false
+   },
+   "v5-n6": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-n7": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-n8": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-n9": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": false
+    },
+    "typedLowercaseOnly": true
+   },
+   "v5-n10": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    },
+    "typedLowercaseOnly": true
+   }
+  },
+  "apiCallsEach": 377,
+  "neuronsAfter": 283.8,
+  "executionFailures": 0
+ },
+ "adjustedSetsCombined(v4+v5)": {
+  "aliasPositives": {
+   "n": 11,
+   "before": 11,
+   "after": 7
+  },
+  "latinAbsentNegatives": {
+   "n": 24,
+   "before": 6,
+   "after": 23
+  }
+ },
+ "comparisonOfOptions": {
+  "A_restOfQuestionOverlap": {
+   "result": "分けられない",
+   "aliasCoverage": "0.50-0.79",
+   "negativeCoverage": "最大0.67(Python 0.56, Netflix 0.56, Google 0.50)"
+  },
+  "C_termEmbeddingVsEvidence": {
+   "result": "分けられない",
+   "aliasCosine": "0.30(AMeDAS)-0.50(radar)",
+   "negativeCosine": "0.28-0.43(TensorFlow 0.43, Google 0.43)"
+  },
+  "B_katakanaFormByModel": {
+   "result": "採用不可",
+   "llama-3.1-8b": "速い(0.4-0.9秒)が不正確(AMeDAS→天気観測台、Python→ピタゴラス)、関連語も出力",
+   "llama-3.3-70b": "ほぼ正確だが遅い(Python 6.7秒、ChatGPT 12.8秒。検索全体の上限10秒)、関連語も出力",
+   "contract": "Workers AIの呼び出し数の契約(埋め込み3・リランク1)を変える必要"
+  },
+  "relaxedAgreement": {
+   "definition": "語句検索の1位が意味検索の上位Kにも入っていれば固有語の確認を行わない",
+   "sameTopOnly(current)": {
+    "positivesKept": "7/11",
+    "negativesWronglyKept": "2/39"
+   },
+   "K3": {
+    "positivesKept": "7/11",
+    "negativesWronglyKept": "4/39"
+   },
+   "K5": {
+    "positivesKept": "7/11",
+    "negativesWronglyKept": "6/39"
+   },
+   "K10": {
+    "positivesKept": "8/11",
+    "negativesWronglyKept": "10/39"
+   }
+  },
+  "D_skipLowercaseOnlyWords(simulated on v5)": {
+   "alias": "7/7",
+   "negativesCapitalized": "5/5",
+   "negativesLowercase": "1/5",
+   "note": "現行は 4/7・5/5・4/5。合計は13/17で同じ。誤りの種類が入れ替わる"
+  }
+ },
+ "note": "質問・正解・本文は含まない。case idは質問IDのみ。v4・v5は調整済みとして扱う。"
+}

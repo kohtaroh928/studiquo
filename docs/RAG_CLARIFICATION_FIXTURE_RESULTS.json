@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-16",
+  "scope": "offline minimal contract and synthetic fixture integrity only",
+  "sourceHashes": {
+    "docs/RAG_CLARIFICATION_DECISION_CONTRACT.md": "b3091106b4a9096227adf9427ec5834797c596dc9e8d8946bb56185608479ac9",
+    "mcp-server/scripts/rag-quality/clarification-inputs-v1.json": "dd86f03c11435d7217a85cb5dfa63dc308b79d9eec030961cc399d59de668769",
+    "mcp-server/scripts/rag-quality/clarification-oracle-v1.json": "8304058bd42d375c3bcf840005907fb99000e05db097c5d04278b2e2240a8b40",
+    "mcp-server/src/rag-clarification-fixture.test.js": "a65e7e46e55185969727225d07e9d9774e341b3c3b183150c90ac817ac29f6dd"
+  },
+  "cases": 30,
+  "matrixCategories": 22,
+  "semanticRequirements": 29,
+  "evaluatorFaultCases": 2,
+  "annotationReview": "independent planner confirmed; stored draft annotationReview remains pending",
+  "humanGoldReview": "pending",
+  "resolvedMedium": "clarify-page-many-after explicitly requires identifying the user-selected single course; no broader accepted tuple was added",
+  "unresolvedHighMedium": 0,
+  "tests": {
+    "target": {
+      "pass": 8,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1667,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCodeSafety": {
+      "pass": 8,
+      "fail": 0
+    }
+  },
+  "realApiCalls": 0,
+  "keyReads": 0,
+  "runtimeOrPromptChanged": false,
+  "modelQualityImprovement": "not evaluated",
+  "pureDecisionValidatorImplemented": false,
+  "semanticReviewAggregatorImplemented": false,
+  "frozenSourcesAndCompletedRunUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "releaseAccepted": false,
+  "limits": [
+    "fixture integrity does not establish LLM or runtime behavior",
+    "uncertain/review_required semantic positive case not covered",
+    "invalid candidate rejection requires forthcoming pure validator",
+    "synthetic availability/version binding does not authenticate real authorization"
+  ],
+  "next": "implement pure input/output validator with phase/kind/scope/revision and tuple rejection cases; then external semantic review aggregation before any new candidate request"
+}

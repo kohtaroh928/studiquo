@@ -1,0 +1,36 @@
+{
+  "attempted": 3,
+  "apiCalls": 12,
+  "statuses": {
+    "503": 7,
+    "200": 3,
+    "429": 2
+  },
+  "models": {
+    "gemini-3.5-flash": 9,
+    "gemini-3.5-flash-lite": 3
+  },
+  "elapsedMedianMs": 5682,
+  "elapsedRangeMs": [
+    4304,
+    5930
+  ],
+  "automatedPass": 3,
+  "requiredFacts180": 3,
+  "manualLimitations": [
+    "Second response has imprecise alternate-angle definition; do not treat keyword check as semantic correctness",
+    "Prior fallback-outage failure remains recorded; repeats do not erase it"
+  ],
+  "retryPolicyObserved": {
+    "maximumAttemptsPerModel": 3,
+    "observedPrimaryAttemptsPerCase": 3,
+    "observedFallbackAttemptsPerCase": 1,
+    "baseDelayMs": 600
+  },
+  "tokenUsage": {
+    "promptTokens": 873,
+    "outputTokens": 251,
+    "thinkingTokens": null,
+    "totalTokens": 1124
+  }
+}

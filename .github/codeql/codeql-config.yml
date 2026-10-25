@@ -1,0 +1,11 @@
+# CodeQLの解析対象の設定(.github/workflows/codeql.yml の init から読む)。
+#
+# Workerのテストコード(*.test.ts / *.test.js)は解析しない。テストは本番に載らず、
+# 固定のダミー値を使う。次のような誤検出が、PRが大きいたびに「新規のアラート」として
+# 再表示され、CodeQLのチェックを落としていた:
+#   - js/insufficient-password-hash: テスト用のセッショントークンをSHA-256でハッシュする
+#     箇所が「パスワードの弱いハッシュ」と判定される(本番のハッシュと同じ形を再現しているだけ)。
+# 本番コード(mcp-server/src の *.test でないファイル)はこれまでどおり解析する。
+paths-ignore:
+  - "**/*.test.ts"
+  - "**/*.test.js"

@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_external_semantic_review_ledger",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/unit-plan-semantic-review.mjs": "92be84e0468181d165e6e940c11f77f38a2e91af45c02eeede3b97a2f1c57865",
+    "mcp-server/src/rag-unit-plan-semantic-review.test.js": "e5d9a16714a783577f135be00ed4d1cb60947b8c0589efb6ad5e9fca5b721b81"
+  },
+  "tests": {
+    "targetPassed": 17,
+    "exhaustiveTwoByTwoGraphs": 81,
+    "workerPassed": 1466,
+    "workerIncludesNewTests": 16,
+    "lastAddedTestVerifiedInTargetOnly": true,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-unit-review-all.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": "passed_16",
+  "unresolvedHighMedium": 0,
+  "lowFollowup": "caller_retains_review_artifact_until_review_hash_output_is_added",
+  "syntheticDevelopmentCases": 8,
+  "syntheticDevelopmentRequirements": 13,
+  "oracleHumanReview": "pending",
+  "modelQuality": "not_evaluated",
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "v4HashesUnchanged": true,
+  "failedLocksRetained": 4,
+  "next": "question_only_v4_request_response_binding_offline"
+}

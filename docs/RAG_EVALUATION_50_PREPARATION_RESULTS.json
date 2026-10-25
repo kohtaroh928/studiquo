@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-13",
+  "suiteId": "studiquo-rag-e50-2026-10-13",
+  "bankHash": "8c84e600b9e8dd7368c402a3303de6c4af9066abd475a4e251bc090a937cac6f",
+  "rubricVersion": "2026-10-13-v2",
+  "cases": 50,
+  "developmentQuestions": 30,
+  "reservedHoldoutQuestions": 20,
+  "plannedAnswers": 100,
+  "stages": 17,
+  "apiDispatches": 0,
+  "modelEvaluated": false,
+  "humanGoldReview": "pending",
+  "blinded": false,
+  "newTests": {
+    "pass": 5,
+    "fail": 0
+  },
+  "workerTests": {
+    "pass": 1226,
+    "fail": 0,
+    "skip": 0
+  },
+  "independentReview": "all 50 questions reviewed; Medium area premise corrected; no remaining High/Medium; independent tests 4 passed",
+  "productionChanges": false,
+  "liveExecutionReady": false,
+  "remainingGates": [
+    "independent gold review and human review",
+    "fixed answer-layer adapter separate from retrieval",
+    "whole-suite input/output/cost limits using verified current rates",
+    "durable pre-dispatch journal; uncertain dispatches never automatically retried",
+    "model/prompt/evidence/settings hashes on resume",
+    "holdout not used to tune prompts"
+  ]
+}

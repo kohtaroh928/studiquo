@@ -3255,6 +3255,11 @@ const ROUTES: Array<[RouteAuth, string, string]> = [
   ["bearer", "GET", "/api/mcp/inbox"],
   ["bearer", "POST", "/api/mcp/inbox/abc"],
   // AI
+  ["bearer", "GET", "/api/rag/consent"],
+  ["bearer", "POST", "/api/rag/consent"],
+  ["bearer", "POST", "/api/rag/documents/prepare"],
+  ["bearer", "GET", "/api/rag/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/state"],
+  ["bearer", "POST", "/api/rag/index"],
   ["bearer", "POST", "/api/ai/chat"],
   ["bearer", "POST", "/api/ai/grade"],
   ["bearer", "POST", "/api/ai/review"],

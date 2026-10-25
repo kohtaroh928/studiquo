@@ -32,6 +32,9 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
   const body = await response.text();
   assert.match(body, /プライバシーポリシー/);
   assert.match(body, /OpenAI/);
+  assert.match(body, /抜粋をOpenAIへ送って/);
+  assert.match(body, /13歳以上18歳未満/);
+  assert.doesNotMatch(body, /Google Gemini/);
   assert.match(body, /Google Calendar API/);
   assert.match(body, /yabukohtaroh@gmail\.com/);
   assert.doesNotMatch(body, /【/);
@@ -173,7 +176,7 @@ test("every outside host the Worker contacts is named in the privacy policy, or 
   const body = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx)).text();
   const unaccounted = [...hosts].filter(host =>
     !(host in HOST_TO_POLICY_TERM) && !(host in HOSTS_DELIBERATELY_NOT_IN_THE_POLICY)
-    && !/(^|\.)(example|test|evil\.example|invalid)(\.[a-z]+)?$/.test(host) && !host.endsWith("w3.org"));
+    && !/(^|\.)(example|test|evil\.example|invalid)(\.[a-z]+)?$/.test(host) && host !== "w3.org" && !host.endsWith(".w3.org"));
   assert.deepEqual(unaccounted, [], "a host the code contacts is neither in the policy nor listed as left out on purpose");
   for (const [host, term] of Object.entries(HOST_TO_POLICY_TERM)) {
     if (hosts.has(host)) assert.ok(body.includes(term), `${host} is contacted, so the policy must mention ${term}`);

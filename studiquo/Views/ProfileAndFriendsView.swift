@@ -701,7 +701,10 @@ final class FriendStore: ObservableObject {
     /// declared in the server's apple-app-site-association file (see
     /// invite.js). That page falls back to the studiquo:// scheme itself for
     /// the rare case Universal Links don't fire either.
-    var invitationURL: URL { URL(string: "\(WorkerAIProvider.defaultEndpoint)/invite?token=\(myLinkToken)")! }
+    var invitationURL: URL {
+        guard let endpoint = LaunchStoreEnvironment.endpoint else { preconditionFailure("Missing build endpoint") }
+        return endpoint.appending(path: "invite").appending(queryItems: [URLQueryItem(name: "token", value: myLinkToken)])
+    }
 
     /// False only during the narrow window on a brand-new install before the
     /// first registration completes — sharing/scanning a QR code before this
@@ -1662,7 +1665,7 @@ final class FriendStore: ObservableObject {
         let isLegacyCustomSchemeLink = url.scheme?.lowercased() == "studiquo"
             && url.host?.lowercased() == "friend" && url.path == "/add"
         let isUniversalLink = url.scheme?.lowercased() == "https"
-            && url.host?.lowercased() == URL(string: WorkerAIProvider.defaultEndpoint)?.host?.lowercased()
+            && url.host?.lowercased() == LaunchStoreEnvironment.endpoint?.host?.lowercased()
             && url.path == "/invite"
         guard isLegacyCustomSchemeLink || isUniversalLink,
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return false }

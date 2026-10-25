@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_quoted_planner_io",
+  "manifest": {
+    "version": 1,
+    "contractVersion": 3,
+    "syntheticOnly": true,
+    "questionCount": 8,
+    "externalCalls": 0,
+    "modelEvaluated": false,
+    "releaseAccepted": false,
+    "instructionsHash": "47f8545eb8103b5fab614d7762f99e2e4a21810a7dd597f76076a1d89d4a3295",
+    "schemaHash": "f070b30ddd52d6e38824ae92d91758decdd1895c0c7d30f98d75c42866e7b621",
+    "rows": [
+      {
+        "index": 0,
+        "parentCandidateRequestHash": "e1d354e85d16a2adc20df4f89264d6ee2ca78597092ff45135069dbb3953f14d",
+        "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714",
+        "requestHash": "c51eb6332e11ea94bf340cea220a683cf4b37422ca1629c5dd46d0965ab83a72",
+        "bytes": 6713
+      },
+      {
+        "index": 1,
+        "parentCandidateRequestHash": "4b1802e5d2e2e004cfb64816c792124abcabacf163b57c1b602d88c667a663f4",
+        "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19",
+        "requestHash": "6bf2cbd447810e4c5dded81d8e2b700c3482b725305bdca4d8b414b70f8b95c3",
+        "bytes": 6698
+      },
+      {
+        "index": 2,
+        "parentCandidateRequestHash": "4bdea8398a33c907ff7523fde4de47c47b38c122ac209715378a68a617e31d1d",
+        "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3",
+        "requestHash": "26fed7797a167b9673ab20deec8d5b4a11ba23a7a3a7d9ac02c500a3b4ef4f3a",
+        "bytes": 6697
+      },
+      {
+        "index": 3,
+        "parentCandidateRequestHash": "76faf34c7f3a01a11b3a6a1c8cc07d1ae3880f1e753f40647d161c2d5cbceb54",
+        "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5",
+        "requestHash": "ca0609256fbd583838393ddae527df71162cf6aed60ebf255dff8d81589afdca",
+        "bytes": 6714
+      },
+      {
+        "index": 4,
+        "parentCandidateRequestHash": "546f8d3ed812d1963a1c21eb5f6188f6297bd105dddb374d595261dde2a26a73",
+        "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f",
+        "requestHash": "3ff815260ee0185e6ff8db42a5b0a48b0b4d01574ee06d88ebf53fa967a1a3b0",
+        "bytes": 6720
+      },
+      {
+        "index": 5,
+        "parentCandidateRequestHash": "9b3fa783523e9ba08687eb3693d2960fbcdafbcee6094404e722033bdd08bf36",
+        "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787",
+        "requestHash": "b25985d820ba59f80dcbb65ab47fb3dad72291edeedfbd7b816517bbc1adcc74",
+        "bytes": 6726
+      },
+      {
+        "index": 6,
+        "parentCandidateRequestHash": "5f6a0733a6ad61946a7839f34a256b006425c6c9b3b7df4ef8815d556b75c616",
+        "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88",
+        "requestHash": "6973e4611c96304dc888718dcc3f51990e6d01e9ecbe7b964897502f2f5c5499",
+        "bytes": 6710
+      },
+      {
+        "index": 7,
+        "parentCandidateRequestHash": "31a5ff01c9d83031bf7bf7c6782d23fb4a1882600ce059e5fb4bfe99dda89e88",
+        "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d",
+        "requestHash": "1e2fc1e6df195730a662a46d3cc20ae0de3aff53728e82a440a012c332c725dc",
+        "bytes": 6734
+      }
+    ]
+  },
+  "sourceHashes": {
+    "quoted-task-planner-request.mjs": "ae4ed207e235ccab1d001787c0f12e7b206979f95061fe81807e500367f5f101",
+    "quoted-task-planner-response.mjs": "20be1f11e937036a119d9e38787657af77a9d302ce5676b37f1c197f9e31509e",
+    "task-plan-quoted-v3.mjs": "86307dc0cbdc51ec3b0dd1486b8a7b379e085b846bd1e19f3134d82209d2213c",
+    "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b"
+  },
+  "tests": {
+    "targetPassed": 9,
+    "workerPassed": 1402,
+    "failed": 0,
+    "skipped": 0,
+    "log": "/private/tmp/studiquo-quoted-planner-io-all.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": "passed",
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "schemaAcceptedByAPI": "not_tested",
+  "modelQuality": "not_evaluated",
+  "oldSourcesUnchanged": true,
+  "failedLocksRetained": 3,
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "next": "design_bounded_v3_live_evaluation"
+}

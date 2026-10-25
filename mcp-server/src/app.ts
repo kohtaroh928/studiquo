@@ -1,9 +1,11 @@
+import { handleRAG } from "./rag/index.ts";
+import { handleRawPDFHTTP } from "./rag/pdf-http.ts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI, subscriptionRequiredResponse } from "./ai.ts";
 import { accountCounterKey } from "./ai-credits.ts";
-import { aiPrivacyRejection } from "./ai-privacy.ts";
+import { aiPrivacyRejection, ragPrivacyRejection } from "./ai-privacy.ts";
 import { getPlan, paywallEnabled } from "./entitlements.ts";
 import { handleDocumentCollab } from "./document-collab.ts";
 import { handleLegal } from "./legal.ts";
@@ -393,7 +395,7 @@ const handler = {
       }
       const oauth = await handleMCPOAuth(url, request, env, ctx);
       if (oauth) return oauth;
-      if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
+      if (url.pathname === "/.well-known/apple-app-site-association") return associationFile(env);
       const invitePage = handleInvitePage(url);
       if (invitePage) return invitePage;
 
@@ -415,11 +417,11 @@ const handler = {
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
-      const announcementsPage = handleAnnouncementsPage(url);
+      const announcementsPage = handleAnnouncementsPage(url, env);
       if (announcementsPage) return announcementsPage;
       const announcements = await handleAnnouncements(url, request, env);
       if (announcements) return announcements;
-      const adminPage = handleAdminPage(url);
+      const adminPage = handleAdminPage(url, env);
       if (adminPage) return adminPage;
       const adminWebhook = await handleAdminWebhook(url, request, env);
       if (adminWebhook) return adminWebhook;
@@ -588,6 +590,16 @@ const handler = {
         await env.STUDIQUO_DATA.delete(`actions:${key}`);
         return json({ cleared: true });
       }
+
+      if (url.pathname.startsWith("/api/rag/")) {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        const pdf = await handleRawPDFHTTP(url, request, env, session);
+        if (pdf) return pdf;
+        const privacyFailure = await ragPrivacyRejection(request, env, url.pathname);
+        if (privacyFailure) return privacyFailure;
+        return await handleRAG(url, request, env, session);
+      }
+
 
       // The plan the app should act on. The app can see purchases through
       // RevenueCat but not the server-only legacy-account grant, so it asks

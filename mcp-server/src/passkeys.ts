@@ -21,9 +21,18 @@ import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { PasskeyChallenge, PasskeyRecord } from "./records.ts";
 
-const RP_ID = "api.studiquo.app";
-const ORIGIN = `https://${RP_ID}`;
-const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
+const DEFAULT_RP_ID = "api.studiquo.app";
+const DEFAULT_APP_ID = "972G4VGUA6.com.yabuko.studiquo";
+
+/// Staging must name its own domain and iOS app. Defaults keep the production
+/// contract unchanged, while explicit environment variables let a separate
+/// Worker serve its own AASA file and validate only staging passkeys.
+export function passkeyConfiguration(env?: Pick<Env, "PASSKEY_RP_ID" | "PASSKEY_ORIGIN" | "PASSKEY_APP_ID">) {
+  const rpID = env?.PASSKEY_RP_ID?.trim() || DEFAULT_RP_ID;
+  const origin = env?.PASSKEY_ORIGIN?.trim() || `https://${rpID}`;
+  const appID = env?.PASSKEY_APP_ID?.trim() || DEFAULT_APP_ID;
+  return { rpID, origin, appID };
+}
 
 export async function mintPasskeySession(env: Env, email: string) {
   const link = await linkVerifiedEmail(env, {
@@ -149,16 +158,17 @@ async function scanAndRevoke(env: Env, { accountKey, wanted }: { accountKey?: st
   return { removed };
 }
 
-export function associationFile() {
+export function associationFile(env?: Pick<Env, "PASSKEY_APP_ID">) {
+  const { appID } = passkeyConfiguration(env);
   return json({
-    webcredentials: { apps: [APP_ID] },
+    webcredentials: { apps: [appID] },
     // Lets a friend-invite link use a real https:// URL (see invite.ts)
     // instead of only the studiquo:// custom scheme — a share sent through
     // LINE, Snapchat, etc. opens in that app's own in-app browser, which
     // generally won't hand off a custom scheme to iOS at all, but does
     // respect a Universal Link for a path listed here.
     applinks: {
-      details: [{ appIDs: [APP_ID], components: [{ "/": "/invite" }] }],
+      details: [{ appIDs: [appID], components: [{ "/": "/invite" }] }],
     },
   });
 }
@@ -173,6 +183,7 @@ async function claimChallenge(env: Env, transaction: string) {
 
 export async function handlePasskeys(url: URL, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
+  const { rpID, origin } = passkeyConfiguration(env);
 
   if (url.pathname === "/api/passkeys/email-code/send" && request.method === "POST") {
     const auth = await authenticatedSession(request, env);
@@ -253,7 +264,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const existing = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(`passkeys:user:${userKey}`, "json") ?? [];
     const options = await generateRegistrationOptions({
       rpName: "Studiquo",
-      rpID: RP_ID,
+      rpID,
       userName: email,
       userDisplayName: email,
       userID: new TextEncoder().encode(userKey) as Uint8Array<ArrayBuffer>,
@@ -295,8 +306,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       const verification = await verifyRegistrationResponse({
         response: payload.credential,
         expectedChallenge: pending.challenge,
-        expectedOrigin: ORIGIN,
-        expectedRPID: RP_ID,
+        expectedOrigin: origin,
+        expectedRPID: rpID,
         requireUserVerification: true,
       });
       if (!verification.verified) return json({ error: "Passkey verification failed." }, 401);
@@ -339,7 +350,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
     const options = await generateAuthenticationOptions({
-      rpID: RP_ID,
+      rpID,
       userVerification: "required",
       allowCredentials: [],
     });
@@ -368,8 +379,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       const verification = await verifyAuthenticationResponse({
         response: payload.credential,
         expectedChallenge: pending.challenge,
-        expectedOrigin: ORIGIN,
-        expectedRPID: RP_ID,
+        expectedOrigin: origin,
+        expectedRPID: rpID,
         credential: {
           id: record.id,
           publicKey: new Uint8Array(record.publicKey),
@@ -451,7 +462,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const ids = await listEstablishedPasskeys(env, auth.session.sub, null);
     if (ids.length === 0) return json({ error: "No passkey is registered." }, 404);
     const options = await generateAuthenticationOptions({
-      rpID: RP_ID,
+      rpID,
       userVerification: "required",
       allowCredentials: ids.map(id => ({ id, transports: ["internal"] })),
     });
@@ -487,8 +498,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       const verification = await verifyAuthenticationResponse({
         response: payload.credential,
         expectedChallenge: pending.challenge,
-        expectedOrigin: ORIGIN,
-        expectedRPID: RP_ID,
+        expectedOrigin: origin,
+        expectedRPID: rpID,
         credential: {
           id: record.id,
           publicKey: new Uint8Array(record.publicKey),

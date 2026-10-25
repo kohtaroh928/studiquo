@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-12",
+  "policyVersion": "v3",
+  "syntheticOnly": true,
+  "method": "production handleAI + fixed local synthetic retrieval + real Gemini",
+  "requestedModel": "gemini-3.5-flash",
+  "requested": 6,
+  "attempted": 2,
+  "dispatches": 2,
+  "completed": 1,
+  "completedPairs": 0,
+  "unattempted": 4,
+  "stopped": true,
+  "styleOrder": "source_first",
+  "calls": [
+    {
+      "httpStatus": 200,
+      "elapsedMs": 8339,
+      "model": "gemini-3.5-flash",
+      "modelVersion": "gemini-3.6-flash",
+      "usage": {
+        "prompt": 1757,
+        "output": 192,
+        "thoughts": 1113,
+        "total": 3062
+      },
+      "finishReasons": [
+        "STOP"
+      ],
+      "error": null
+    },
+    {
+      "httpStatus": 503,
+      "elapsedMs": 8313,
+      "model": "gemini-3.5-flash",
+      "modelVersion": null,
+      "usage": null,
+      "finishReasons": [],
+      "error": "upstream_http"
+    }
+  ],
+  "rows": [
+    {
+      "id": "learning-circuit",
+      "style": "source_only",
+      "httpStatus": 200,
+      "status": "grounded",
+      "elapsedMs": 8353,
+      "completed": true,
+      "inputHash": "506fdaefdab852711ae43aaaa29f31d1d684a12946f65f52abb5e7b6074f697c",
+      "referenceHash": "15c976c42d8afd9cb80955cc31ca5370699e4ff18550c03fcad42130d42a96a8",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [
+        1
+      ],
+      "semanticReview": "Codex and independent AI review: major facts preserved; unnecessary substitution and quantity/numeric ambiguity remain",
+      "teacherReview": "pending"
+    },
+    {
+      "id": "learning-circuit",
+      "style": "explain",
+      "httpStatus": 500,
+      "status": null,
+      "elapsedMs": 8320,
+      "completed": false,
+      "inputHash": "506fdaefdab852711ae43aaaa29f31d1d684a12946f65f52abb5e7b6074f697c",
+      "referenceHash": "15c976c42d8afd9cb80955cc31ca5370699e4ff18550c03fcad42130d42a96a8",
+      "configHash": "dc5752c7d2c70a2c6fcca66a1b45ef2ba5799074c24b5c1bf447383263ad486f",
+      "citationPages": [],
+      "semanticReview": "not generated; no quality score",
+      "teacherReview": "pending"
+    }
+  ],
+  "nextPilot": {
+    "caseIds": [
+      "learning-reservation-transfer",
+      "learning-circuit"
+    ],
+    "styleOrder": "explain_first",
+    "planned": 4,
+    "executed": false
+  },
+  "limitations": [
+    "local synthetic retrieval, not real Cloudflare/OCR/iPad",
+    "no completed pair in this round",
+    "503 cause unclassified; response body discarded",
+    "cost of failed call unknown",
+    "different style order next time; do not pool as precision estimate"
+  ]
+}

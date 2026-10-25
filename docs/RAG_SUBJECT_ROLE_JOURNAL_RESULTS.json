@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-16",
+  "scope": "private offline stage0 persistence only",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-paired-journal.mjs": "5510103d67e7fad13cf9b256a501afd640993bde2f1b0a474a40e6c27cc82192",
+    "mcp-server/src/rag-subject-role-journal.test.js": "a26fca85049366822ce5e0a464f3e48b058f306a1c3bf715b099fd234440071b"
+  },
+  "plannedPairs": 12,
+  "plannedJobs": 24,
+  "maxExecutableStage": 0,
+  "transportAttached": false,
+  "persistenceAttached": true,
+  "reviewGateAttached": false,
+  "tests": {
+    "target": {
+      "pass": 14,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1582,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCode": {
+      "pass": 14,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 12,
+      "fail": 0,
+      "note": "final extra two regression tests independently rechecked by code reviewer; production module unchanged"
+    }
+  },
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "priorCandidateAndLedgerSourceHashesUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "priorStopJournalHashUnchanged": true,
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "limits": [
+    "stage1 and review gate not connected",
+    "no paid dispatch or secret reflection guard",
+    "stop marker restoration on OS sync fault is best effort"
+  ],
+  "next": "neutral packet/mapping and original review artifact gate with all prior-stage revalidation, before bounded transport under new manifest"
+}
