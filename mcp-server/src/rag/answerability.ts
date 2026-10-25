@@ -64,7 +64,11 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
   const at = facets.indexOf('quantity'); if (at >= 0) facets.splice(at, 1);
  }
  const askedUnit = ['何パーセント', '何度', '何秒', '何キロ', '何メートル'].map(w => text.includes(w) ? w : null).find(Boolean) ?? null;
- return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit,
+ // The attribute the question asks for: the noun just before "は/が 何パーセント" ("発生率は何パーセント", "…を呈した選手は何パーセント").
+ // A leading verb phrase is cut ("見つかった割合" -> "割合"). Without it the same-sentence route stays off.
+ const attributeRun = askedUnit ? new RegExp('([^のをはが、。,\\s]{1,16})(?:は|が)(?:約)?' + escapePattern(askedUnit)).exec(text)?.[1] : null;
+ const askedAttribute = attributeRun ? (attributeRun.replace(/^.*[たるだて]/u, '').length >= 2 ? attributeRun.replace(/^.*[たるだて]/u, '') : attributeRun) : null;
+ return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit, askedAttribute,
    completeness: facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
    freshness: facets.length > 0 && /最新|現在|直近|今日|今年/u.test(text) };
 }
@@ -112,23 +116,34 @@ function linkedValue(span: any, rule: any, requirements: any, target: any) {
 }
 
 // A question that asks for a unit ("何パーセント") names it, so the value only has to be in that unit. The attribute word
-// before it is open vocabulary (発生率, 標高, ...); the closed label list used for other quantities cannot cover it.
+// is open vocabulary (発生率, 標高, ...), so it is taken from the question instead of the closed label list.
+// Units that continue into another unit or a different meaning are excluded (m/s, m², km/h, キログラム, 5秒前, 3度目).
 const askedUnitValue: Record<string, RegExp> = {
- '何パーセント': /\d[\d,.]*\s*(?:%|パーセント)/u, '何度': /\d[\d,.]*\s*(?:°|˚|度)/u, '何秒': /\d[\d,.]*\s*秒/u,
- '何キロ': /\d[\d,.]*\s*(?:km|キロ)/u, '何メートル': /\d[\d,.]*\s*(?:メートル|m(?![a-z]))/u,
+ '何パーセント': /\d[\d,.]*(?:%|パーセント)/gu, '何度': /\d[\d,.]*(?:°|˚|度)(?!も|目|合|ずつ|ほど行|回)/gu, '何秒': /\d[\d,.]*秒(?!前|後|に|ごと|おき|速)/gu,
+ '何キロ': /\d[\d,.]*(?:km(?![a-z\/²³])|キロ(?!グラム|バイト|ワット|リットル|カロリー|ヘルツ))/gu,
+ '何メートル': /\d[\d,.]*(?:メートル|m(?![a-z\/²³]))/gu,
 };
-// The subject and a value in the asked unit in the same sentence, with no comparison and the asked attribute word
-// (割合 may be reported as a rate). The subject is compared without spaces (an excerpt may write "Hi-Lo テスト").
+const attributeForms = (attribute: string) => attribute.endsWith('割合') || attribute.endsWith('率') ? /割合|率/gu : new RegExp(escapePattern(attribute), 'gu');
+// The attribute is followed by the value (発生率は 59.0 %) or the value by it (約 90 % の選手), with nothing between but particles.
+const FILLER = /^(?:は|が|の|も|で|約|およそ|ほぼ|平均|全体|、|,|:|：)*$/u;
+// The subject and a value in the asked unit in the same sentence, with no comparison. The subject is compared without
+// spaces (an excerpt may write "Hi-Lo テスト") and must not continue into another word ("富士" in "富士通").
 function sameSentenceUnitValue(clause: any, target: any, requirements: any) {
- const value = askedUnitValue[requirements.askedUnit];
- if (!value || !target || requirements.symbolic) return false;
- const compact = clause.replace(/\s/gu, '');
- if (!compact.includes(target.replace(/\s/gu, ''))) return false;
- if (/比較|比べ|別の|他の|に対して|に対し/u.test(clause)) return false;
+ const valueRe = askedUnitValue[requirements.askedUnit];
+ const attribute = requirements.askedAttribute;
+ if (!valueRe || !attribute || attribute.length < 2 || !target || requirements.symbolic) return false;
+ const compact = clause.replace(/\s/gu, ''), name = target.replace(/\s/gu, '');
+ if (name.length < 2 || /比較|比べ|別の|他の|に対して|に対し/u.test(clause)) return false;
+ let named = false;
+ for (let at = compact.indexOf(name); at >= 0 && !named; at = compact.indexOf(name, at + 1))
+  named = !/[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9]/u.test(compact[at + name.length] ?? '');
+ if (!named) return false;
  const label = requirements.quantityLabel;
  if (label && !(clause.includes(label) || label === '割合' && /率/u.test(clause))) return false;
  if (!requirements.conditions.every((c: any) => { const at = compact.indexOf(c); return at >= 0 && (at === 0 || !/[\d.]/u.test(compact[at - 1])); })) return false;
- return value.test(clause);
+ const values = [...compact.matchAll(valueRe)].map(m => [m.index!, m.index! + m[0].length] as const);
+ const names = [...compact.matchAll(attributeForms(attribute))].map(m => [m.index!, m.index! + m[0].length] as const);
+ return names.some(([an, ae]) => values.some(([vs, ve]) => FILLER.test(compact.slice(ae, Math.max(ae, vs))) && vs >= ae || FILLER.test(compact.slice(Math.min(ve, an), an)) && ve <= an));
 }
 
 function symbolicSupport(text: any, requirements: any, target: any) {
