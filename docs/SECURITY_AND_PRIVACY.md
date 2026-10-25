@@ -1,6 +1,6 @@
 # Studiquo Security and Privacy
 
-最終更新: 2026-10-17  
+最終更新: 2026-10-25  
 状態: 現行実装を基準にした内部設計・運用基準
 
 読み方: 「現行」「現在」は開発ブランチの実装を指し、本番へ反映済みとは限らない。独立レビューを実施し、指摘に基づく修正を進めている。公開手順と未完了項目は`PRIVACY_RELEASE_CHECKLIST.md`を参照する。
@@ -108,7 +108,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 
 - Workerが発行した`<発行時刻>.<乱数>`形式の不透明なBearer tokenだけを受け付ける。
 - token自体の形式と90日期限だけでなく、KVに実在するsession、失効状態、canonical identity、アカウント削除状態を毎回確認する。
-- 端末では`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`のKeychainへ保存する。
+- 端末では`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`のKeychainへ保存する。
 - 起動時に認証済み状態を復元するには、端末内のidentityとローカルsessionだけでなく、未期限のWorker発行tokenも必要とする。tokenが欠落・期限切れなら、利用者をログイン画面へ戻す。
 - サーバーではtokenのSHA-256 hashをキーにし、生tokenを保存しない。
 - ログアウトはローカルtokenを先に削除し、push device登録解除とsession失効をbest effortで行う。
@@ -164,7 +164,7 @@ Argon2idへの移行は、2段階でリリースする。詳しい手順と戻�
 
 | 情報 | accessibility | 同期 |
 | --- | --- | --- |
-| Worker token、端末内ログインidentity | WhenUnlockedThisDeviceOnly | しない |
+| Worker token、端末内ログインidentity | AfterFirstUnlockThisDeviceOnly | しない |
 | 利用者が設定するAnthropic API key | WhenUnlockedThisDeviceOnly | しない |
 | 保護ノートのAES-256鍵 | WhenUnlocked | iCloud Keychainで同期 |
 | APNs device token | AfterFirstUnlockThisDeviceOnly | しない |

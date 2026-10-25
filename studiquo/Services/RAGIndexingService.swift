@@ -112,6 +112,12 @@ enum RAGConsent {
     }
     static func grant() { UserDefaults.standard.set(version, forKey: key) }
     static func revoke() { UserDefaults.standard.removeObject(forKey: key) }
+
+    /// The permission screen opens by itself the first time the AI chat is shown,
+    /// once per install. Settings keeps it reachable afterwards.
+    private static let firstChatPromptKey = LaunchStoreEnvironment.namespaced("ragPermissionShownOnFirstChat")
+    static var hasShownFirstChatPrompt: Bool { UserDefaults.standard.bool(forKey: firstChatPromptKey) }
+    static func markFirstChatPromptShown() { UserDefaults.standard.set(true, forKey: firstChatPromptKey) }
 }
 
 /// All uploads are explicit. Opening/importing a notebook never invokes indexing.
