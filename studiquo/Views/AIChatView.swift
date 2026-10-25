@@ -103,7 +103,10 @@ struct AIChatPanel: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { showsRAG = false } } }
             }
         }
-        .task { ragAvailable = await RAGIndexingService().isEnabled() }
+        .task {
+            ragAvailable = await RAGIndexingService().isEnabled()
+            presentRAGPermissionOnFirstOpen()
+        }
         .overlay {
             if store.pendingConsentSend != nil {
                 consentCard
@@ -112,6 +115,17 @@ struct AIChatPanel: View {
         .animation(.easeOut(duration: 0.18), value: store.pendingConsentSend != nil)
         .onAppear { store.surfaceDidAppear(surfaceID) }
         .onDisappear { store.surfaceDidDisappear(surfaceID) }
+    }
+
+    /// Opens the document-search permission screen the first time the AI chat
+    /// is shown (only when the feature is available). Marked before presenting,
+    /// so a second chat pane or a reopen never shows it again.
+    private func presentRAGPermissionOnFirstOpen() {
+        guard ragAvailable, !showsRAG, !RAGConsent.hasShownFirstChatPrompt,
+              store.pendingConsentSend == nil else { return }
+        RAGConsent.markFirstChatPromptShown()
+        guard !RAGConsent.isGranted, !RAGLibrarySyncService.shared.canSearch else { return }
+        showsRAG = true
     }
 
     private var consentCard: some View {
