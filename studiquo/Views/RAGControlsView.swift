@@ -32,8 +32,12 @@ struct RAGControlsView: View {
             }
             if !RAGLibrarySyncService.shared.isManaged {
             Section("資料検索のクラウド送信") {
-                Text("選択したノート・PDFの本文、文字認識した本文、タイトル、ページ番号をCloudflareへ送信します。構造解析済みの資料では、見出し、要素の種類・位置、解析方式などの情報も送信し、本文と一緒に保存します。CloudflareのAIで検索用データを作成し、質問との関連度を評価します。本文と検索用データは資料の検索データ削除またはアカウント削除まで保存されます。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索で見つかった抜粋と出典の位置情報は回答のためOpenAIへ送信します。原PDFはこの処理では送信しません。保護されたノートは対象外です。")
-                    .font(.footnote)
+                RAGDetailDisclosure(
+                    summary: "選択したノート・PDFの本文などをCloudflareへ送信して検索用データを作り、回答のため関連する抜粋をOpenAIへ送信します。送信内容と保存期間は「詳細」で確認できます。",
+                    details: [
+                        "選択したノート・PDFの本文、文字認識した本文、タイトル、ページ番号をCloudflareへ送信します。構造解析済みの資料では、見出し、要素の種類・位置、解析方式などの情報も送信し、本文と一緒に保存します。CloudflareのAIで検索用データを作成し、質問との関連度を評価します。本文と検索用データは資料の検索データ削除またはアカウント削除まで保存されます。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索で見つかった抜粋と出典の位置情報は回答のためOpenAIへ送信します。原PDFはこの処理では送信しません。保護されたノートは対象外です。"
+                    ],
+                    identifier: "rag-cloud-detail")
                 Toggle("資料検索の保存・AI処理を許可する", isOn: $consent)
                     .onChange(of: consent) { _, value in
                         if value { RAGConsent.grant() } else { RAGConsent.revoke(); store.ragScope = nil; cancelOperation() }
@@ -199,9 +203,13 @@ struct RAGCitationLinks: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                    }.font(.caption).accessibilityIdentifier("rag-citation-\(citation.pageNumber)")
+                    }
+                    .font(.caption)
+                    .multilineTextAlignment(.leading)
+                    .accessibilityIdentifier("rag-citation-\(citation.pageNumber)")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
