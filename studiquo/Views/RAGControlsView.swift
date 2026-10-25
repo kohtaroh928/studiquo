@@ -215,9 +215,9 @@ struct RAGCitationLinks: View {
             .sheet(item: $selectedCitation) { citation in
                 NavigationStack {
                     Group {
-                        if let (notebook, index) = RAGCitationNavigation.resolve(citation, notebooks: notebooks) {
-                            PageCanvasContainer(page: notebook.sortedPages[index])
-                                .allowsHitTesting(false)
+                        if let (notebook, index) = RAGCitationNavigation.resolve(citation, notebooks: notebooks),
+                           let data = ExportService.pdfData(pages: [notebook.sortedPages[index]]) {
+                            PageNativePDFView(pdfData: data)
                                 .padding()
                         } else {
                             ContentUnavailableView("資料を開けません", systemImage: "doc.questionmark", description: Text("資料が削除されたか、現在利用できません。"))

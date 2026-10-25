@@ -1,6 +1,14 @@
+## 出典ポップアップ追記
+
+独立レビューで編集キャンバスの終了時保存によるfingerprint変更を検出。ExportServiceの1ページPDF表示へ修正。最新origin/main統合中。ビルド・実機確認は継続中。
+
 ## 2026-10-26 出典ページのポップアップ
 
 codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を追加。既存resolveで利用可能性を確認し、PageCanvasContainerを操作無効で表示。ビルド・独立レビュー・実機確認は未実施。次はビルドと表示寸法の確認。GitHub Projectはunknown owner typeで接続失敗、未記録。今回起動した継続processなし。
+
+## 2026-10-25 Codex 攻撃試験
+
+今回: main 7a16648からcodex/rag-security-attackでローカル試験101成功。合成メールがマスク前にrerank引数へ渡ることを動的再現（外部AIはモック）。詳細RAG_SECURITY_ATTACK_REPORT_20261025.md。実LLM/remote/VM/実機は未実施。次は送信前マスクと実モデル注入評価。常駐processなし。GitHub Projectはunknown owner typeで未記録。ユーザー依頼で試験記録2ファイルをコミット・ブランチpushする。実装変更なし。
 
 ## 2026-10-23: 別資料での探索評価
 
