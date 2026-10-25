@@ -1,3 +1,7 @@
+## 2026-10-26 出典ページのポップアップ
+
+codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を追加。既存resolveで利用可能性を確認し、PageCanvasContainerを操作無効で表示。ビルド・独立レビュー・実機確認は未実施。次はビルドと表示寸法の確認。GitHub Projectはunknown owner typeで接続失敗、未記録。今回起動した継続processなし。
+
 ## 2026-10-23: 別資料での探索評価
 
 固定した地理教材44問をshadow/on各1回測定。答えなし出典なしは12/15→15/15、答えありは新規停止0/29だがgrounded→partialが3/29。比較5問は全根拠を得ても両設定で全問partial。判定前から答えあり2/29が停止。shadow判定timeout 1件。質問はリポジトリ外の私有領域に保存。詳細 `docs/RAG_SECOND_MATERIAL_REPORT_20261023.md`、条件 `docs/RAG_SECOND_MATERIAL_PREREGISTRATION.md`。別worktree `codex/rag-comparison-analysis`、未コミット。最終回答・ステージング実質問・iPad/PDFは未検証。
