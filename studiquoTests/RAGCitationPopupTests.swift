@@ -172,4 +172,110 @@ final class RAGCitationPopupTests: XCTestCase {
         populatedHost.view.layoutIfNeeded()
         XCTAssertNotNil(populatedHost.view)
     }
+
+    // MARK: - Item 2: Citation navigation notification & split-pane consumption
+
+    func testCitationOpenPostsNotificationAndConsumesForMatchingPaneNotebookOnly() {
+        let primaryNotebook = Notebook(title: "Primary Notebook")
+        let secondaryNotebook = Notebook(title: "Secondary Notebook")
+        for index in 0..<5 {
+            primaryNotebook.addPage(NotePage(order: index))
+            secondaryNotebook.addPage(NotePage(order: index))
+        }
+
+        let citation = RAGCitation(
+            sourceId: secondaryNotebook.ragID,
+            title: secondaryNotebook.title,
+            pageNumber: 4,
+            chunkId: "chunk-sec-4"
+        )
+
+        var receivedCitation: RAGCitation?
+        let token = NotificationCenter.default.addObserver(
+            forName: RAGCitationNavigation.notification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            receivedCitation = notification.object as? RAGCitation
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        RAGCitationNavigation.open(citation)
+        XCTAssertEqual(receivedCitation, citation)
+
+        // Primary pane checks first in applyPendingRAGCitation(): must return nil without clearing pending
+        XCTAssertNil(RAGCitationNavigation.consume(for: primaryNotebook))
+        // Secondary pane checks next: must receive 0-based page index 3 and clear pending
+        XCTAssertEqual(RAGCitationNavigation.consume(for: secondaryNotebook), 3)
+        // Subsequent consume must return nil
+        XCTAssertNil(RAGCitationNavigation.consume(for: secondaryNotebook))
+    }
+
+    func testCitationConsumeRejectsNotebookThatBecameLockedOrTrashedAfterOpen() {
+        let notebook = Notebook(title: "Mutable State Notebook")
+        for index in 0..<3 {
+            notebook.addPage(NotePage(order: index))
+        }
+        let citation = RAGCitation(sourceId: notebook.ragID, title: notebook.title, pageNumber: 2, chunkId: "chunk-2")
+
+        RAGCitationNavigation.open(citation)
+        notebook.isLocked = true
+        XCTAssertNil(RAGCitationNavigation.consume(for: notebook))
+
+        notebook.isLocked = false
+        notebook.isTrashed = true
+        XCTAssertNil(RAGCitationNavigation.consume(for: notebook))
+
+        // Once unlocked and untrashed, the pending citation is still guarded or consumable
+        notebook.isTrashed = false
+        XCTAssertEqual(RAGCitationNavigation.consume(for: notebook), 1)
+    }
+
+    // MARK: - Item 3: First AI chat open RAG permission prompt & detail disclosure
+
+    func testFirstChatPromptFlagPersistsOnceAndStaysIndependentOfConsentGrantRevoke() {
+        let key = LaunchStoreEnvironment.namespaced("ragPermissionShownOnFirstChat")
+        let previousPromptValue = UserDefaults.standard.object(forKey: key)
+        let consentWasGranted = RAGConsent.isGranted
+        defer {
+            if let previousPromptValue {
+                UserDefaults.standard.set(previousPromptValue, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            if consentWasGranted { RAGConsent.grant() } else { RAGConsent.revoke() }
+        }
+
+        UserDefaults.standard.removeObject(forKey: key)
+        RAGConsent.revoke()
+
+        XCTAssertFalse(RAGConsent.hasShownFirstChatPrompt)
+        XCTAssertFalse(RAGConsent.isGranted)
+
+        RAGConsent.markFirstChatPromptShown()
+        XCTAssertTrue(RAGConsent.hasShownFirstChatPrompt)
+        XCTAssertFalse(RAGConsent.isGranted, "Marking the first-open prompt shown must not implicitly grant RAG consent")
+
+        // Granting and later revoking RAG consent must not reset the one-time first-open prompt flag
+        RAGConsent.grant()
+        XCTAssertTrue(RAGConsent.isGranted)
+        XCTAssertTrue(RAGConsent.hasShownFirstChatPrompt)
+
+        RAGConsent.revoke()
+        XCTAssertFalse(RAGConsent.isGranted)
+        XCTAssertTrue(RAGConsent.hasShownFirstChatPrompt)
+    }
+
+    func testRAGDetailDisclosureRendersSummaryAndDetailsViewHierarchy() {
+        let disclosure = RAGDetailDisclosure(
+            summary: "要約テキスト",
+            details: ["詳細段落1", "詳細段落2"],
+            identifier: "rag-auto-detail"
+        )
+        let host = UIHostingController(rootView: disclosure)
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 320, height: 180)
+        host.view.layoutIfNeeded()
+        XCTAssertNotNil(host.view)
+    }
 }
