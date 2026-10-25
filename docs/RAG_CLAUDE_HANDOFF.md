@@ -1,3 +1,7 @@
+## 2026-10-26 出典ポップアップの実機確認・PR
+
+RAG出典ページをチャット内のシートで表示する変更（8ec1b80、PDF表示修正fa65731）を、iPad実機で表示・閉じる・再表示まで確認済み。最新mainを取り込んだ3fe3935後、PR #56（https://github.com/kohtaroh928/studiquo/pull/56）を作成・pushした。GitHub ActionsはWorkerテスト等が成功し、iOSビルド・Swift解析・Security SASTが実行中のためmainマージ待ち。保護ルールを迂回せず、auto mergeはリポジトリで無効。未コミットだったLocalizable.xcstringsは、出典の利用不能メッセージ追加と不要な旧文言の同期としてf981687に別コミットで保存済み。確認枠には同一の未コミット変更が残っているため、verify-slot releaseは安全のため拒否された。GitHub Projectに「RAG出典ページをチャット内シートで表示」を進行中・Codex担当で記録済み。常駐processなし。次は残る必須チェックの成功確認、PRマージ、確認枠の翻訳ファイルを安全に整理して返却。
+
 ## 2026-10-26 実機確認の案内
 
 ユーザーのmain staging Runに未反映との報告を調査。メインHEADは39d122bで本変更80e7a43は作業worktreeのみ。メインはLocalizable.xcstringsがUU（競合中）のため確認枠を切替せず。Xcodeの開いているパス取得はosascriptエラーで確認不能。次はrag-citation-popupのプロジェクトを直接開きstudiquo-stagingで実機確認。新たなビルド・push・mergeなし。GitHub Projectへの今回の追加記録は未実施、既存ドラフト継続。常駐processなし。
