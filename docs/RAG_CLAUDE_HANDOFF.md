@@ -1,3 +1,23 @@
+## 2026-10-26 出典ポップアップの実機確認・PR
+
+RAG出典ページをチャット内のシートで表示する変更（8ec1b80、PDF表示修正fa65731）を、iPad実機で表示・閉じる・再表示まで確認済み。最新mainを取り込んだ3fe3935後、PR #56（https://github.com/kohtaroh928/studiquo/pull/56）を作成・pushした。GitHub ActionsはWorkerテスト等が成功し、iOSビルド・Swift解析・Security SASTが実行中のためmainマージ待ち。保護ルールを迂回せず、auto mergeはリポジトリで無効。未コミットだったLocalizable.xcstringsは、出典の利用不能メッセージ追加と不要な旧文言の同期としてf981687に別コミットで保存済み。確認枠には同一の未コミット変更が残っているため、verify-slot releaseは安全のため拒否された。GitHub Projectに「RAG出典ページをチャット内シートで表示」を進行中・Codex担当で記録済み。常駐processなし。次は残る必須チェックの成功確認、PRマージ、確認枠の翻訳ファイルを安全に整理して返却。
+
+## 2026-10-26 実機確認の案内
+
+ユーザーのmain staging Runに未反映との報告を調査。メインHEADは39d122bで本変更80e7a43は作業worktreeのみ。メインはLocalizable.xcstringsがUU（競合中）のため確認枠を切替せず。Xcodeの開いているパス取得はosascriptエラーで確認不能。次はrag-citation-popupのプロジェクトを直接開きstudiquo-stagingで実機確認。新たなビルド・push・mergeなし。GitHub Projectへの今回の追加記録は未実施、既存ドラフト継続。常駐processなし。
+
+## 2026-10-26 コミット依頼の結果
+
+変更は8ec1b80、最新origin/main統合とPDF表示修正はfa65731に保存。シミュレータDebugビルド成功、独立再レビュー問題なし、diff check成功。実機は未確認。確認枠のmainに既存未コミット変更があるため切替せず、push/mergeは手順に従い保留。次は専用worktreeのstudiquo-stagingを実機Runして出典表示・閉じる・再表示を確認。GitHub ProjectドラフトPVTI_lAHODtsRbs4Bom7vzhDY1pAに記録済み。今回のビルドprocess終了。Project資料の更新なし。
+
+## 出典ポップアップ追記
+
+独立レビューで編集キャンバスの終了時保存によるfingerprint変更を検出。ExportServiceの1ページPDF表示へ修正。最新origin/main統合中。ビルド・実機確認は継続中。
+
+## 2026-10-26 出典ページのポップアップ
+
+codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を追加。既存resolveで利用可能性を確認し、PageCanvasContainerを操作無効で表示。ビルド・独立レビュー・実機確認は未実施。次はビルドと表示寸法の確認。GitHub Projectはunknown owner typeで接続失敗、未記録。今回起動した継続processなし。
+
 ## 2026-10-25 Codex 攻撃試験
 
 今回: main 7a16648からcodex/rag-security-attackでローカル試験101成功。合成メールがマスク前にrerank引数へ渡ることを動的再現（外部AIはモック）。詳細RAG_SECURITY_ATTACK_REPORT_20261025.md。実LLM/remote/VM/実機は未実施。次は送信前マスクと実モデル注入評価。常駐processなし。GitHub Projectはunknown owner typeで未記録。ユーザー依頼で試験記録2ファイルをコミット・ブランチpushする。実装変更なし。
