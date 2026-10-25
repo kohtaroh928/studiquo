@@ -68,3 +68,23 @@ test('repeated attributes are retained for both targets and cannot be supplied b
  const hit=await search(query,['水平距離の代表値は10m。鉛直距離を紹介する。']);
  assert.equal(hit.status,'partial');
 });
+
+test('the topic marker ends the subjects: the predicate is never part of a subject name', () => {
+ for (const [query, groups] of [
+  ['鉄道と船舶は、それぞれ貨物輸送でどのように使われますか', ['鉄道', '船舶']],
+  ['河川の氾濫と地盤の液状化は、それぞれ何が原因ですか', ['河川の氾濫', '地盤の液状化']],
+  ['火山灰と溶岩では、広がり方にどのような違いがありますか', ['火山灰', '溶岩']],
+  ['赤の旗と青の旗の例は、それぞれ何を示しますか', ['赤の旗', '青の旗の例']],
+  ['光と音の違いは何ですか', ['光', '音']],
+ ] as const) {
+  const plan = queryPlan(query);
+  assert.deepEqual(plan.coverageGroups, groups, query);
+  assert.ok(plan.queries.slice(1).every(q => !/それぞれ|どのよう|どんな/u.test(q)), query);
+ }
+ // A single subject whose predicate contains と is not split by the topic cut.
+ assert.deepEqual(queryPlan('地図記号は、田と畑をどう区別しますか').coverageGroups, []);
+ // "Xとは、…" is a definition lead-in, not a topic marker that closes two subjects.
+ assert.equal(queryPlan('鉄道とは、貨物と旅客の違いを説明して').coverageGroups.length, 2); // unchanged from before: not collapsed to []
+ assert.deepEqual(queryPlan('鉄道および船舶は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶']);
+ assert.deepEqual(queryPlan('鉄道と船舶と航空機は、それぞれ何ですか').coverageGroups, ['鉄道', '船舶', '航空機']);
+});
