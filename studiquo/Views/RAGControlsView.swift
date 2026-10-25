@@ -190,12 +190,14 @@ struct RAGControlsView: View {
 
 struct RAGCitationLinks: View {
     let citations: [RAGCitation]
+    @Query private var notebooks: [Notebook]
+    @State private var selectedCitation: RAGCitation?
     var body: some View {
         if !citations.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("出典").font(.caption).foregroundStyle(.secondary)
                 ForEach(citations) { citation in
-                    Button { RAGCitationNavigation.open(citation) } label: {
+                    Button { selectedCitation = citation } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Label("\(citation.title) · \(citation.pageNumber)ページ", systemImage: "doc.text.magnifyingglass")
                             if let metadata = citation.metadata {
@@ -210,6 +212,26 @@ struct RAGCitationLinks: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(item: $selectedCitation) { citation in
+                NavigationStack {
+                    Group {
+                        if let (notebook, index) = RAGCitationNavigation.resolve(citation, notebooks: notebooks),
+                           let data = ExportService.pdfData(pages: [notebook.sortedPages[index]]) {
+                            PageNativePDFView(pdfData: data)
+                                .padding()
+                        } else {
+                            ContentUnavailableView("資料を開けません", systemImage: "doc.questionmark", description: Text("資料が削除されたか、現在利用できません。"))
+                        }
+                    }
+                    .navigationTitle("\(citation.title) · \(citation.pageNumber)ページ")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("閉じる") { selectedCitation = nil }
+                        }
+                    }
+                }
+            }
         }
     }
 }
