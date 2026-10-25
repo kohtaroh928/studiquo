@@ -1,0 +1,90 @@
+#!/bin/sh
+# 実機確認の「確認枠」(メインのチェックアウト)の予約札を扱う。
+#   scripts/verify-slot acquire <ブランチ>  札を取り、メインのフォルダでそのコミットに切り替える
+#   scripts/verify-slot release             メインのフォルダを元に戻し、札を返す
+#   scripts/verify-slot status              札を持っている人を表示する
+# 札は .git/studiquo-verify.lock(gitの管理外・全worktree共通)。
+# 編集はしない。切り替えはdetached HEADで行うので、他のworktreeが使うブランチでも確認できる。
+set -eu
+
+COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
+MAIN=$(dirname "$COMMON")
+LOCK="$COMMON/studiquo-verify.lock"
+OWNER=${AGENT_NAME:-${USER:-unknown}}
+STALE_HOURS=4
+
+age_hours() {
+  now=$(date +%s)
+  then=$(sed -n 's/^started_epoch=//p' "$LOCK")
+  echo $(( (now - then) / 3600 ))
+}
+
+show_lock() {
+  echo "確認枠は使用中です。"
+  sed 's/^/  /' "$LOCK"
+  h=$(age_hours)
+  echo "  経過: ${h}時間"
+  if [ "$h" -ge "$STALE_HOURS" ]; then
+    echo "  古い札の可能性があります。使用者に確認し、不要ならユーザーの了承を得て release してください。"
+  fi
+}
+
+case "${1:-status}" in
+  status)
+    if [ -f "$LOCK" ]; then show_lock; else echo "確認枠は空いています。"; fi
+    ;;
+  acquire)
+    ref=${2:?"使い方: scripts/verify-slot acquire <ブランチ>"}
+    if [ -f "$LOCK" ]; then
+      show_lock >&2
+      echo "ほかの人が使用中のため取れません。ユーザーに順番を聞いてください。" >&2
+      exit 1
+    fi
+    commit=$(git rev-parse --verify "$ref^{commit}") || { echo "$ref が見つかりません。" >&2; exit 1; }
+    if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then
+      echo "メインのフォルダに未コミットの変更があるため切り替えません。ユーザーに扱いを確認してください:" >&2
+      git -C "$MAIN" status --short --untracked-files=no >&2
+      exit 1
+    fi
+    back=$(git -C "$MAIN" symbolic-ref --quiet --short HEAD || git -C "$MAIN" rev-parse HEAD)
+    {
+      echo "owner=$OWNER"
+      echo "branch=$ref"
+      echo "commit=$commit"
+      echo "return_to=$back"
+      echo "started=$(date '+%Y-%m-%d %H:%M:%S')"
+      echo "started_epoch=$(date +%s)"
+    } > "$LOCK"
+    if ! git -C "$MAIN" switch --detach "$commit" >/dev/null 2>&1; then
+      rm -f "$LOCK"
+      echo "切り替えに失敗したため、札は返しました。" >&2
+      exit 1
+    fi
+    if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
+      (cd "$MAIN" && xcodegen generate >/dev/null)
+    fi
+    echo "札を取りました。確認枠は $ref ($(echo "$commit" | cut -c1-7)) です。"
+    echo "  開く: open $MAIN/studiquo.xcodeproj"
+    echo "  スキーム: studiquo-staging"
+    echo "  終わったら: scripts/verify-slot release"
+    ;;
+  release)
+    if [ ! -f "$LOCK" ]; then echo "札はありません。"; exit 0; fi
+    back=$(sed -n 's/^return_to=//p' "$LOCK")
+    if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then
+      echo "確認枠に未コミットの変更があるため戻しません。ユーザーに確認してください:" >&2
+      git -C "$MAIN" status --short --untracked-files=no >&2
+      exit 1
+    fi
+    git -C "$MAIN" switch "${back:-main}" >/dev/null 2>&1 || git -C "$MAIN" switch --detach "$back" >/dev/null
+    if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
+      (cd "$MAIN" && xcodegen generate >/dev/null)
+    fi
+    rm -f "$LOCK"
+    echo "札を返しました。メインのフォルダは ${back:-main} に戻りました。"
+    ;;
+  *)
+    echo "使い方: scripts/verify-slot {acquire <ブランチ>|release|status}" >&2
+    exit 2
+    ;;
+esac
