@@ -139,3 +139,23 @@ test('the same-sentence route still refuses a value of another subject, another 
  assert.equal(accepted('合成Aの発生率は何パーセントですか。', '合成Aの発生数は 1,200 件であった。'), false);
  assert.equal(accepted('合成Aの割合は何パーセントですか。', '合成Aの人数は 12 % の増加に備えた。'), false);
 });
+
+test('the same-sentence route needs the asked attribute next to the value, a whole-word subject, and a clean unit', () => {
+ const accepted = (query: string, text: string) => assessReference(text, detailRequirements(query)).accepted;
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の標高は 3,776 m である。'), true);
+ // Another attribute of the same subject in the same sentence.
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の麓の湖までの距離は 12 m である。'), false);
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の山頂の風速は 20 m/s である。'), false);
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の面積は 5 m² である。'), false);
+ assert.equal(accepted('水の沸点は何度ですか。', '水の凝固点は 0 度 である。水の沸点は高い。'), false);
+ // The subject must not continue into another word.
+ assert.equal(accepted('富士の標高は何メートルですか。', '富士通の標高は 20 m である。'), false);
+ assert.equal(accepted('東の温度は何度ですか。', '東京の温度は 20 度 である。'), false);
+ // Units that continue into another meaning.
+ assert.equal(accepted('合成Aの所要時間は何秒ですか。', '合成Aの所要時間は 5 秒前に決まった。'), false);
+ assert.equal(accepted('合成Aの移動量は何キロですか。', '合成Aの移動量は 5 km/h である。'), false);
+ assert.equal(accepted('合成Aの移動量は何キロですか。', '合成Aの移動量は 5 km である。'), true);
+ assert.equal(accepted('合成Aの重さは何キロですか。', '合成Aの重さは 5 キログラム である。'), false);
+ // The question names no attribute (a bare subject): the route stays off.
+ assert.equal(accepted('光は何秒で地球を一周しますか。', '光は 1 秒に 7 周する。'), false);
+});
