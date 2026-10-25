@@ -1675,7 +1675,7 @@ private struct StudyTimeBarChart: View {
                     Text("勉強時間の記録")
                         .font(.headline)
                     Text(selectedDetailText ?? averageLabel)
-                        .font(.caption)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(selectedDetailText != nil ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 }
                 Spacer()
@@ -1730,7 +1730,7 @@ private struct StudyTimeBarChart: View {
                 .fill(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.accent.opacity(0.35))
                 .frame(width: width, height: height)
             Text(bar.label)
-                .font(.system(size: dense ? 8 : 9))
+                .font(.system(size: dense ? 11 : 13))
                 .foregroundStyle(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
@@ -1738,7 +1738,7 @@ private struct StudyTimeBarChart: View {
         }
         // The full column (including empty space above a short/zero bar) is
         // tappable, not just the visible rectangle.
-        .frame(height: plotHeight + 14)
+        .frame(height: plotHeight + 20)
         .contentShape(Rectangle())
     }
 }

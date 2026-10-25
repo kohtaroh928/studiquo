@@ -119,3 +119,43 @@ for(const mode of ['removed','truncated']) test(`only actually returned bounded 
  const hit=await retrieve(env,{sub:'synthetic-user'},{query:'電流計の価格を教えて'});
  assert.equal(hit.status,'insufficient');assert.deepEqual(hit.citations,[]);assert.equal(hit.context,'');
 });
+
+test('a question that asks for a unit is met by a value in that unit in the same sentence as its subject', () => {
+ const accepted = (query: string, text: string) => assessReference(text, detailRequirements(query)).accepted;
+ // The attribute word (発生率) is not in the closed label list, and other words sit between the subject and the value.
+ assert.equal(accepted('合成競技中の着地による合成損傷の発生率は何パーセントでしたか。', '合成競技中の着地による合成損傷発生率は 59.0 % と高く、両脚着地時の受傷が半数以上であった。'), true);
+ // The subject is written with a space in the excerpt.
+ assert.equal(accepted('合成Xテストを用いた大規模調査で、機能不全を呈した選手は何パーセントでしたか。', '1,900 名以上を対象に 合成X テストを実施した大規模調査では，約 90 % の選手が機能不全を呈していた。'), true);
+ // The subject is only the head of the question's first segment, and 割合 is reported as 率.
+ assert.equal(accepted('症状のない合成ダンサーのうち、疲労骨折が見つかった割合は何パーセントでしたか。', '無症状の疲労骨折の発生率は 54.9 % であった。'), true);
+ assert.equal(accepted('合成選手の支持脚の方向転換は何度でしたか。', '左脚を支持脚とした合成選手の方向転換は 90° 右方向へ行った。'), true);
+});
+
+test('the same-sentence route still refuses a value of another subject, another unit, or a comparison', () => {
+ const accepted = (query: string, text: string) => assessReference(text, detailRequirements(query)).accepted;
+ assert.equal(accepted('合成Aの発生率は何パーセントですか。', '合成Bの発生率は 12 % であった。'), false);
+ assert.equal(accepted('富士山の気温は何度ですか。', '富士山は静岡県と山梨県にまたがる山である。大阪城は1583年に築城された。'), false);
+ assert.equal(accepted('合成Aの割合は何パーセントですか。', '合成Aの割合は合成Bに比べて 12 % 高い。'), false);
+ assert.equal(accepted('合成Aの発生率は何パーセントですか。', '合成Aの発生数は 1,200 件であった。'), false);
+ assert.equal(accepted('合成Aの割合は何パーセントですか。', '合成Aの人数は 12 % の増加に備えた。'), false);
+});
+
+test('the same-sentence route needs the asked attribute next to the value, a whole-word subject, and a clean unit', () => {
+ const accepted = (query: string, text: string) => assessReference(text, detailRequirements(query)).accepted;
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の標高は 3,776 m である。'), true);
+ // Another attribute of the same subject in the same sentence.
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の麓の湖までの距離は 12 m である。'), false);
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の山頂の風速は 20 m/s である。'), false);
+ assert.equal(accepted('富士山の標高は何メートルですか。', '富士山の面積は 5 m² である。'), false);
+ assert.equal(accepted('水の沸点は何度ですか。', '水の凝固点は 0 度 である。水の沸点は高い。'), false);
+ // The subject must not continue into another word.
+ assert.equal(accepted('富士の標高は何メートルですか。', '富士通の標高は 20 m である。'), false);
+ assert.equal(accepted('東の温度は何度ですか。', '東京の温度は 20 度 である。'), false);
+ // Units that continue into another meaning.
+ assert.equal(accepted('合成Aの所要時間は何秒ですか。', '合成Aの所要時間は 5 秒前に決まった。'), false);
+ assert.equal(accepted('合成Aの移動量は何キロですか。', '合成Aの移動量は 5 km/h である。'), false);
+ assert.equal(accepted('合成Aの移動量は何キロですか。', '合成Aの移動量は 5 km である。'), true);
+ assert.equal(accepted('合成Aの重さは何キロですか。', '合成Aの重さは 5 キログラム である。'), false);
+ // The question names no attribute (a bare subject): the route stays off.
+ assert.equal(accepted('光は何秒で地球を一周しますか。', '光は 1 秒に 7 周する。'), false);
+});
