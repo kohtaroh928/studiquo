@@ -67,6 +67,14 @@ function comparisonParts(query: any): any {
   if (shared && prefix.slice(0, shared.index).split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu)
     .slice(0, -1).some((p: any) => p.trim().endsWith(`の${shared![1]}`))) shared = null;
   prefix = (shared ? prefix.slice(0, shared.index) : prefix.replace(/(?:を|の)$/u, '')).trim();
+  // "AとBは、それぞれ…" / "AとBでは、…どのような違い": the topic marker ends the subjects; what follows is the
+  // predicate, not part of the second subject's name. Cut only when the head alone names two or more subjects
+  // and nothing is quoted (a quoted name may contain は).
+  if (!shared && !/[「『"]/u.test(prefix)) {
+    const topic = /(?:では|は)[、,]?/u.exec(prefix);
+    const head = topic ? prefix.slice(0, topic.index).trim() : '';
+    if (head && head.split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu).length >= 2) prefix = head;
+  }
   const quoted = [...prefix.matchAll(/[「『"]([^「」『』"]{2,80})[」』"]/gu)].map(m => m[1]);
   const parts = quoted.length >= 2 ? quoted : prefix.split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu);
   // Only explicit alphabetic model suffixes share a prefix: 灯EとF.
