@@ -29,7 +29,7 @@
 
 ClaudeとCodexなど複数のエージェントの作業が被らないよう、次を守る。
 
-- メインのチェックアウト(`~/studiquo`)では編集・コミットしない。読み取りと統合専用とする。
+- メインのチェックアウト(`~/studiquo`)では編集・コミットしない。読み取り、統合、実機確認の「確認枠」(`scripts/verify-slot`)専用とする。
 - 作業は必ず`git worktree`で行う。`git worktree add .worktrees/<task> -b <claude|codex|antigravity>/<task> main`
   - Codexのアプリが作る`~/.codex/worktrees/`配下も可。
 - ブランチ名は`claude/<task>`、`codex/<task>`または`antigravity/<task>`とする。他エージェントの接頭辞のブランチはcheckout・コミットしない。
@@ -39,24 +39,30 @@ ClaudeとCodexなど複数のエージェントの作業が被らないよう、
 
 ## 実機確認の流れ(mergeの前に確認する)
 
-アプリ(`studiquo/`)の見た目や動作を変えたら、コミットやmergeの前に、ユーザーが実機で確認できる状態にする。
+アプリ(`studiquo/`)の見た目や動作を変えたら、mergeの前に、ユーザーが実機で確認できる状態にする。確認は「確認枠」で行う。
 
-- Xcodeがビルドするのは「開いているフォルダのファイルの現在の状態」であり、コミットやpushは関係しない。worktreeで作業した変更は、そのworktreeのプロジェクトを開かないとRunに反映されない。
-- 変更が一段落したら、ビルドが通ることを確認し、次の3点をユーザーへ伝える。
-  - 開くフォルダ: `open <worktreeの絶対パス>/studiquo.xcodeproj`(`.xcodeproj`が無ければ先に`xcodegen generate`)
-  - 選ぶスキーム: `studiquo-staging`(ステージング接続。本番のアプリやデータには触れない)
-  - 見る場所: どの画面のどこが変わったか
-- コミット、PR、mainへのmergeは、ユーザーが実機確認で問題なしとしてから進める。ユーザーが確認前のコミットを明示的に頼んだ場合は従ってよいが、「mainに入っていないのでメインのフォルダのRunには出ない」ことを添える。
-- 変更の有無を答える前に、ユーザーのXcodeがどのフォルダを開いているかを確認する(`osascript -e 'tell application "Xcode" to get path of workspace document 1'`)。反映されない原因の多くは、開いているフォルダが違うこと。
+- **確認枠**は、メインのチェックアウト(`~/studiquo`)を、確認のあいだだけ使う仕組み。Xcodeで開くのはいつもメインの`~/studiquo/studiquo.xcodeproj`1つで、スキームは`studiquo-staging`(ステージング接続。本番のアプリやデータには触れない)。
+- 編集とコミットは自分のworktreeで行う。確認はその変更をコミットした後で、予約札を取ってから始める。確認用のWIPコミットは作ってよい。pushとmergeは確認後。
+- 手順:
+  1. 変更をworktreeでコミットし、ビルドが通ることを確認する。
+  2. `scripts/verify-slot acquire <ブランチ>`で札を取る。メインのフォルダがそのコミットに切り替わる。取れなければ(使用中、またはメインに未コミット変更あり)、ユーザーに状況を伝えて指示を待つ。
+  3. ユーザーへ次の3点を伝える: Xcodeで`~/studiquo`を開いて`studiquo-staging`をRunすること、どのブランチのビルドか、どの画面のどこが変わったか。
+  4. ユーザーの確認が終わったら`scripts/verify-slot release`で札を返す。メインのフォルダは元の状態に戻る。
+  5. 問題なしの場合だけ、PRとmainへのmergeに進む。修正が要る場合は、worktreeで直して1からやり直す。
+- 札は`.git/studiquo-verify.lock`(gitの管理外、全worktree共通)。`scripts/verify-slot status`で、誰がどのブランチで使っているか、何時間経ったかを見られる。4時間以上たった札は、使用者かユーザーに確認してから返す。他のエージェントの札を勝手に消さない。
+- 確認枠は編集しない。切り替えはdetached HEADで行うので、他のworktreeが使っているブランチでも確認できる。確認枠にいる間、メインのフォルダでコミットしない(`.githooks/pre-commit`が止める)。
+- 確認が終わったら、札を返す前に、メインのフォルダへ変更が残っていないかを`git status`で見る。
+- 変更の有無を答える前に、XcodeがどのフォルダのどのコミットをRunしたかを確認する(`osascript -e 'tell application "Xcode" to get path of workspace document 1'`と、メインのフォルダの`git log -1`)。反映されない原因の多くは、開いているフォルダや切り替え先が違うこと。
 - サーバー(`mcp-server/`)の変更は、ステージングのWorkerへ配備してから実機確認する。アプリだけの変更では配備しない。
 
 ### 実機確認で衝突しないための決まり
 
-- `studiquo-staging`のBundle IDは1つ(`com.yabuko.studiquo.staging`)なので、別のworktreeでRunすると、端末のステージング用アプリが上書きされる。確認を頼むときは、どのworktree・ブランチのビルドかを必ず伝える。
-- 同じ端末へ同時に確認を依頼するのは1つのworktreeまでにする。複数のエージェントの確認が重なる場合は、ユーザーに順番を決めてもらう。
-- `.xcodeproj`はworktreeごとに`xcodegen generate`で作る。他のworktreeの`.xcodeproj`やDerivedDataを編集・共有しない。
+- `studiquo-staging`のBundle IDは1つ(`com.yabuko.studiquo.staging`)で、端末のステージング用アプリも1つ。確認枠の札で、同時に確認するのを1つのブランチに限る。
+- 札を持っていないエージェントは、確認枠を切り替えない。`scripts/verify-slot`を使わずにメインのフォルダでブランチを切り替えない。
+- ユーザーがworktreeのプロジェクトを直接開いてRunする場合は、そのworktreeとブランチを必ず伝え、札は取らない代わりに、そのRunが端末のステージング用アプリを上書きすることを添える。
 - 同じ画面・同じファイルを複数のエージェントが同時に変更しない。着手前の`git worktree list`で対象ファイルが被るか確認し、被るなら先に統合を済ませるかユーザーに順番を聞く。
 - mainが進んだら、確認前に`origin/main`を取り込んで、最新のmainに対する見た目を確認する。古いmainのまま確認すると、merge後に見た目が変わることがある。
+- `.xcodeproj`は各フォルダで`xcodegen generate`により作る(`scripts/verify-slot`が確認枠で自動で行う)。他のフォルダの`.xcodeproj`やDerivedDataを編集・共有しない。
 
 ## 開発手順モード
 
