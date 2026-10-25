@@ -49,15 +49,13 @@ final class AuthenticationStore: ObservableObject {
     var isSignInBusy: Bool {
         isLoginBusy || isPasskeyBusy || isAppleSignInBusy || isGoogleSignInBusy
     }
-    /// True while the signed-in account has no passkey: the app asks for one
-    /// before anything else (see PasskeyEnrollmentView). A passkey is what a
-    /// look-alike site relaying a password or code cannot imitate, and once an
-    /// account has one the server stops accepting those.
+    /// True while the signed-in account has no passkey: the app asks for one at
+    /// every sign-in (see PasskeyEnrollmentView) and lets the person say "later".
+    /// A passkey is what a look-alike site relaying a password or code cannot
+    /// imitate; an account that has one can still sign in with a password too.
     @Published private(set) var needsPasskeyEnrollment = false
-    /// Set once setting up a passkey has failed in this run, which is when the
-    /// request offers "skip for now": a person whose device cannot make one
-    /// (iCloud Keychain off, a managed device) must not be locked out of their
-    /// own notes. It comes back at the next launch.
+    /// Set once setting up a passkey has failed in this run (iCloud Keychain off,
+    /// a managed device), so the screen can say it did not work.
     @Published private(set) var passkeyEnrollmentFailed = false
     /// True while the first passkey waits for the code mailed to the account's
     /// address (see PasskeyService.sendEmailCode).
@@ -68,6 +66,7 @@ final class AuthenticationStore: ObservableObject {
     private let service: String
     private let onboardingKey: String
     private let passkeyIdentityAccount = "passkey-identity"
+    private let passkeyKnownKey = "authenticationPasskeyKnownOnDevice"
     private let oauthIdentityAccount = "oauth-identity"
     private let now: () -> Date
     private let defaults: UserDefaults
@@ -133,6 +132,13 @@ final class AuthenticationStore: ObservableObject {
     var email: String {
         oauthIdentity()?.email ?? passkeyIdentity()?.email ?? ""
     }
+
+    /// True once an account on this device is known to have a passkey, so the
+    /// sign-in screen opens the passkey prompt right away. A device that never
+    /// saw one (a first launch, or an account that has not set one up) gets only
+    /// the ordinary form, since a passkey sheet with nothing to offer would
+    /// only confuse.
+    var knowsPasskeyOnThisDevice: Bool { defaults.bool(forKey: passkeyKnownKey) }
 
     /// The email a verification code was just sent to — set while `state ==
     /// .verifyingEmail`, since that identity isn't recognized locally yet
@@ -296,6 +302,7 @@ final class AuthenticationStore: ObservableObject {
         delete(account: oauthIdentityAccount)
         pendingSignUp = nil
         defaults.removeObject(forKey: onboardingKey)
+        defaults.removeObject(forKey: passkeyKnownKey)
         errorMessage = ""
         state = .needsLogin
         // The account itself is gone server-side; detach RevenueCat from it
@@ -431,6 +438,7 @@ final class AuthenticationStore: ObservableObject {
             passkeyEnrollmentFailed = false
             passkeyNeedsEmailCode = false
             passkeyEmailCodeSent = false
+            defaults.set(true, forKey: passkeyKnownKey)
             errorMessage = ""
             return true
         } catch let error as ASAuthorizationError where error.code == .canceled {
@@ -460,6 +468,7 @@ final class AuthenticationStore: ObservableObject {
         do {
             try await PasskeyService.shared.removeAllPasskeys(token: MCPCloudCredentials.loadOrCreateToken())
             needsPasskeyEnrollment = true
+            defaults.removeObject(forKey: passkeyKnownKey)
             errorMessage = ""
             return true
         } catch let error as ASAuthorizationError where error.code == .canceled {
@@ -523,15 +532,18 @@ final class AuthenticationStore: ObservableObject {
         }
         guard let registered = await passkeyRegistered() else { return }
         needsPasskeyEnrollment = !registered
+        // Covers accounts that set a passkey up before this device kept the note,
+        // and forgets it once the passkeys are gone (a password reset removes them).
+        if registered { defaults.set(true, forKey: passkeyKnownKey) } else { defaults.removeObject(forKey: passkeyKnownKey) }
     }
 
     static func isPrivateRelayAddress(_ address: String) -> Bool {
         address.lowercased().hasSuffix("@privaterelay.appleid.com")
     }
 
-    /// Hides the request until the next launch; only offered after a failure.
+    /// Hides the request until the next sign-in or launch. A passkey is offered,
+    /// not required: the password and the other sign-ins keep working without one.
     func skipPasskeyEnrollmentForNow() {
-        guard passkeyEnrollmentFailed else { return }
         needsPasskeyEnrollment = false
     }
 
@@ -546,6 +558,7 @@ final class AuthenticationStore: ObservableObject {
                 throw PasskeyError.invalidResponse
             }
             createSession()
+            defaults.set(true, forKey: passkeyKnownKey)
             syncRevenueCatIdentity(provider: "email", subject: identity.email)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
@@ -775,13 +788,18 @@ enum AccountDeletionService {
                body["code"] as? String == "recent_login_required" {
                 throw AccountDeletionError.recentLoginRequired
             }
+            if (response as? HTTPURLResponse)?.statusCode == 403,
+               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               body["code"] as? String == "passkey_reset_hold" {
+                throw AccountDeletionError.passkeyResetHold
+            }
             throw AccountDeletionError.rejected
         }
     }
 }
 
 enum AccountDeletionError: LocalizedError {
-    case notSignedIn, rejected, deviceNotConfirmed, recentLoginRequired
+    case notSignedIn, rejected, deviceNotConfirmed, recentLoginRequired, passkeyResetHold
 
     var errorDescription: String? {
         switch self {
@@ -789,6 +807,7 @@ enum AccountDeletionError: LocalizedError {
         case .rejected: "アカウントを削除できませんでした。通信状態を確認して、もう一度お試しください。"
         case .deviceNotConfirmed: "端末の認証ができなかったため、アカウントは削除していません。"
         case .recentLoginRequired: "安全のため、いったんサインアウトして、もう一度サインインしてからアカウントを削除してください。"
+        case .passkeyResetHold: "パスワードの再設定でパスキーを削除したため、安全のため、48時間はアカウントを削除できません。しばらくしてからもう一度お試しください。"
         }
     }
 }
