@@ -78,6 +78,16 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: studiquo
+    # A build without the RevenueCat key stops at launch (a blank white screen
+    # under the debugger), so refuse to build it instead.
+    preBuildScripts:
+      - name: Check RevenueCat key
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ -z "$STUDIQUO_REVENUECAT_PUBLIC_API_KEY" ]; then
+            echo "error: STUDIQUO_REVENUECAT_PUBLIC_API_KEY is empty for $CONFIGURATION. For Staging, put it in Configuration/Staging.local.xcconfig (ignored by git; a worktree under .worktrees/ reads the main checkout's copy)."
+            exit 1
+          fi
     entitlements:
       path: studiquo/studiquo.entitlements
       properties:
