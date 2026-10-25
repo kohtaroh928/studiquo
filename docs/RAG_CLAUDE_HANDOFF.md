@@ -1,3 +1,7 @@
+## 2026-10-26 実機確認の案内
+
+ユーザーのmain staging Runに未反映との報告を調査。メインHEADは39d122bで本変更80e7a43は作業worktreeのみ。メインはLocalizable.xcstringsがUU（競合中）のため確認枠を切替せず。Xcodeの開いているパス取得はosascriptエラーで確認不能。次はrag-citation-popupのプロジェクトを直接開きstudiquo-stagingで実機確認。新たなビルド・push・mergeなし。GitHub Projectへの今回の追加記録は未実施、既存ドラフト継続。常駐processなし。
+
 ## 2026-10-26 コミット依頼の結果
 
 変更は8ec1b80、最新origin/main統合とPDF表示修正はfa65731に保存。シミュレータDebugビルド成功、独立再レビュー問題なし、diff check成功。実機は未確認。確認枠のmainに既存未コミット変更があるため切替せず、push/mergeは手順に従い保留。次は専用worktreeのstudiquo-stagingを実機Runして出典表示・閉じる・再表示を確認。GitHub ProjectドラフトPVTI_lAHODtsRbs4Bom7vzhDY1pAに記録済み。今回のビルドprocess終了。Project資料の更新なし。
