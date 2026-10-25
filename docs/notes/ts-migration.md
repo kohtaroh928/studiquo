@@ -1,6 +1,6 @@
 # mcp-server の JavaScript → TypeScript 移行
 
-状態の正は Notion の「Studiquo タスク」。ここには決めたことだけを書く。
+状態の正は GitHub Project の「Studiquo タスク」(2026-10-25にNotionから移行)。ここには決めたことだけを書く。
 
 ## 決めたこと
 
