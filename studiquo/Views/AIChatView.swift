@@ -86,17 +86,10 @@ struct AIChatPanel: View {
             onAttachDroppedTab: onAttachDroppedTab,
             onSelectAppAttachment: onSelectAppAttachment,
             onOpenAttachment: onOpenAttachment,
-            onPaneDrop: onPaneDrop
+            onPaneDrop: onPaneDrop,
+            onOpenRAG: ragAvailable ? { showsRAG = true } : nil,
+            isRAGActive: store.ragScope != nil
         )
-        .safeAreaInset(edge: .top) {
-            if ragAvailable {
-                HStack {
-                    Button("資料検索", systemImage: "doc.text.magnifyingglass") { showsRAG = true }
-                    Spacer()
-                    if store.ragScope != nil { Text("資料検索を使用").font(.caption) }
-                }.padding(.horizontal)
-            }
-        }
         .sheet(isPresented: $showsRAG) {
             NavigationStack {
                 RAGControlsView(store: store)
@@ -273,6 +266,9 @@ struct AIChatPane: View {
     let onOpenAttachment: (AIChatAttachment) -> Void
     /// Routes a drop that is not an attachment (the editor swaps panes with it).
     let onPaneDrop: ((String) -> Bool)?
+    /// Opens the RAG controls; `nil` hides the button.
+    let onOpenRAG: (() -> Void)?
+    let isRAGActive: Bool
 
     init(
         threads: [AIChatThread],
@@ -292,7 +288,9 @@ struct AIChatPane: View {
         onAttachDroppedTab: ((String) -> AIChatAttachment?)? = nil,
         onSelectAppAttachment: @escaping () -> [AppAttachmentOption],
         onOpenAttachment: @escaping (AIChatAttachment) -> Void,
-        onPaneDrop: ((String) -> Bool)? = nil
+        onPaneDrop: ((String) -> Bool)? = nil,
+        onOpenRAG: (() -> Void)? = nil,
+        isRAGActive: Bool = false
     ) {
         self.threads = threads
         self.selectedThread = selectedThread
@@ -312,6 +310,8 @@ struct AIChatPane: View {
         self.onSelectAppAttachment = onSelectAppAttachment
         self.onOpenAttachment = onOpenAttachment
         self.onPaneDrop = onPaneDrop
+        self.onOpenRAG = onOpenRAG
+        self.isRAGActive = isRAGActive
     }
 
     /// Whether the app knows where its AI server is. The API key itself lives
@@ -408,8 +408,18 @@ struct AIChatPane: View {
                             }
                         }
                         Spacer()
+                        if let onOpenRAG {
+                            Button(action: onOpenRAG) {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(isRAGActive ? Theme.Palette.accent : Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("資料検索"))
+                            .accessibilityValue(isRAGActive ? L("使用中") : "")
+                        }
                         if let usage {
-                            Text("残り\(usage.remaining)回")
+                            Text("\(usage.remaining)")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .accessibilityIdentifier("ai-chat-usage")
