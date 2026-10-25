@@ -37,6 +37,27 @@ ClaudeとCodexなど複数のエージェントの作業が被らないよう、
 - 作業が終わり統合したら、worktreeとブランチを片付ける。
 - `.githooks/`が上記を機械的に強制する。有効化は初回に`git config core.hooksPath .githooks`。人が意図的に回避する場合のみ`STUDIQUO_ALLOW_SHARED_CHECKOUT=1`を付ける。エージェントが勝手に付けてはならない。
 
+## 実機確認の流れ(mergeの前に確認する)
+
+アプリ(`studiquo/`)の見た目や動作を変えたら、コミットやmergeの前に、ユーザーが実機で確認できる状態にする。
+
+- Xcodeがビルドするのは「開いているフォルダのファイルの現在の状態」であり、コミットやpushは関係しない。worktreeで作業した変更は、そのworktreeのプロジェクトを開かないとRunに反映されない。
+- 変更が一段落したら、ビルドが通ることを確認し、次の3点をユーザーへ伝える。
+  - 開くフォルダ: `open <worktreeの絶対パス>/studiquo.xcodeproj`(`.xcodeproj`が無ければ先に`xcodegen generate`)
+  - 選ぶスキーム: `studiquo-staging`(ステージング接続。本番のアプリやデータには触れない)
+  - 見る場所: どの画面のどこが変わったか
+- コミット、PR、mainへのmergeは、ユーザーが実機確認で問題なしとしてから進める。ユーザーが確認前のコミットを明示的に頼んだ場合は従ってよいが、「mainに入っていないのでメインのフォルダのRunには出ない」ことを添える。
+- 変更の有無を答える前に、ユーザーのXcodeがどのフォルダを開いているかを確認する(`osascript -e 'tell application "Xcode" to get path of workspace document 1'`)。反映されない原因の多くは、開いているフォルダが違うこと。
+- サーバー(`mcp-server/`)の変更は、ステージングのWorkerへ配備してから実機確認する。アプリだけの変更では配備しない。
+
+### 実機確認で衝突しないための決まり
+
+- `studiquo-staging`のBundle IDは1つ(`com.yabuko.studiquo.staging`)なので、別のworktreeでRunすると、端末のステージング用アプリが上書きされる。確認を頼むときは、どのworktree・ブランチのビルドかを必ず伝える。
+- 同じ端末へ同時に確認を依頼するのは1つのworktreeまでにする。複数のエージェントの確認が重なる場合は、ユーザーに順番を決めてもらう。
+- `.xcodeproj`はworktreeごとに`xcodegen generate`で作る。他のworktreeの`.xcodeproj`やDerivedDataを編集・共有しない。
+- 同じ画面・同じファイルを複数のエージェントが同時に変更しない。着手前の`git worktree list`で対象ファイルが被るか確認し、被るなら先に統合を済ませるかユーザーに順番を聞く。
+- mainが進んだら、確認前に`origin/main`を取り込んで、最新のmainに対する見た目を確認する。古いmainのまま確認すると、merge後に見た目が変わることがある。
+
 ## 開発手順モード
 
 ユーザーはチャットの最初または途中で、次のいずれかを指定できる。
