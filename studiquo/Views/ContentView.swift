@@ -3177,7 +3177,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { notification in
             guard let citation = notification.object as? RAGCitation,
                   let (notebook, _) = RAGCitationNavigation.resolve(citation, notebooks: allNotebooks) else { return }
-            selectNotebookTab(notebook)
+            // With an editor open, it decides which pane shows the cited
+            // notebook: the pane holding the AI chat, or the active one.
+            if selectedNotebook != nil { openNotebookTab(notebook) } else { selectNotebookTab(notebook) }
         }
         .task { await RAGDeletionQueue.flush() }
         .modifier(RAGLibrarySyncModifier())
