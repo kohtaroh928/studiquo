@@ -316,8 +316,8 @@
         "PASSKEY_ORIGIN": "https://staging-api.studiquo.app",
         "PASSKEY_APP_ID": "972G4VGUA6.com.yabuko.studiquo.staging",
         "APPLE_OAUTH_CLIENT_ID": "com.yabuko.studiquo.staging",
-        // Fill after creating a distinct Google OAuth server client. Staging rejects Google sign-in until this is set.
-        "GOOGLE_OAUTH_SERVER_CLIENT_ID": "",
+        // Dedicated staging Google OAuth server client; matches the app staging configuration.
+        "GOOGLE_OAUTH_SERVER_CLIENT_ID": "812858933445-s9j9mdr12bndm3pi6c1nmqpr6p0hvpv6.apps.googleusercontent.com",
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },
