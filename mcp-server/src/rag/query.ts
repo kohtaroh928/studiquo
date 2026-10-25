@@ -58,23 +58,36 @@ function jointSubjects(query: any): string[] {
   if (!/^[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9]/u.test(a) || !/^[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9]/u.test(b)) return [];
   return [a, b];
 }
+const SPLIT = /および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu;
+const SHARED_ASPECTS = 'しくみ|仕組み|働き|役割|特徴|定義|意味|共通点|進み方|代表値|点灯時間と価格';
 function comparisonParts(query: any): any {
   let prefix = query.split(/比較|比べ|違い|相違|共通点|compare/i)[0].trim();
-  // Shared requested aspects are not part of the second target's name.
-  // Keep them in the bounded subject queries; do not infer shared qualifiers.
-  let shared = /の(しくみ|仕組み|働き|役割|特徴|定義|意味|共通点|進み方|代表値|点灯時間と価格)(?:を|の)?$/u.exec(prefix);
-  // Repeated attributes qualify each named target rather than a shared suffix.
-  if (shared && prefix.slice(0, shared.index).split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu)
-    .slice(0, -1).some((p: any) => p.trim().endsWith(`の${shared![1]}`))) shared = null;
-  prefix = (shared ? prefix.slice(0, shared.index) : prefix.replace(/(?:を|の)$/u, '')).trim();
   // "AとBは、それぞれ…" / "AとBでは、…どのような違い": the topic marker ends the subjects; what follows is the
   // predicate, not part of the second subject's name. Cut only when the head alone names two or more subjects
-  // and nothing is quoted (a quoted name may contain は).
-  if (!shared && !/[「『"]/u.test(prefix)) {
+  // and nothing is quoted (a quoted name may contain は). This runs before the shared-aspect step so that
+  // "鉛直と水平は、距離の代表値を比較して" does not keep its predicate.
+  let headCut = false;
+  if (!/[「『"]/u.test(prefix)) {
     const topic = /(?<!と)(?:では|は)[、,]?/u.exec(prefix); // not the は of "Xとは"
     const head = topic ? prefix.slice(0, topic.index).trim() : '';
-    if (head && head.split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu).length >= 2) prefix = head;
+    if (head && head.split(SPLIT).length >= 2) {
+      // More names after the marker ("AとBは、CとDの違い"): the question is not a plain two- or three-subject
+      // comparison. Name no subject rather than silently dropping C and D. Only a bare list counts (no particle
+      // other than the connectors): "上層と下層の気温構造がどう" is a predicate with an aspect, and a predicate that
+      // starts with それぞれ may mention other things ("それぞれ東京とパリを結ぶ例で") without naming subjects.
+      const rest = prefix.slice(topic!.index + topic![0].length).trim();
+      if (!/^それぞれ/u.test(rest) && /^[^、。はがをにでへも]+(?:と|および|かつ)[^、。はがをにでへも]+$/u.test(rest)) return { subjects: [], aspect: '' };
+      prefix = head; headCut = true;
+    }
   }
+  // Shared requested aspects are not part of the second target's name.
+  // Keep them in the bounded subject queries; do not infer shared qualifiers.
+  const aspects = headCut ? `${SHARED_ASPECTS}|${[...ASPECT_WORDS].join('|')}` : SHARED_ASPECTS;
+  let shared = new RegExp(`の(${aspects})(?:を|の)?$`, 'u').exec(prefix);
+  // Repeated attributes qualify each named target rather than a shared suffix.
+  if (shared && prefix.slice(0, shared.index).split(SPLIT)
+    .slice(0, -1).some((p: any) => p.trim().endsWith(`の${shared![1]}`))) shared = null;
+  prefix = (shared ? prefix.slice(0, shared.index) : prefix.replace(/(?:を|の)$/u, '')).trim();
   const quoted = [...prefix.matchAll(/[「『"]([^「」『』"]{2,80})[」』"]/gu)].map(m => m[1]);
   const parts = quoted.length >= 2 ? quoted : prefix.split(/および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu);
   // Only explicit alphabetic model suffixes share a prefix: 灯EとF.
