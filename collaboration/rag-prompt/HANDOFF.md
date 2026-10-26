@@ -32,3 +32,10 @@
 - 採点表のlm-same・p3-no-verdictのパターンに取りこぼしあり（未修正）。
 - 次の一手: 採点パターンの修正、v01-rule/結論先出しを指示に足した候補で再実行、複数回実行で揺らぎを見る。
 - Notion: 接続なしで未記録。
+
+## 2026-10-26: 採点表v2と候補v2（Claude）
+
+- run-luna.mjs が workspace.mjs を読んでいて、.ts化（c427b7b）以降起動できなかったため workspace.ts に修正。
+- 採点表を fixed6-atomic-v2 に更新（lm-same「差はありません」等、p3-no-verdict「判断できず」）。テスト1件追加、Node 24で24件成功。trial-01を再採点し、要確認21→14行で人の確認と一致（results/trial-01.md）。trial-01の取りこぼしは9行ではなく7行だったので訂正。
+- candidates/requirement-coverage-v2.json を追加: v1に「適用条件（日付・版・対象・測定条件）を一文添える」「判断できないときは結論と理由を先に」を追加。workspace.ts check 成功。生成は未実施、有料API0回。
+- 次の一手: baselineとv2で trial-02（24回×3回、予約は1回あたり約$0.117、実費の概算は合計約$0.04）。承認後に実行。
