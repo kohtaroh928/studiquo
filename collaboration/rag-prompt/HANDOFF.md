@@ -47,3 +47,10 @@
 - 採点表の取りこぼし1件: p3-f-price-unknownが「Fは資料で確認できません」を拾えない（未修正）。
 - 次の一手: v01-basisとnp-same-priceを落とさない文言のv3を作るか、v2を暫定候補とするかを決める。有料API追加は承認後。
 - Notion: カード更新済み。
+
+## 2026-10-26: trial-03 実行（Claude）
+
+- `candidates/requirement-coverage-v3.json` を追加(v2+「比較できなくても共通点は述べる」「判定基準も残す」)。baselineとv3を3回(trial-03a/b/c、72回、全成功、概算約$0.039、gpt-6-luna)。結果: `results/trial-03.md`。
+- 要点: v3は v01-basis と np-same-price をv2より戻し(0/6)、結論先出しとp3-deltaは保ったが、v01-rule(日付)がv2の2/6から4/6に戻った。違反0件。v01-rule と v01-basis の両方を満たしたのは6回答中2回。
+- 採点表の取りこぼし2件（np-same-priceの語順、p3-f-price-unknown）は未修正。
+- 次の一手: 指示の調整を続けず、別の合成ケース(追加練習問題)を足して傾向を確認する。足し方は統合担当と合意。
