@@ -531,5 +531,64 @@ S1・S6・S7 のどれかが不合格なら、観測を止めて `off` に戻す
 3. **観測の期間**：ラベル付きセットの実行だけにするか、通常利用を含めて数日置くか。
 4. **配備の承認**：`origin/main` を `RAG_JUDGE:shadow` 付きで staging へ配備してよいか。
 
+## 16. staging の `shadow` 観測：最初の20問と、ベースライン（`off`）の手順（2026-10-26、手順のみ・未実施）
+
+§15.7 の(c)（まず自分で20問）と、ベースラインを先に取る方針の具体化。**配備・設定変更は、各段階で明示の承認を得てから行う。`on` は含めない。**
+
+### 16.1 20問の選び方（固定済み）
+
+- 凍結済みの理科の質問180問のうち、独立確認が `ok`／`absent` のものから、**シード `20261026:staging-pilot-20` で層別に無作為抽出**（結果は見ていない）。内訳：答えなし8（topic_no_detail 2、no_quantity 2、unrelated 1、unknown_term 1、other_target 2）、答えあり単一主題8（direct 3、paraphrase 3、numeric 2）、比較4（型は4種類が重ならない）。順序もシードで混ぜた。
+- 質問の文面は私的フォルダの `staging-pilot-20-questions.txt`、正解ラベルは `staging-pilot-20-key.json`（SHA-256 先頭16桁 `a736bfdf268754ca`）。ラベルは入力中は見ない。
+- 20問だと答えなしのうち出典が付くのは数問なので、**S4（抑止率）は評価しない**。この20問で見るのは、S1（失敗率）・S5（遅延）・S6（結果が変わらないこと）・S7（想定外）、および答えありが `stop` になっていないか（S2・S3）。
+
+### 16.2 前提の確認結果（読み取りのみ）
+
+- staging の現行版は `f6187132`（ロールバック先として記録）。変数は**ダッシュボード編集**で作られた版で、`RAG_ENABLED`・`RAG_AUTO_INDEX_ENABLED`・`RAG_PDF_PROCESSING_ENABLED`・`RAG_PDF_CLEANUP_ENABLED`・`AI_PROVIDER_APPROVED` が `true`、`RAG_JUDGE` が `off`、`PAYWALL_ENABLED=true`、`AI_LIMITS={"plans":{"standard":{"perMinute":60,"fiveHours":2000,"week":10000}},"global":{"floorDollarsPerDay":{"standard":50}}}`。
+- **`wrangler.jsonc` の staging は上の5つが `false`、`PAYWALL_ENABLED`・`AI_LIMITS` は未定義**。設定のまま配備すると RAG が止まるので、配備には `--var` の上書きと `--keep-vars` が要る。ドライラン（配備しない）で、次のコマンドが組み立てられることを確認した。
+
+```
+npx wrangler deploy --env staging --keep-vars \
+  --var RAG_ENABLED:true RAG_AUTO_INDEX_ENABLED:true RAG_PDF_PROCESSING_ENABLED:true \
+        RAG_PDF_CLEANUP_ENABLED:true AI_PROVIDER_APPROVED:true RAG_JUDGE:off
+```
+
+  ドライランの出力は `--var` の値を表示しない（`(hidden)`）。`PAYWALL_ENABLED`・`AI_LIMITS` が `--keep-vars` で残るかは配備後にしか分からないため、**配備後に `wrangler versions view` で全変数を前後比較する**（手順2）。
+- 戻し方：`npx wrangler rollback f6187132-9a0c-4a59-8b13-e73d600d8d71 --env staging`（承認のうえ）。データの変更はない。
+- staging の `RATE_LIMIT_RAG_SEARCH` は20回/60秒。20問を15秒以上あけて入力すれば超えない。
+
+### 16.3 手順
+
+| # | 担当 | やること | 確認 |
+|---|---|---|---|
+| 0 | あなた | iPad に staging アプリ（`studiquo-staging`）を入れる。`kaisetsu-rika.pdf`（4.4 MB、私的フォルダ `~/.studiquo-private/rag-mext-science-v1/`）を iPad へ（AirDrop など）。アプリで資料として取り込み、**索引の完了を待つ**。 | 資料検索で使える状態になる（取り込みが失敗したら、ここで中断して原因を調べる） |
+| 1 | 私（承認後） | `origin/main`（`mcp-server/` は `b9d74ff` と同じ）を、16.2 のコマンドで **`RAG_JUDGE:off`** のまま staging へ配備。配備前に現行版 `f6187132` の変数一覧を保存。 | ドライランで本番のIDが出ない。`/` が 200 |
+| 2 | 私 | `wrangler versions view` で、配備前後の変数を比較。差が `RAG_JUDGE` 以外にないこと。 | 差があれば `rollback` して原因を調べる |
+| 3 | 私＋あなた | ログ採取を開始：`npx wrangler tail studiquo-mcp-staging --env staging --format json > baseline.log`（本文は出ない）。 | 1問入力して `rag_retrieval` が1行出る（試し打ちは別の質問で。採取を作り直す） |
+| 4 | あなた | **ベースライン**：20問を番号順に、**1問ごとに新しいチャット**で、15秒以上あけて入力。画面で気づいたこと（エラー、10秒を超える待ち、出典が付かない、など）をメモ。 | 入力が終わったら私に伝える |
+| 5 | 私 | 採取を止め、`pilot_summary.py baseline.log` で行数（20行）、`judge.mode=off` を確認。 | 行数が20でなければ採取をやり直す |
+| 6 | 私（承認後） | 同じコマンドで **`RAG_JUDGE:shadow`** に変えて配備（コードは同じ版）。配備後に `versions view` で `RAG_JUDGE=shadow` のみ変わったことを確認。 | 手順2と同じ比較 |
+| 7 | 私＋あなた | `shadow.log` を採取し、手順4と同じ20問を同じ順で入力。 | 同上 |
+| 8 | 私 | `pilot_summary.py baseline.log shadow.log` で集計（件数・符号のみ）。 | 下の目安 |
+| 9 | 私（承認後） | 観測を続けないなら `RAG_JUDGE:off` で配備して戻す。 | `judge.mode=off` |
+
+### 16.4 20問の結果の見方（結果を見る前に固定）
+
+| # | 観測 | 次へ進む目安 |
+|---|---|---|
+| P1 | 両段階とも `rag_retrieval` が20行、ベースラインは `judge.mode=off`、shadow は 20行すべて `shadow`（判定が呼ばれない行は `skipped` の理由を調べる） | 満たす |
+| P2 | shadow の判定の失敗（`timeout`・`error`） | 1件以下（20問では5%が1件）。2件以上なら止めて原因を調べる |
+| P3 | ベースラインと shadow で `status`・出典数が変わる質問 | 0件。1件でも出たら、検索のゆらぎか shadow の影響かを切り分けてから進む |
+| P4 | 答えあり（単一主題・比較とも）で `action=stop` | 0件。出たら、その質問の期待ページが検索に出ていたかを別に調べる（§14.3 の s27 と同じ見方） |
+| P5 | `elapsedMs` の増加（中央値、最大） | 中央値 1.5 秒以内、最大 2.5 秒以内 |
+| P6 | ログに質問・抜粋が出る、`judge` 欄が欠ける、画面のエラー | 0件 |
+
+P1〜P6 を満たしたら、残りの55問（§15.4 の75問のうち）に進むか、観測をここで終えるかを決める。満たさないものがあれば `off` に戻し、原因を調べてから再度判断する。20問の結果だけで `on` の判断はしない。
+
+### 16.5 リスク
+
+- 配備は2回（`off`、`shadow`）。変数の消失と、`--var` の指定漏れで RAG が止まる危険があるため、手順2・6の前後比較と、ロールバック先の記録が要る。
+- staging の `AI_LIMITS`（週10,000、5時間2,000）は20問×2回で足りる。最終回答は OpenAI（staging の鍵）に送られる。20問は公開資料の質問で、個人情報は含まない。
+- 取り込んだ資料は staging の索引に残る。観測が終わったらアプリから削除してよい。
+
 
 Projectの資料の更新: なし
