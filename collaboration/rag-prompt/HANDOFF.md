@@ -39,3 +39,11 @@
 - 採点表を fixed6-atomic-v2 に更新（lm-same「差はありません」等、p3-no-verdict「判断できず」）。テスト1件追加、Node 24で24件成功。trial-01を再採点し、要確認21→14行で人の確認と一致（results/trial-01.md）。trial-01の取りこぼしは9行ではなく7行だったので訂正。
 - candidates/requirement-coverage-v2.json を追加: v1に「適用条件（日付・版・対象・測定条件）を一文添える」「判断できないときは結論と理由を先に」を追加。workspace.ts check 成功。生成は未実施、有料API0回。
 - 次の一手: baselineとv2で trial-02（24回×3回、予約は1回あたり約$0.117、実費の概算は合計約$0.04）。承認後に実行。
+
+## 2026-10-26: trial-02 実行（Claude）
+
+- baselineとrequirement-coverage-v2を固定6ケース×2style×3回(trial-02a/b/c、72回、全成功、概算約$0.038、gpt-6-luna)。結果: `results/trial-02.md`。
+- 要点: v2はp3-delta欠落5/6→2/6、v01-rule 4/6→2/6、結論先出しの後置き6/6→2/6。一方v01-basis(開催日で判定)が0→2/6、np-same-priceが0→1/6で落ちた(source_only)。違反0件。3回なので揺らぎの範囲を出ない。
+- 採点表の取りこぼし1件: p3-f-price-unknownが「Fは資料で確認できません」を拾えない（未修正）。
+- 次の一手: v01-basisとnp-same-priceを落とさない文言のv3を作るか、v2を暫定候補とするかを決める。有料API追加は承認後。
+- Notion: カード更新済み。
