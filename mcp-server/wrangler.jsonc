@@ -318,8 +318,8 @@
         "APPLE_OAUTH_CLIENT_ID": "com.yabuko.studiquo.staging",
         // Dedicated staging Google OAuth server client; matches the app staging configuration.
         "GOOGLE_OAUTH_SERVER_CLIENT_ID": "812858933445-s9j9mdr12bndm3pi6c1nmqpr6p0hvpv6.apps.googleusercontent.com",
-        // Mail from staging says so, and uses Resend's shared test sender.
-        "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
+        // Mail from staging says so; sent from the Resend-verified studiquo.app.
+        "RESEND_FROM_EMAIL": "Studiquo Staging <noreply@studiquo.app>"
       },
       "observability": { "enabled": true, "logs": { "head_sampling_rate": 1, "invocation_logs": false } }
     }
