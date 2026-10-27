@@ -440,6 +440,15 @@ private struct NoteSnippetFriendUITestRoot: View {
                         .background(Color.accentColor.opacity(0.15), in: Capsule())
                         .tabDraggable("document:\(NoteSnippetFriendUITestStore.dropTargetDocumentID)")
                         .accessibilityIdentifier("tab-drag-source-document")
+                    Button {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("StudiquoSwitchPaneTarget"),
+                            object: PaneSwitchTarget.notebook(NoteSnippetFriendUITestStore.dropTargetNotebook)
+                        )
+                    } label: {
+                        Image(systemName: "cursorarrow.click")
+                    }
+                    .accessibilityIdentifier("tab-select-source-notebook")
                     Spacer()
                 }
                 .padding(8)
@@ -568,6 +577,13 @@ private enum NoteSnippetFriendUITestStore {
             FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
         ).first!
         return String(describing: target.persistentModelID)
+    }
+
+    static var dropTargetNotebook: Notebook {
+        let title = dropTargetNotebookTitle
+        return try! container.mainContext.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
+        ).first!
     }
 }
 
