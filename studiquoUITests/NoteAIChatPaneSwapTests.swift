@@ -114,6 +114,21 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(companionPane.exists, "戻したあと2分割が崩れています。")
     }
 
+    func testNoteToolsRemainEnabledWhileTheAIChatPaneIsSelected() {
+        splitWithFilesBrowser()
+        aiButton.tap()
+        choosePane()
+        XCTAssertTrue(waitForChat(), "AIチャットがペインに表示されません。")
+
+        // Tapping the lower chat pane makes it the active pane. The upper
+        // pane is still a note, so its editing controls must stay available.
+        for label in ["ペン", "消しゴム", "選択", "切り抜き", "テキスト", "写真", "用紙", "ページ追加"] {
+            let tool = app.buttons[label].firstMatch
+            XCTAssertTrue(tool.exists, "\(label) が表示されません。")
+            XCTAssertTrue(tool.isEnabled, "AIチャット選択中に \(label) が無効です。")
+        }
+    }
+
     func testSwappedChatPlacesMaterialSwitchImmediatelyBeforeDocumentSearch() {
         splitWithFilesBrowser()
         aiButton.tap()
