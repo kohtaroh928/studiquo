@@ -110,3 +110,25 @@ test('the topic cut keeps shared aspects shared and never drops named subjects s
  // それぞれ starts a predicate; the と inside it does not name another subject.
  assert.deepEqual(queryPlan('大圏と等角は、それぞれ東京とパリを結ぶ例でどのように比較されますか').coverageGroups, ['大圏', '等角']);
 });
+
+test('"Aとは何ですか。Bとは何が違いますか" names both subjects; a comparison with more than three names is flagged unresolved', () => {
+ for (const [query, groups] of [
+  ['潮汐力とは何ですか。遠心力とは何が違いますか', ['潮汐力', '遠心力']],
+  ['AM補完放送とは何ですか。FM転換とは何が違いますか', ['AM補完放送', 'FM転換']],
+ ] as const) {
+  const plan = queryPlan(query);
+  assert.deepEqual(plan.coverageGroups, groups, query);
+  assert.equal(plan.unresolvedComparison, false, query);
+ }
+ // The same sentence twice, or a plain definition, is not a pair.
+ assert.deepEqual(queryPlan('潮汐力とは何ですか。潮汐力とは何が違いますか').coverageGroups, []);
+ assert.deepEqual(queryPlan('潮汐力とは何ですか。').coverageGroups, []);
+ for (const query of ['ポーラーロウと上層寒冷低気圧は、台風と熱帯低気圧の違いを説明してください。', '羊と山羊は、牛と馬との違いを説明して']) {
+  const plan = queryPlan(query);
+  assert.deepEqual([plan.coverageGroups, plan.unresolvedComparison], [[], true], query);
+ }
+ // plan.multi alone is not enough: these are single-subject questions.
+ for (const query of ['共通テストの満点は何点ですか', '低気圧の共通の原因は何ですか。', 'データの比較はどうやりますか'])
+  assert.equal(queryPlan(query).unresolvedComparison, false, query);
+});
+

@@ -36,9 +36,11 @@ export function queryPlan(query: any, previousQuestion = "") {
   const multi = explicitMulti || joint.length === 2;
   const comparison = explicitMulti ? comparisonParts(canonicalQuery) : { subjects: joint, aspect: '' };
   const coverageGroups = comparison.subjects;
+  // A comparison whose subjects could not be named (more than three names): it is still not a single-subject question.
+  const unresolvedComparison = comparison.unresolved === true;
   const aspect = comparison.aspect ? `の${comparison.aspect}` : /定義|意味/.test(canonicalQuery) ? "の定義" : /しくみ|仕組み/.test(canonicalQuery) ? "のしくみ" : /働き|役割/.test(canonicalQuery) ? "の働き" : "について";
   const subjectQueries = coverageGroups.map((group: any) => `${group}${group.endsWith(aspect) ? 'について' : aspect}`);
-  return { originalQuery, canonicalQuery, ambiguous, needsClarification, multi, coverageGroups,
+  return { originalQuery, canonicalQuery, ambiguous, needsClarification, multi, coverageGroups, unresolvedComparison,
     queries: coverageGroups.length === 3 ? subjectQueries : [...new Set([canonicalQuery, ...subjectQueries])].slice(0, 3) };
 
 }
@@ -61,6 +63,9 @@ function jointSubjects(query: any): string[] {
 const SPLIT = /および|かつ|と(?!は)|\s+(?:and|versus|vs\.?)\s+/iu;
 const SHARED_ASPECTS = 'しくみ|仕組み|働き|役割|特徴|定義|意味|共通点|進み方|代表値|点灯時間と価格';
 function comparisonParts(query: any): any {
+  // "Aとは何ですか。Bとは何が違いますか": each sentence defines one subject, and the second asks for the difference.
+  const defined = /^([^。？?！!、,]{2,40}?)とは[^。？?！!]*[。？?！!]\s*([^。？?！!、,]{2,40}?)とは[^。？?！!]*?(?:違い|相違|比べ|比較)/u.exec(String(query).trim());
+  if (defined && defined[1].trim() !== defined[2].trim()) return { subjects: [defined[1].trim(), defined[2].trim()], aspect: '' };
   let prefix = query.split(/比較|比べ|違い|相違|共通点|compare/i)[0].trim();
   // "AとBは、それぞれ…" / "AとBでは、…どのような違い": the topic marker ends the subjects; what follows is the
   // predicate, not part of the second subject's name. Cut only when the head alone names two or more subjects
@@ -76,7 +81,7 @@ function comparisonParts(query: any): any {
       // other than the connectors): "上層と下層の気温構造がどう" is a predicate with an aspect, and a predicate that
       // starts with それぞれ may mention other things ("それぞれ東京とパリを結ぶ例で") without naming subjects.
       const rest = prefix.slice(topic!.index + topic![0].length).trim();
-      if (!/^それぞれ/u.test(rest) && /^[^、。はがをにでへも]+(?:と|および|かつ)[^、。はがをにでへも]+$/u.test(rest)) return { subjects: [], aspect: '' };
+      if (!/^それぞれ/u.test(rest) && /^[^、。はがをにでへも]+(?:と|および|かつ)[^、。はがをにでへも]+$/u.test(rest)) return { subjects: [], aspect: '', unresolved: true };
       prefix = head; headCut = true;
     }
   }
