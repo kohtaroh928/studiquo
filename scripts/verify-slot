@@ -1,17 +1,24 @@
 #!/bin/sh
 # 実機確認の「確認枠」(メインのチェックアウト)の予約札を扱う。
 #   scripts/verify-slot acquire <ブランチ>  札を取り、メインのフォルダでそのコミットに切り替える
-#   scripts/verify-slot release             メインのフォルダを元に戻し、札を返す
-#   scripts/verify-slot status              札を持っている人を表示する
-# 札は .git/studiquo-verify.lock(gitの管理外・全worktree共通)。
+#   scripts/verify-slot acquire --queue     荷台のブランチをmainに順に重ね、まとめて札を取る
+#   scripts/verify-slot add <ブランチ>      荷台(確認待ち)に入れる。札は取らない
+#   scripts/verify-slot remove <ブランチ>   荷台から外す
+#   scripts/verify-slot queue               荷台の中身を表示する
+#   scripts/verify-slot release             メインのフォルダを元に戻し、札を返す(荷台も空にする)
+#   scripts/verify-slot status              札を持っている人と荷台を表示する
+# 札は .git/studiquo-verify.lock、荷台は .git/studiquo-verify.queue(どちらもgitの管理外・全worktree共通)。
 # 編集はしない。切り替えはdetached HEADで行うので、他のworktreeが使うブランチでも確認できる。
+# 荷台の重ね合わせはメインのフォルダ上のdetached HEADで行う。元のブランチは変更しない。
 set -eu
 
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
 MAIN=$(dirname "$COMMON")
 LOCK="$COMMON/studiquo-verify.lock"
+QUEUE="$COMMON/studiquo-verify.queue"
 OWNER=${AGENT_NAME:-${USER:-unknown}}
 STALE_HOURS=4
+BASE_BRANCH=main
 
 age_hours() {
   now=$(date +%s)
@@ -29,40 +36,157 @@ show_lock() {
   fi
 }
 
+queue_list() {
+  if [ -f "$QUEUE" ]; then grep -v '^$' "$QUEUE" || true; fi
+}
+
+show_queue() {
+  list=$(queue_list)
+  if [ -z "$list" ]; then echo "荷台は空です。"; return; fi
+  echo "荷台(確認待ち)。acquire --queue ではこの順に $BASE_BRANCH へ重ねます:"
+  n=0
+  for b in $list; do
+    n=$((n + 1))
+    if ! c=$(git rev-parse --verify --short "$b^{commit}" 2>/dev/null); then
+      echo "  $n. $b  (ブランチが見つかりません。remove してください)"
+    elif git merge-base --is-ancestor "$b" "$BASE_BRANCH" 2>/dev/null; then
+      echo "  $n. $b  $c  ($BASE_BRANCH に取り込み済み。外してよい)"
+    else
+      echo "  $n. $b  $c  ($BASE_BRANCH より $(git rev-list --count "$BASE_BRANCH..$b") コミット先)"
+    fi
+  done
+}
+
+write_lock() { # $1=ブランチ表示 $2=コミット $3=戻り先
+  {
+    echo "owner=$OWNER"
+    echo "branch=$1"
+    echo "commit=$2"
+    echo "return_to=$3"
+    echo "started=$(date '+%Y-%m-%d %H:%M:%S')"
+    echo "started_epoch=$(date +%s)"
+  } > "$LOCK"
+}
+
+regen_project() {
+  if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
+    (cd "$MAIN" && xcodegen generate >/dev/null)
+  fi
+}
+
+restore_main() { # $1=戻り先
+  git -C "$MAIN" switch "$1" >/dev/null 2>&1 || git -C "$MAIN" switch --detach "$1" >/dev/null 2>&1 || true
+}
+
+check_free_and_clean() {
+  if [ -f "$LOCK" ]; then
+    show_lock >&2
+    echo "ほかの人が使用中のため取れません。ユーザーに順番を聞いてください。" >&2
+    exit 1
+  fi
+  if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then
+    echo "メインのフォルダに未コミットの変更があるため切り替えません。ユーザーに扱いを確認してください:" >&2
+    git -C "$MAIN" status --short --untracked-files=no >&2
+    exit 1
+  fi
+}
+
+current_position() {
+  git -C "$MAIN" symbolic-ref --quiet --short HEAD || git -C "$MAIN" rev-parse HEAD
+}
+
 case "${1:-status}" in
   status)
     if [ -f "$LOCK" ]; then show_lock; else echo "確認枠は空いています。"; fi
+    show_queue
+    ;;
+  queue)
+    show_queue
+    ;;
+  add)
+    ref=${2:?"使い方: scripts/verify-slot add <ブランチ>"}
+    git rev-parse --verify "$ref^{commit}" >/dev/null 2>&1 || { echo "$ref が見つかりません。" >&2; exit 1; }
+    if [ "$ref" = "$BASE_BRANCH" ]; then echo "$BASE_BRANCH は荷台に入れません。" >&2; exit 1; fi
+    if queue_list | grep -qxF -- "$ref"; then
+      echo "$ref はすでに荷台に入っています。"
+    else
+      echo "$ref" >> "$QUEUE"
+      echo "$ref を荷台に入れました。"
+    fi
+    if [ -f "$LOCK" ]; then
+      echo "注意: 確認枠は使用中です。今の確認には反映されません。次の acquire --queue で重ねられます。"
+    fi
+    show_queue
+    ;;
+  remove)
+    ref=${2:?"使い方: scripts/verify-slot remove <ブランチ>"}
+    if ! queue_list | grep -qxF -- "$ref"; then echo "$ref は荷台にありません。"; exit 0; fi
+    queue_list | grep -vxF -- "$ref" > "$QUEUE.tmp" || true
+    mv "$QUEUE.tmp" "$QUEUE"
+    echo "$ref を荷台から外しました。"
+    show_queue
     ;;
   acquire)
-    ref=${2:?"使い方: scripts/verify-slot acquire <ブランチ>"}
-    if [ -f "$LOCK" ]; then
-      show_lock >&2
-      echo "ほかの人が使用中のため取れません。ユーザーに順番を聞いてください。" >&2
-      exit 1
+    ref=${2:?"使い方: scripts/verify-slot acquire <ブランチ> | --queue"}
+    if [ "$ref" = "--queue" ]; then
+      branches=$(queue_list)
+      if [ -z "$branches" ]; then
+        echo "荷台が空です。scripts/verify-slot add <ブランチ> で入れてください。" >&2
+        exit 1
+      fi
+      for b in $branches; do
+        git rev-parse --verify "$b^{commit}" >/dev/null 2>&1 || {
+          echo "$b が見つかりません。scripts/verify-slot remove $b で外してください。" >&2
+          exit 1
+        }
+      done
+      base=$(git rev-parse --verify "$BASE_BRANCH^{commit}") || { echo "$BASE_BRANCH が見つかりません。" >&2; exit 1; }
+      check_free_and_clean
+      back=$(current_position)
+      label="queue: $(echo $branches | sed 's/ /, /g')"
+      write_lock "$label" "$base" "$back"
+      if ! git -C "$MAIN" switch --detach "$base" >/dev/null 2>&1; then
+        rm -f "$LOCK"
+        echo "切り替えに失敗したため、札は返しました。" >&2
+        exit 1
+      fi
+      for b in $branches; do
+        if ! out=$(git -C "$MAIN" merge --no-ff --no-edit -m "確認枠: $b を重ねる" "$b" 2>&1); then
+          git -C "$MAIN" merge --abort >/dev/null 2>&1 || true
+          restore_main "$back"
+          rm -f "$LOCK"
+          echo "$b を重ねる途中で失敗しました(ほかのブランチとの衝突など)。札は返し、メインのフォルダは元に戻しました。" >&2
+          echo "$out" | tail -n 8 >&2
+          echo "ユーザーに伝え、$b を直すか荷台から外す(remove)かを決めてください。" >&2
+          exit 1
+        fi
+      done
+      commit=$(git -C "$MAIN" rev-parse HEAD)
+      write_lock "$label" "$commit" "$back"
+      regen_project
+      echo "札を取りました。荷台のブランチをまとめた確認枠は $(echo "$commit" | cut -c1-7) です(元のブランチは変更していません)。"
+      echo "重ねた順番と中身($BASE_BRANCH 基準):"
+      n=0
+      for b in $branches; do
+        n=$((n + 1))
+        echo "  $n. $b"
+        git log --oneline "$BASE_BRANCH..$b" | head -n 10 | sed 's/^/       /'
+      done
+      echo "  開く: open $MAIN/studiquo.xcodeproj"
+      echo "  スキーム: studiquo-staging"
+      echo "  終わったら: scripts/verify-slot release"
+      exit 0
     fi
+    check_free_and_clean
     commit=$(git rev-parse --verify "$ref^{commit}") || { echo "$ref が見つかりません。" >&2; exit 1; }
-    if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then
-      echo "メインのフォルダに未コミットの変更があるため切り替えません。ユーザーに扱いを確認してください:" >&2
-      git -C "$MAIN" status --short --untracked-files=no >&2
-      exit 1
-    fi
-    back=$(git -C "$MAIN" symbolic-ref --quiet --short HEAD || git -C "$MAIN" rev-parse HEAD)
-    {
-      echo "owner=$OWNER"
-      echo "branch=$ref"
-      echo "commit=$commit"
-      echo "return_to=$back"
-      echo "started=$(date '+%Y-%m-%d %H:%M:%S')"
-      echo "started_epoch=$(date +%s)"
-    } > "$LOCK"
+    back=$(current_position)
+    write_lock "$ref" "$commit" "$back"
     if ! git -C "$MAIN" switch --detach "$commit" >/dev/null 2>&1; then
       rm -f "$LOCK"
       echo "切り替えに失敗したため、札は返しました。" >&2
       exit 1
     fi
-    if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
-      (cd "$MAIN" && xcodegen generate >/dev/null)
-    fi
+    regen_project
     echo "札を取りました。確認枠は $ref ($(echo "$commit" | cut -c1-7)) です。"
     echo "  開く: open $MAIN/studiquo.xcodeproj"
     echo "  スキーム: studiquo-staging"
@@ -77,14 +201,16 @@ case "${1:-status}" in
       exit 1
     fi
     git -C "$MAIN" switch "${back:-main}" >/dev/null 2>&1 || git -C "$MAIN" switch --detach "$back" >/dev/null
-    if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
-      (cd "$MAIN" && xcodegen generate >/dev/null)
-    fi
+    regen_project
     rm -f "$LOCK"
     echo "札を返しました。メインのフォルダは ${back:-main} に戻りました。"
+    if [ -n "$(queue_list)" ]; then
+      echo "荷台を空にしました(入っていたもの: $(queue_list | tr '\n' ' '))。続けて確認するものは add し直してください。"
+      rm -f "$QUEUE"
+    fi
     ;;
   *)
-    echo "使い方: scripts/verify-slot {acquire <ブランチ>|release|status}" >&2
+    echo "使い方: scripts/verify-slot {acquire <ブランチ>|acquire --queue|add <ブランチ>|remove <ブランチ>|queue|release|status}" >&2
     exit 2
     ;;
 esac
