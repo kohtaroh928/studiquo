@@ -87,7 +87,7 @@ struct AIChatPanel: View {
             onSelectAppAttachment: onSelectAppAttachment,
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop,
-            onOpenRAG: ragAvailable ? { showsRAG = true } : nil,
+            onOpenRAG: { showsRAG = true },
             isRAGActive: store.ragScope != nil
         )
         .sheet(isPresented: $showsRAG) {
