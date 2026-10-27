@@ -59,4 +59,25 @@ final class PaneTapSelectionTests: XCTestCase {
         XCTAssertTrue(chat.waitForExistence(timeout: 10))
         XCTAssertGreaterThan(chat.frame.midY, app.windows.firstMatch.frame.midY, "下のペインをタップしたのにAIトークが上に開いています。")
     }
+
+    func testCollapsingTheSplitCancelsPendingPaneSelection() {
+        let split = app.buttons["画面分割"]
+        XCTAssertTrue(split.waitForExistence(timeout: 20))
+        split.tap()
+        let files = app.buttons["ファイルアプリと2分割"]
+        XCTAssertTrue(files.waitForExistence(timeout: 5))
+        files.tap()
+
+        app.buttons["note-ai-toolbar-button"].tap()
+        let picker = app.descendants(matching: .any)["pane-pick-primary"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+
+        split.tap()
+        let single = app.buttons["1画面"]
+        XCTAssertTrue(single.waitForExistence(timeout: 5))
+        single.tap()
+
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "1画面に戻してもペイン選択が残っています。")
+        XCTAssertFalse(app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch.exists)
+    }
 }
