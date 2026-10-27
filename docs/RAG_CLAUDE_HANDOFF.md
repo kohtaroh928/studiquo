@@ -547,5 +547,5 @@ High/full＋Planner/Code/Security。seal直後に開始済taskのfinallyがclean
 rollbackは新claimを閉じ0016/証拠/枠保持、trigger削除や旧purge復帰は不可。remote migration/deploy/実ユーザーPDF/有料AI/commit/pushなし。automation PAUSED。Notion既存RAGカードへ結果とB残件を更新する。Project対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、複製/upload未変更。
 ## 2026-10-26 Codex 資料検索ボタン常時表示
 
-今回: `codex/rag-button-always-visible`で、AIトーク上部の資料検索ボタンをRAG利用可否にかかわらず表示するよう変更（commit `68084d1`）。タップ時は従来どおり資料検索設定画面を開く。RAGの利用可否・同意・サーバー状態の安全制御は変更していない。iOS Debug（generic iOS、署名なし）ビルド成功。実機確認、mainへの統合、push、配備は未実施。作業用projectのitem-listは`unknown owner type`で失敗したため、GitHub Projectは未記録。実行中processなし。次の一手: 実機でAIトークの使用量表示の左にボタンが常時見え、利用不可時にも設定画面を開けることを確認する。Projectの資料の更新: なし。
+今回: `codex/rag-button-always-visible`で、AIトーク上部の資料検索ボタンをRAG利用可否にかかわらず表示するよう変更（commit `68084d1`）。タップ時は従来どおり資料検索設定画面を開く。RAGの利用可否・同意・サーバー状態の安全制御は変更していない。iOS Debug（generic iOS、署名なし）ビルド成功。2026-10-27にユーザーの依頼でRAGの2コミットだけを`origin/main`基点の`codex/rag-button-always-visible-pr`へ切り出し、PR #67を作成した。mainへの直接pushは保護ルール（PRと必須チェック4件）で拒否されたため、PR #67経由で2026-10-27にmainへマージ済み。作業用projectのitem-listは`unknown owner type`で失敗したため、GitHub Projectは未記録。実行中processなし。次の一手: 実機でAIトークの使用量表示の左にボタンが常時見え、利用不可時にも設定画面を開けることを確認する。Projectの資料の更新: なし。
 
