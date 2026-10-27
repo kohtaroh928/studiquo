@@ -90,6 +90,40 @@ final class PenShapeBoundaryTests: XCTestCase {
 
     private func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
 
+    func testRoundedVWithClearCornerPrefersPolylineOverParabola() {
+        let points = walk(
+            [p(0, 0), p(80, 150), p(160, 0)],
+            round: 0.22,
+            jitter: 0,
+            seed: 42
+        )
+        let ink = stroke(points)
+
+        // A rounded V can also be fitted by a parabola. The visible corner
+        // is stronger evidence of a polyline than that global fit.
+        XCTAssertNotNil(InkCanvasView.polylineIfRecognized(ink))
+        XCTAssertNotNil(InkCanvasView.parabolaIfRecognized(ink))
+        XCTAssertEqual(classify(points), .polyline)
+    }
+
+    func testGentlePolylineStillRecognizesWithCurveCorrectionDisabled() {
+        let points = walk(
+            [p(0, 0), p(100, 0), p(150, 86.6)],
+            jitter: 0,
+            seed: 43
+        )
+        let ink = stroke(points)
+        let match = InkCanvasView.classifyHold(
+            ink,
+            start: points[0],
+            current: points[points.count - 1],
+            enabled: [.polyline]
+        )
+
+        XCTAssertNotNil(InkCanvasView.polylineIfRecognized(ink))
+        XCTAssertEqual(match?.kind, .polyline)
+    }
+
     // MARK: Sample sets
 
     private struct Sample { let name: String; let expected: Set<Kind?>; let points: [CGPoint] }
