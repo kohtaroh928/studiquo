@@ -1,8 +1,9 @@
 import XCTest
 
-/// The AIトーク button swaps the chat into the pane opposite the one being
-/// worked in, leaving that pane's own content in state so pressing the button
-/// again hands it back. From a single screen it still opens the split.
+/// In a split, the AIトーク button asks the student to tap the pane that
+/// should be replaced. Its original content remains in state, and pressing
+/// the button again hands that pane back. From a single screen it still opens
+/// the split.
 ///
 /// Runs against the note-editor fixture (`--note-ai-chat-ui-test`) without a
 /// seeded conversation, in portrait so the split is top/bottom.
@@ -27,6 +28,12 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
     private var aiButton: XCUIElement { app.buttons["note-ai-toolbar-button"] }
     private var swappedPane: XCUIElement { app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch }
     private var primaryPane: XCUIElement { app.descendants(matching: .any)["split-pane-primary"].firstMatch }
+
+    private func choosePane(_ pane: String = "secondary") {
+        let overlay = app.descendants(matching: .any)["pane-pick-\(pane)"].firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5), "ペインを選ぶための表示が出ません。")
+        overlay.tap()
+    }
 
     /// Layout changes animate; a tap during one can be swallowed.
     private func settle() { Thread.sleep(forTimeInterval: 1.5) }
@@ -86,11 +93,12 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
 
     // MARK: 2分割
 
-    func testSplitSwapsTheChatIntoTheOppositePaneAndBackAgain() {
+    func testSplitSwapsTheChatIntoThePaneTheStudentTapsAndBackAgain() {
         splitWithFilesBrowser()
         XCTAssertFalse(chatIsShown, "分割しただけでAIトークが出ています。")
 
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10), "2分割でAIトークがペインに入れ替わりません。")
         XCTAssertTrue(waitForChat(), "入れ替わったペインにチャットが表示されません。")
         XCTAssertFalse(app.buttons["note-ai-floating-to-pane"].exists, "入れ替えと同時に臨時画面が出ています。")
@@ -128,6 +136,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         settle()
 
         aiButton.tap()
+        choosePane("primary")
         XCTAssertTrue(waitForChat(), "AIトークがペインに入れ替わりません。")
         let close = app.buttons["AIトークを閉じる"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "入れ替わったペインの閉じるボタンがありません。")
@@ -140,6 +149,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         let before = companionPane.identifier
 
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10), "AIトークがペインに入れ替わりません。")
         XCTAssertFalse(companionPane.exists, "入れ替え中も元のペインが表示されています。")
         aiButton.tap()
@@ -147,6 +157,22 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
 
         XCTAssertTrue(companionPane.waitForExistence(timeout: 10), "戻したペインが表示されません。")
         XCTAssertEqual(companionPane.identifier, before, "戻したペインの内容が入れ替え前と違います。")
+    }
+
+    func testCancellingPaneChoiceDoesNotOpenTheChat() {
+        splitWithFilesBrowser()
+
+        aiButton.tap()
+        let cancel = app.buttons["キャンセル"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "ペイン選択のキャンセルボタンがありません。")
+        cancel.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["pane-pick-secondary"].waitForNonExistence(timeout: 5),
+            "キャンセル後もペイン選択が残っています。"
+        )
+        XCTAssertFalse(swappedPane.exists, "キャンセルしたAIトークが開いています。")
+        XCTAssertFalse(chatIsShown, "キャンセルしたAIトークの入力欄が表示されています。")
     }
 
     // MARK: 臨時画面との行き来
@@ -185,6 +211,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(menuItem("ペインに入れ替え").waitForExistence(timeout: 5), "分割中でAIが見えていないのに「ペインに入れ替え」がありません。")
         XCTAssertTrue(menuItem("臨時画面で開く").exists, "分割中でAIが見えていないのに「臨時画面で開く」がありません。")
         menuItem("ペインに入れ替え").tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10), "メニューからペインに入れ替わりません。")
         settle()
 
@@ -204,6 +231,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         splitWithFilesBrowser()
         let before = companionPane.identifier
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10))
         settle()
 
@@ -223,6 +251,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         settle()
 
         floatingToPane.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10), "フローティングからペインに入りません。")
         XCTAssertTrue(floatingToPane.waitForNonExistence(timeout: 10), "入れ替えと同時にフローティングが残っています。")
     }
@@ -253,6 +282,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         let toPane = menuItem("ペインに入れ替え")
         XCTAssertTrue(toPane.waitForExistence(timeout: 5), "臨時画面の表示中も入れ替えを選べるはずです。")
         toPane.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10), "ペインへ入れ替わりません。")
         XCTAssertTrue(floatingToPane.waitForNonExistence(timeout: 10), "入れ替えたのに臨時画面が残っています。")
         settle()
@@ -294,6 +324,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         splitWithFilesBrowser()
         let before = companionPane.identifier
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10))
         settle()
 
@@ -308,6 +339,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
     func testCollapsingToOneScreenClearsTheSwap() {
         splitWithFilesBrowser()
         aiButton.tap()
+        choosePane("primary")
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10))
         settle()
 
@@ -332,6 +364,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(drawingBarControls.firstMatch.waitForExistence(timeout: 5), "入れ替え前に描画バーが出ていません。")
 
         aiButton.tap()
+        choosePane("primary")
         // 上のペインは識別子が上書きされるため、チャットは閉じるボタンで見分ける。
         XCTAssertTrue(app.buttons["AIトークを閉じる"].waitForExistence(timeout: 10), "AIトークが入れ替わりません。")
         settle()
@@ -346,6 +379,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
     func testOpeningPhotoStudyDropsTheSwap() {
         splitWithFilesBrowser()
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(swappedPane.waitForExistence(timeout: 10))
         settle()
 
@@ -361,6 +395,7 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(library.waitForExistence(timeout: 10), "写真アプリと2分割を選んでも、写真資料のペインが開きません。")
 
         aiButton.tap()
+        choosePane()
         XCTAssertTrue(waitForChat(), "写真資料の表示中にAIトークが開きません。")
         XCTAssertTrue(library.waitForNonExistence(timeout: 10), "AIトークを開いても写真資料が残っています。")
     }
