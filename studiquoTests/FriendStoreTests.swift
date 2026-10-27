@@ -3300,7 +3300,7 @@ final class FriendStoreTests: XCTestCase {
         }
 
         store.send("one more", to: alice)
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntil(timeout: 10) { !FileManager.default.fileExists(atPath: tempFile.path) }
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: tempFile.path), "the evicted message's local attachment file must be deleted")
     }
