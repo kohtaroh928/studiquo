@@ -732,6 +732,7 @@ final class FriendStore: ObservableObject {
             }
             errorMessage = ""
         } catch {
+            guard !Self.isCancelledRequest(error) else { return }
             errorMessage = Self.isAuthFailure(error) ? Self.authExpiredErrorMessage : Self.connectivityErrorMessage
         }
         await syncMyAvatarIfNeeded()
@@ -865,7 +866,13 @@ final class FriendStore: ObservableObject {
     /// identically, so there's nothing to be gained by waiting, and every
     /// extra attempt just delays the one thing that actually helps — the
     /// user finding out they need to re-sign in.
+    private static func isCancelledRequest(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
     private func notePollResult(_ key: String, succeeded: Bool, error: Error? = nil) {
+        // SwiftUI cancels view tasks when the user switches tabs. This is not a network failure.
+        if let error, Self.isCancelledRequest(error) { return }
         if succeeded {
             consecutivePollFailures[key] = 0
             hasNotifiedAuthExpired = false
