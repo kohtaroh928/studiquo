@@ -1,3 +1,7 @@
+## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
+
+ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
+
 ## 2026-10-26 出典ポップアップの実機確認・PR
 
 RAG出典ページをチャット内のシートで表示する変更（8ec1b80、PDF表示修正fa65731）を、iPad実機で表示・閉じる・再表示まで確認済み。最新mainを取り込んだ3fe3935後、PR #56（https://github.com/kohtaroh928/studiquo/pull/56）を作成・pushした。GitHub ActionsはWorkerテスト等が成功し、iOSビルド・Swift解析・Security SASTが実行中のためmainマージ待ち。保護ルールを迂回せず、auto mergeはリポジトリで無効。未コミットだったLocalizable.xcstringsは、出典の利用不能メッセージ追加と不要な旧文言の同期としてf981687に別コミットで保存済み。確認枠には同一の未コミット変更が残っているため、verify-slot releaseは安全のため拒否された。GitHub Projectに「RAG出典ページをチャット内シートで表示」を進行中・Codex担当で記録済み。常駐processなし。次は残る必須チェックの成功確認、PRマージ、確認枠の翻訳ファイルを安全に整理して返却。
