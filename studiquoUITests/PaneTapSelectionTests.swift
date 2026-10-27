@@ -80,4 +80,24 @@ final class PaneTapSelectionTests: XCTestCase {
         XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "1画面に戻してもペイン選択が残っています。")
         XCTAssertFalse(app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch.exists)
     }
+
+    func testUndoingTheSplitCancelsPendingPaneSelection() {
+        let split = app.buttons["画面分割"]
+        XCTAssertTrue(split.waitForExistence(timeout: 20))
+        split.tap()
+        let files = app.buttons["ファイルアプリと2分割"]
+        XCTAssertTrue(files.waitForExistence(timeout: 5))
+        files.tap()
+
+        app.buttons["note-ai-toolbar-button"].tap()
+        let picker = app.descendants(matching: .any)["pane-pick-primary"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+
+        let undo = app.buttons["元に戻す"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        undo.tap()
+
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "Undo後もペイン選択が残っています。")
+        XCTAssertFalse(app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch.exists)
+    }
 }
