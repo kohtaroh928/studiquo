@@ -207,10 +207,18 @@ struct LoginView: View {
 }
 
 private struct CreateAccountView: View {
+    private enum Field: Hashable { case password }
+
     @EnvironmentObject private var authentication: AuthenticationStore
     var isPasswordReset = false
     @State private var email = ""
     @State private var password = ""
+    @State private var isPasswordVisible = false
+    @FocusState private var focusedField: Field?
+
+    private var passwordPlaceholder: String {
+        isPasswordReset ? "新しいパスワード（12文字以上）" : "パスワード（12文字以上）"
+    }
 
     var body: some View {
         VStack(spacing: 28) {
@@ -226,9 +234,37 @@ private struct CreateAccountView: View {
                 TextField("メールアドレス", text: $email)
                     .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                     .accountFieldStyle()
-                SecureField(isPasswordReset ? "新しいパスワード（12文字以上）" : "パスワード（12文字以上）", text: $password)
+                HStack(spacing: 8) {
+                    Group {
+                        if isPasswordVisible {
+                            TextField(passwordPlaceholder, text: $password)
+                        } else {
+                            SecureField(passwordPlaceholder, text: $password)
+                        }
+                    }
                     .textContentType(.newPassword)
-                    .accountFieldStyle()
+                    .focused($focusedField, equals: .password)
+
+                    if !isPasswordReset {
+                        Button {
+                            let wasFocused = focusedField == .password
+                            isPasswordVisible.toggle()
+                            if wasFocused {
+                                DispatchQueue.main.async {
+                                    focusedField = .password
+                                }
+                            }
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel(isPasswordVisible ? "パスワードを隠す" : "パスワードを表示")
+                    }
+                }
+                .accountFieldStyle()
                 if isPasswordReset {
                     Text("パスワードを再設定すると、設定済みのパスキーは削除され、48時間はアカウントの削除とアプリの承認ができなくなります。再設定後に、新しいパスキーを設定できます。パスキーを設定していない場合は、再設定のメールコードで、パスワードを新しく決められます。")
                         .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
@@ -334,7 +370,10 @@ private struct EmailVerificationView: View {
 
 private extension View {
     func accountFieldStyle() -> some View {
-        padding(14).background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous)
+        return padding(14)
+            .background(Theme.Palette.surface, in: shape)
+            .overlay(shape.strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline))
     }
 }
 
