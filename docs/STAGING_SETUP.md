@@ -45,7 +45,7 @@ RAGの追加整備記録（2026-10-09）: 専用Vectorize `studiquo-rag-v1-stagi
 
 | 項目 | 内容 |
 | --- | --- |
-| Resend | ステージング用のAPIキー。コード送信の確認は、**Resendのアカウントの持ち主の、ご自身のメールアドレス**を使う(共通の送信元は、持ち主のアドレスにだけ配送できる)。`delivered@resend.dev`(Resendのテスト用宛先)は、実在の人に届かないが、使えるかは、確認していない |
+| Resend | ステージング用のAPIキー。送信元は、Resendで認証済みの`studiquo.app`(`noreply@studiquo.app`)。2026-10-26に、共通の送信元(`onboarding@resend.dev`、持ち主のアドレスにだけ配送できる)から切り替えた。友人など、他人のアドレスにも確認コードが届く。同じアドレスへの送信は1時間に5回まで(超えると429)。`delivered@resend.dev`(Resendのテスト用宛先)は、実在の人に届かないが、使えるかは、確認していない |
 | Slack | テスト用チャンネルのIncoming Webhook URL。本番のチャンネルには、投稿しない |
 | ランダムな値 | `CSRF_SECRET`など、ステージング専用の値(`openssl rand -base64 32`) |
 | シミュレータまたは実機 | アプリの表示確認用。アプリは`https`のエンドポイントだけ受け付ける |
@@ -88,7 +88,7 @@ npx wrangler d1 migrations apply studiquo-admin-staging --env staging --remote
 - 別名のWorker(`studiquo-mcp-staging`)。時刻起動(cron)なし。
 - 別のKV、別のD1、別のDurable Objects(同じクラスを、別のWorkerとして持つ)。
 - レート制限は、本番と同じ名前・回数で、`namespace_id`だけを`10NN`から`20NN`に変えてある(本番とカウンタが混ざらない)。
-- `vars`は、`PRIVACY_RETENTION_ENABLED`と`AI_PROVIDER_APPROVED`が`"false"`、`ARGON2_WRITE`が`"false"`。送信元メールは、`Studiquo Staging <onboarding@resend.dev>`。
+- `vars`は、`PRIVACY_RETENTION_ENABLED`と`AI_PROVIDER_APPROVED`が`"false"`、`ARGON2_WRITE`が`"false"`。送信元メールは、`Studiquo Staging <noreply@studiquo.app>`(2026-10-26に変更)。
 
 **IDを入れ替えた後に、必ず確認すること**(デプロイの前に、読み取りだけで確認する):
 
