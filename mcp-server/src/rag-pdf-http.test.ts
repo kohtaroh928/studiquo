@@ -105,8 +105,11 @@ test('consent granting needs privacy headers and current flags',async()=>{
 });
 test('slow reader holds admission during transfer then times out without completion',async()=>{
  const s=await setup(),response=await handleRawPDFHTTP(url(path(s)),request(),s.e,session,{processOptions:options,transferMs:40});
- await new Promise(r=>setTimeout(r,15));assert.equal(job(s).state,'dispatched');assert.equal(job(s).settled_units,null);
- await new Promise(r=>setTimeout(r,65));assert.equal((await frames(response)).failed,true);assert.equal(job(s).state,'settled');
+ // Poll for each state rather than sleeping a fixed time: on a loaded CI runner the move to 'dispatched' can take longer than 15ms.
+ for(let i=0;i<2000&&job(s).state!=='dispatched';i++)await new Promise(r=>setTimeout(r,1));
+ assert.equal(job(s).state,'dispatched');assert.equal(job(s).settled_units,null);
+ for(let i=0;i<2000&&job(s).state!=='settled';i++)await new Promise(r=>setTimeout(r,1));
+ assert.equal((await frames(response)).failed,true);assert.equal(job(s).state,'settled');
 });
 test('withdrawal while completed result waits for terminal reader demand prevents completion',async()=>{
  const s=await setup(),response=await run(s),reader=response.body.getReader();
