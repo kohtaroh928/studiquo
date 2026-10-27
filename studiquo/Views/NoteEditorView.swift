@@ -302,9 +302,9 @@ struct NoteEditorView: View {
     /// alternative; the two are never shown together.
     @State private var aiSwapPane: ActivePane?
     /// In a two-pane layout, opening a chat must not silently evict the pane
-    /// the student was using. Keep the choice explicit for both AI and
-    /// friend/group chats.
-    @State private var showsAIChatPanePicker = false
+    /// the student was using. The chosen tool waits until the student taps
+    /// the pane it should replace, just like a tab-bar selection does.
+    @State private var pendingAIChatPaneSwap = false
     @State private var pendingChatPaneTarget: NoteChatTarget?
     /// Last floating-panel frame as fractions of the editor, so the panel
     /// reopens where it was left, also after the editor is closed and reopened.
@@ -568,13 +568,6 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
-        .modifier(PaneChoiceDialogModifier(
-            showsAIChatPicker: $showsAIChatPanePicker,
-            pendingChatTarget: $pendingChatPaneTarget,
-            titleForPane: splitPaneTitle,
-            showAIChat: swapInAIChat(in:),
-            showChat: openChat(_:in:)
-        ))
         .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
@@ -1335,7 +1328,7 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private func panePickOverlay(for pane: ActivePane) -> some View {
-        if let target = pendingPaneTarget {
+        if pendingPaneTarget != nil || pendingAIChatPaneSwap || pendingChatPaneTarget != nil {
             ZStack {
                 Color.black.opacity(0.5)
                 VStack(spacing: 10) {
@@ -1345,7 +1338,7 @@ struct NoteEditorView: View {
                     Text(splitPaneTitle(pane).replacingOccurrences(of: "に表示", with: "のペイン"))
                         .font(.caption)
                         .opacity(0.8)
-                    Button("キャンセル") { pendingPaneTarget = nil }
+                    Button("キャンセル") { clearPendingPaneSelection() }
                         .buttonStyle(.bordered)
                         .tint(.white)
                         .padding(.top, 6)
@@ -1354,8 +1347,16 @@ struct NoteEditorView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                pendingPaneTarget = nil
-                applyPaneTarget(target, to: pane)
+                if let target = pendingPaneTarget {
+                    pendingPaneTarget = nil
+                    applyPaneTarget(target, to: pane)
+                } else if pendingAIChatPaneSwap {
+                    pendingAIChatPaneSwap = false
+                    swapInAIChat(in: pane)
+                } else if let target = pendingChatPaneTarget {
+                    pendingChatPaneTarget = nil
+                    openChat(target, in: pane)
+                }
                 activePane = pane
             }
             .accessibilityIdentifier("pane-pick-\(pane == .primary ? "primary" : "secondary")")
@@ -2563,6 +2564,8 @@ struct NoteEditorView: View {
         if splitMode != .single,
            primaryChatTarget != target,
            secondaryChatTarget != target {
+            pendingPaneTarget = nil
+            pendingAIChatPaneSwap = false
             pendingChatPaneTarget = target
             return
         }
@@ -2663,11 +2666,12 @@ struct NoteEditorView: View {
             presentTemporaryAIChat()
             return
         }
-        showsAIChatPanePicker = true
+        pendingPaneTarget = nil
+        pendingChatPaneTarget = nil
+        pendingAIChatPaneSwap = true
     }
 
     private func swapInAIChat(in pane: ActivePane) {
-        showsAIChatPanePicker = false
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
@@ -2773,7 +2777,7 @@ struct NoteEditorView: View {
         layout.secondaryMaterial = restorable(layout.secondaryMaterial)
         lastPaneLayout = layout
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         pendingSplitMode = nil
         showsTemporaryAIChat = false
         // One transaction without animation, so the panes swap in a single frame.
@@ -3317,6 +3321,8 @@ struct NoteEditorView: View {
         dismissPhotoStudy(restorePreviousLayout: false)
         // Split: the user chooses the pane by tapping it.
         if splitMode != .single {
+            pendingAIChatPaneSwap = false
+            pendingChatPaneTarget = nil
             pendingPaneTarget = target
             return
         }
@@ -3711,7 +3717,7 @@ struct NoteEditorView: View {
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         // A closed split shows no pane, so a file opened in place must not stay
         // open behind it.
         discardExternalFile(in: .primary)
@@ -3728,6 +3734,12 @@ struct NoteEditorView: View {
         secondaryChatTarget = nil
         pendingSplitMode = nil
         activePane = .primary
+    }
+
+    private func clearPendingPaneSelection() {
+        pendingPaneTarget = nil
+        pendingAIChatPaneSwap = false
+        pendingChatPaneTarget = nil
     }
 
     private var displayedPrimaryNotebook: Notebook {
@@ -9636,39 +9648,6 @@ private struct NoteChatPickerPopover: View {
             }
         }
         .contentShape(Rectangle())
-    }
-}
-
-/// Kept outside `NoteEditorView` so its two confirmation dialogs do not make
-/// the already large editor body exceed SwiftUI's type-checking budget.
-private struct PaneChoiceDialogModifier: ViewModifier {
-    @Binding var showsAIChatPicker: Bool
-    @Binding var pendingChatTarget: NoteChatTarget?
-    let titleForPane: (ActivePane) -> String
-    let showAIChat: (ActivePane) -> Void
-    let showChat: (NoteChatTarget, ActivePane) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .confirmationDialog("AIトークを表示する場所", isPresented: $showsAIChatPicker, titleVisibility: .visible) {
-                Button(titleForPane(.primary)) { showAIChat(.primary) }
-                Button(titleForPane(.secondary)) { showAIChat(.secondary) }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
-            .confirmationDialog("チャットを表示する場所", isPresented: Binding(
-                get: { pendingChatTarget != nil },
-                set: { if !$0 { pendingChatTarget = nil } }
-            ), titleVisibility: .visible) {
-                if let target = pendingChatTarget {
-                    Button(titleForPane(.primary)) { showChat(target, .primary) }
-                    Button(titleForPane(.secondary)) { showChat(target, .secondary) }
-                }
-                Button("キャンセル", role: .cancel) { pendingChatTarget = nil }
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
     }
 }
 
