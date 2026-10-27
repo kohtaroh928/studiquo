@@ -55,7 +55,7 @@ struct AccountGateView: View {
             }
         }
         .overlay {
-            // Covers everything until the account has a passkey.
+            // Offered at every sign-in until the account has a passkey ("あとで" closes it).
             if authentication.needsPasskeyEnrollment && !cleanupPending
                 && (authentication.state == .authenticated || authentication.state == .onboarding) {
                 PasskeyEnrollmentView()
@@ -131,6 +131,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var showsReset = false
     @State private var showsCreateAccount = false
+    @State private var didAutoStartPasskey = false
 
     var body: some View {
         NavigationStack {
@@ -152,11 +153,11 @@ struct LoginView: View {
                     SecureField("パスワード", text: $password)
                         .textContentType(.password)
                         .accountFieldStyle()
-                    if !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if authentication.knowsPasskeyOnThisDevice || !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button {
                             Task { _ = await authentication.loginWithPasskey() }
                         } label: {
-                            Label("パスキーを使用", systemImage: "key.fill")
+                            Label("パスキーでログイン", systemImage: "key.fill")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .disabled(authentication.isSignInBusy)
@@ -191,6 +192,14 @@ struct LoginView: View {
                 Spacer()
             }
             .padding(32)
+            // An account known to have a passkey on this device: open the prompt
+            // right away, once. Cancelling leaves the form below, which signs in
+            // with the password (or Apple / Google) just as well.
+            .task {
+                guard !didAutoStartPasskey, authentication.knowsPasskeyOnThisDevice else { return }
+                didAutoStartPasskey = true
+                _ = await authentication.loginWithPasskey()
+            }
             .navigationDestination(isPresented: $showsReset) { CreateAccountView(isPasswordReset: true) }
             .navigationDestination(isPresented: $showsCreateAccount) { CreateAccountView() }
         }
@@ -220,6 +229,10 @@ private struct CreateAccountView: View {
                 SecureField(isPasswordReset ? "新しいパスワード（12文字以上）" : "パスワード（12文字以上）", text: $password)
                     .textContentType(.newPassword)
                     .accountFieldStyle()
+                if isPasswordReset {
+                    Text("パスワードを再設定すると、設定済みのパスキーは削除され、48時間はアカウントの削除とアプリの承認ができなくなります。再設定後に、新しいパスキーを設定できます。パスキーを設定していない場合は、再設定のメールコードで、パスワードを新しく決められます。")
+                        .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if !authentication.errorMessage.isEmpty {
                     Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger).frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -387,10 +400,10 @@ private struct OnboardingView: View {
 }
 
 
-/// Asked of every signed-in account that has no passkey yet. A password or an
-/// e-mailed code can be handed over to a look-alike site that relays it; a
+/// Offered at every sign-in to an account that has no passkey yet. A password or
+/// an e-mailed code can be handed over to a look-alike site that relays it; a
 /// passkey is checked by the device against the real site's domain and cannot.
-/// Face ID / Touch ID is what confirms it is the owner.
+/// Face ID / Touch ID is what confirms it is the owner. "あとで" always closes it.
 struct PasskeyEnrollmentView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @State private var emailCode = ""
@@ -408,7 +421,7 @@ struct PasskeyEnrollmentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 480)
-                Text("設定すると、次回からはパスキーでのみログインできます(パスワード、メールのコード、Apple、Googleでは入れなくなります)。最初の設定では、メールに届くコードで本人確認をします。iCloudキーチェーンがオンになっている必要があります。")
+                Text("設定すると、次回からはFace IDまたはTouch IDでログインできます。パスワードなどでのログインも引き続き使えます。最初の設定では、メールに届くコードで本人確認をします。iCloudキーチェーンがオンになっている必要があります。")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -456,10 +469,8 @@ struct PasskeyEnrollmentView: View {
                     .disabled(authentication.isPasskeyBusy)
                     .accessibilityIdentifier("passkey-enroll")
                 }
-                if authentication.passkeyEnrollmentFailed {
-                    Button("今回はスキップ") { authentication.skipPasskeyEnrollmentForNow() }
-                        .accessibilityIdentifier("passkey-skip")
-                }
+                Button("あとで") { authentication.skipPasskeyEnrollmentForNow() }
+                    .accessibilityIdentifier("passkey-skip")
                 Button("ログアウト", role: .destructive) { authentication.logout() }
             }
             .padding(32)
