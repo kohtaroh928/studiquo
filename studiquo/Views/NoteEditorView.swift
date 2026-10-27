@@ -302,9 +302,9 @@ struct NoteEditorView: View {
     /// alternative; the two are never shown together.
     @State private var aiSwapPane: ActivePane?
     /// In a two-pane layout, opening a chat must not silently evict the pane
-    /// the student was using. Keep the choice explicit for both AI and
-    /// friend/group chats.
-    @State private var showsAIChatPanePicker = false
+    /// the student was using. The chosen tool waits until the student taps
+    /// the pane it should replace, just like a tab-bar selection does.
+    @State private var pendingAIChatPaneSwap = false
     @State private var pendingChatPaneTarget: NoteChatTarget?
     /// Last floating-panel frame as fractions of the editor, so the panel
     /// reopens where it was left, also after the editor is closed and reopened.
@@ -568,13 +568,6 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
-        .modifier(PaneChoiceDialogModifier(
-            showsAIChatPicker: $showsAIChatPanePicker,
-            pendingChatTarget: $pendingChatPaneTarget,
-            titleForPane: splitPaneTitle,
-            showAIChat: swapInAIChat(in:),
-            showChat: openChat(_:in:)
-        ))
         .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
@@ -1335,7 +1328,7 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private func panePickOverlay(for pane: ActivePane) -> some View {
-        if let target = pendingPaneTarget {
+        if pendingPaneTarget != nil || pendingAIChatPaneSwap || pendingChatPaneTarget != nil {
             ZStack {
                 Color.black.opacity(0.5)
                 VStack(spacing: 10) {
@@ -1345,7 +1338,7 @@ struct NoteEditorView: View {
                     Text(splitPaneTitle(pane).replacingOccurrences(of: "に表示", with: "のペイン"))
                         .font(.caption)
                         .opacity(0.8)
-                    Button("キャンセル") { pendingPaneTarget = nil }
+                    Button("キャンセル") { clearPendingPaneSelection() }
                         .buttonStyle(.bordered)
                         .tint(.white)
                         .padding(.top, 6)
@@ -1354,8 +1347,16 @@ struct NoteEditorView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                pendingPaneTarget = nil
-                applyPaneTarget(target, to: pane)
+                if let target = pendingPaneTarget {
+                    pendingPaneTarget = nil
+                    applyPaneTarget(target, to: pane)
+                } else if pendingAIChatPaneSwap {
+                    pendingAIChatPaneSwap = false
+                    swapInAIChat(in: pane)
+                } else if let target = pendingChatPaneTarget {
+                    pendingChatPaneTarget = nil
+                    openChat(target, in: pane)
+                }
                 activePane = pane
             }
             .accessibilityIdentifier("pane-pick-\(pane == .primary ? "primary" : "secondary")")
@@ -2569,6 +2570,8 @@ struct NoteEditorView: View {
         if splitMode != .single,
            primaryChatTarget != target,
            secondaryChatTarget != target {
+            pendingPaneTarget = nil
+            pendingAIChatPaneSwap = false
             pendingChatPaneTarget = target
             return
         }
@@ -2669,11 +2672,12 @@ struct NoteEditorView: View {
             presentTemporaryAIChat()
             return
         }
-        showsAIChatPanePicker = true
+        pendingPaneTarget = nil
+        pendingChatPaneTarget = nil
+        pendingAIChatPaneSwap = true
     }
 
     private func swapInAIChat(in pane: ActivePane) {
-        showsAIChatPanePicker = false
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
@@ -2779,7 +2783,7 @@ struct NoteEditorView: View {
         layout.secondaryMaterial = restorable(layout.secondaryMaterial)
         lastPaneLayout = layout
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         pendingSplitMode = nil
         showsTemporaryAIChat = false
         // One transaction without animation, so the panes swap in a single frame.
@@ -3323,6 +3327,8 @@ struct NoteEditorView: View {
         dismissPhotoStudy(restorePreviousLayout: false)
         // Split: the user chooses the pane by tapping it.
         if splitMode != .single {
+            pendingAIChatPaneSwap = false
+            pendingChatPaneTarget = nil
             pendingPaneTarget = target
             return
         }
@@ -3717,7 +3723,7 @@ struct NoteEditorView: View {
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         // A closed split shows no pane, so a file opened in place must not stay
         // open behind it.
         discardExternalFile(in: .primary)
@@ -3734,6 +3740,12 @@ struct NoteEditorView: View {
         secondaryChatTarget = nil
         pendingSplitMode = nil
         activePane = .primary
+    }
+
+    private func clearPendingPaneSelection() {
+        pendingPaneTarget = nil
+        pendingAIChatPaneSwap = false
+        pendingChatPaneTarget = nil
     }
 
     private var displayedPrimaryNotebook: Notebook {
@@ -3853,21 +3865,17 @@ struct NoteEditorView: View {
         }
     }
 
-    private var activeNotebook: Notebook {
-        activePane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    /// The note that page-level tools should operate on. When a chat is the
+    /// selected pane, the other pane remains the usable note target instead
+    /// of making the whole toolbar unavailable.
+    private var noteToolPane: ActivePane? {
+        if paneShowsNote(activePane) { return activePane }
+        let otherPane: ActivePane = activePane == .primary ? .secondary : .primary
+        return paneShowsNote(otherPane) ? otherPane : nil
     }
 
-    /// True when the pane the user last touched is a flashcard deck, which
-    /// has no pages for the page-level tools to act on.
-    private var activePaneShowsFlashcards: Bool {
-        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
-    }
-
-    /// True when the pane the user last touched is a note or PDF. The page
-    /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
-    /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
-    private var activePaneShowsNote: Bool {
-        if activePane == .secondary {
+    private func paneShowsNote(_ pane: ActivePane) -> Bool {
+        if pane == .secondary {
             return splitMode != .single
                 && secondaryNotebook != nil
                 && secondaryFlashcardDeck == nil
@@ -3885,20 +3893,36 @@ struct NoteEditorView: View {
             && aiSwapPane != .primary
     }
 
+    private var activeNotebook: Notebook {
+        noteToolPane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    }
+
+    /// True when the pane the user last touched is a flashcard deck, which
+    /// has no pages for the page-level tools to act on.
+    private var activePaneShowsFlashcards: Bool {
+        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
+    }
+
+    /// Page tools remain usable whenever either pane contains a note. If the
+    /// selected pane is a chat, they use the note in the other pane.
+    private var activePaneShowsNote: Bool {
+        noteToolPane != nil
+    }
+
     private var activePageIndexBinding: Binding<Int> {
-        activePane == .secondary ? $secondaryPageIndex : $primaryPageIndex
+        noteToolPane == .secondary ? $secondaryPageIndex : $primaryPageIndex
     }
 
     private var activePage: NotePage? {
         let pages = activeNotebook.sortedPages
-        let index = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let index = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         return pages.indices.contains(index) ? pages[index] : nil
     }
 
     private func deleteCurrentPage() {
         let target = activeNotebook
         guard target.sortedPages.count > 1, let page = activePage else { return }
-        let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let deletedIndex = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
         recordPageRemoval(page, in: target)
         target.pages?.removeAll { $0.persistentModelID == pageID }
@@ -3909,7 +3933,7 @@ struct NoteEditorView: View {
         target.refreshLibraryMetadata()
         target.updatedAt = .now
         let nextIndex = min(deletedIndex, target.sortedPages.count - 1)
-        if activePane == .secondary { secondaryPageIndex = nextIndex }
+        if noteToolPane == .secondary { secondaryPageIndex = nextIndex }
         else { primaryPageIndex = nextIndex }
         try? modelContext.save()
     }
@@ -4082,22 +4106,14 @@ struct NoteEditorView: View {
     }
 
     private func applyTemplate(_ template: PageTemplate) {
-        let pages = notebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex), pages[primaryPageIndex].backgroundImageData == nil else { return }
-        pages[primaryPageIndex].pageTemplate = template
-        notebook.updatedAt = .now
+        guard let page = currentPrimaryPage, page.backgroundImageData == nil else { return }
+        page.pageTemplate = template
+        activeNotebook.updatedAt = .now
     }
 
     private var currentPrimaryPage: NotePage? {
-        // A deck in the primary pane has no pages; the tools act on the note
-        // in the other pane instead.
-        if primaryFlashcardDeck != nil {
-            let pages = secondaryNotebook?.sortedPages ?? []
-            return pages.indices.contains(secondaryPageIndex) ? pages[secondaryPageIndex] : nil
-        }
-        let pages = displayedPrimaryNotebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex) else { return nil }
-        return pages[primaryPageIndex]
+        guard noteToolPane != nil else { return nil }
+        return activePage
     }
 
     /// Which page undo/redo act on. Only the canvas that was actually drawn
@@ -4181,7 +4197,7 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     @MainActor
@@ -4196,7 +4212,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     @MainActor
@@ -4210,7 +4226,7 @@ struct NoteEditorView: View {
             height: max(100, image.size.height)
         )
         page.notebook?.refreshLibraryMetadata()
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     /// Arms the shape tool for rectangle/ellipse/line: the shape itself
@@ -4236,7 +4252,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
         if kind == .studyTape {
             NotificationCenter.default.post(
                 name: .studiquoSelectPageElement,
@@ -4253,7 +4269,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     private func nextLayerIndex(on page: NotePage) -> Double {
@@ -9642,39 +9658,6 @@ private struct NoteChatPickerPopover: View {
             }
         }
         .contentShape(Rectangle())
-    }
-}
-
-/// Kept outside `NoteEditorView` so its two confirmation dialogs do not make
-/// the already large editor body exceed SwiftUI's type-checking budget.
-private struct PaneChoiceDialogModifier: ViewModifier {
-    @Binding var showsAIChatPicker: Bool
-    @Binding var pendingChatTarget: NoteChatTarget?
-    let titleForPane: (ActivePane) -> String
-    let showAIChat: (ActivePane) -> Void
-    let showChat: (NoteChatTarget, ActivePane) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .confirmationDialog("AIトークを表示する場所", isPresented: $showsAIChatPicker, titleVisibility: .visible) {
-                Button(titleForPane(.primary)) { showAIChat(.primary) }
-                Button(titleForPane(.secondary)) { showAIChat(.secondary) }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
-            .confirmationDialog("チャットを表示する場所", isPresented: Binding(
-                get: { pendingChatTarget != nil },
-                set: { if !$0 { pendingChatTarget = nil } }
-            ), titleVisibility: .visible) {
-                if let target = pendingChatTarget {
-                    Button(titleForPane(.primary)) { showChat(target, .primary) }
-                    Button(titleForPane(.secondary)) { showChat(target, .secondary) }
-                }
-                Button("キャンセル", role: .cancel) { pendingChatTarget = nil }
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
     }
 }
 
