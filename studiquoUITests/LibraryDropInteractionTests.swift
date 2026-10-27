@@ -540,10 +540,14 @@ final class LibraryDropInteractionTests: XCTestCase {
     /// the long-press menu itself keep their own 1 s hold on purpose.
     private static let dragLiftHold: TimeInterval = 0.5
 
-    private func drag(_ source: XCUIElement, to target: XCUIElement) {
+    private func drag(
+        _ source: XCUIElement,
+        to target: XCUIElement,
+        pressDuration: TimeInterval = 0.5
+    ) {
         let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: Self.dragLiftHold, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
+        start.press(forDuration: pressDuration, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     private func exerciseDrop(mode: String) {
