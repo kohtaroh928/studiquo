@@ -3865,21 +3865,17 @@ struct NoteEditorView: View {
         }
     }
 
-    private var activeNotebook: Notebook {
-        activePane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    /// The note that page-level tools should operate on. When a chat is the
+    /// selected pane, the other pane remains the usable note target instead
+    /// of making the whole toolbar unavailable.
+    private var noteToolPane: ActivePane? {
+        if paneShowsNote(activePane) { return activePane }
+        let otherPane: ActivePane = activePane == .primary ? .secondary : .primary
+        return paneShowsNote(otherPane) ? otherPane : nil
     }
 
-    /// True when the pane the user last touched is a flashcard deck, which
-    /// has no pages for the page-level tools to act on.
-    private var activePaneShowsFlashcards: Bool {
-        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
-    }
-
-    /// True when the pane the user last touched is a note or PDF. The page
-    /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
-    /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
-    private var activePaneShowsNote: Bool {
-        if activePane == .secondary {
+    private func paneShowsNote(_ pane: ActivePane) -> Bool {
+        if pane == .secondary {
             return splitMode != .single
                 && secondaryNotebook != nil
                 && secondaryFlashcardDeck == nil
@@ -3897,20 +3893,36 @@ struct NoteEditorView: View {
             && aiSwapPane != .primary
     }
 
+    private var activeNotebook: Notebook {
+        noteToolPane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    }
+
+    /// True when the pane the user last touched is a flashcard deck, which
+    /// has no pages for the page-level tools to act on.
+    private var activePaneShowsFlashcards: Bool {
+        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
+    }
+
+    /// Page tools remain usable whenever either pane contains a note. If the
+    /// selected pane is a chat, they use the note in the other pane.
+    private var activePaneShowsNote: Bool {
+        noteToolPane != nil
+    }
+
     private var activePageIndexBinding: Binding<Int> {
-        activePane == .secondary ? $secondaryPageIndex : $primaryPageIndex
+        noteToolPane == .secondary ? $secondaryPageIndex : $primaryPageIndex
     }
 
     private var activePage: NotePage? {
         let pages = activeNotebook.sortedPages
-        let index = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let index = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         return pages.indices.contains(index) ? pages[index] : nil
     }
 
     private func deleteCurrentPage() {
         let target = activeNotebook
         guard target.sortedPages.count > 1, let page = activePage else { return }
-        let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let deletedIndex = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
         recordPageRemoval(page, in: target)
         target.pages?.removeAll { $0.persistentModelID == pageID }
@@ -3921,7 +3933,7 @@ struct NoteEditorView: View {
         target.refreshLibraryMetadata()
         target.updatedAt = .now
         let nextIndex = min(deletedIndex, target.sortedPages.count - 1)
-        if activePane == .secondary { secondaryPageIndex = nextIndex }
+        if noteToolPane == .secondary { secondaryPageIndex = nextIndex }
         else { primaryPageIndex = nextIndex }
         try? modelContext.save()
     }
@@ -4094,22 +4106,14 @@ struct NoteEditorView: View {
     }
 
     private func applyTemplate(_ template: PageTemplate) {
-        let pages = notebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex), pages[primaryPageIndex].backgroundImageData == nil else { return }
-        pages[primaryPageIndex].pageTemplate = template
-        notebook.updatedAt = .now
+        guard let page = currentPrimaryPage, page.backgroundImageData == nil else { return }
+        page.pageTemplate = template
+        activeNotebook.updatedAt = .now
     }
 
     private var currentPrimaryPage: NotePage? {
-        // A deck in the primary pane has no pages; the tools act on the note
-        // in the other pane instead.
-        if primaryFlashcardDeck != nil {
-            let pages = secondaryNotebook?.sortedPages ?? []
-            return pages.indices.contains(secondaryPageIndex) ? pages[secondaryPageIndex] : nil
-        }
-        let pages = displayedPrimaryNotebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex) else { return nil }
-        return pages[primaryPageIndex]
+        guard noteToolPane != nil else { return nil }
+        return activePage
     }
 
     /// Which page undo/redo act on. Only the canvas that was actually drawn
