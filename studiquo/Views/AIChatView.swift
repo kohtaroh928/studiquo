@@ -57,6 +57,9 @@ struct AIChatPanel: View {
     let onSelectAppAttachment: () -> [AppAttachmentOption]
     let onOpenAttachment: (AIChatAttachment) -> Void
     var onPaneDrop: ((String) -> Bool)? = nil
+    /// Supplied only when this chat occupies one side of a split editor.
+    /// Keeping it optional leaves the home and floating chat headers unchanged.
+    var onReplacePaneMaterial: (() -> Void)? = nil
 
     /// Identifies this on-screen instance to the store's "is anyone looking"
     /// tracking. One per instance, so two panels cannot cancel each other.
@@ -87,6 +90,7 @@ struct AIChatPanel: View {
             onSelectAppAttachment: onSelectAppAttachment,
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop,
+            onReplacePaneMaterial: onReplacePaneMaterial,
             onOpenRAG: { showsRAG = true },
             isRAGActive: store.ragScope != nil
         )
@@ -280,6 +284,8 @@ struct AIChatPane: View {
     let onOpenAttachment: (AIChatAttachment) -> Void
     /// Routes a drop that is not an attachment (the editor swaps panes with it).
     let onPaneDrop: ((String) -> Bool)?
+    /// Opens the split editor's material picker. `nil` outside a split pane.
+    let onReplacePaneMaterial: (() -> Void)?
     /// Opens the RAG controls; `nil` hides the button.
     let onOpenRAG: (() -> Void)?
     let isRAGActive: Bool
@@ -303,6 +309,7 @@ struct AIChatPane: View {
         onSelectAppAttachment: @escaping () -> [AppAttachmentOption],
         onOpenAttachment: @escaping (AIChatAttachment) -> Void,
         onPaneDrop: ((String) -> Bool)? = nil,
+        onReplacePaneMaterial: (() -> Void)? = nil,
         onOpenRAG: (() -> Void)? = nil,
         isRAGActive: Bool = false
     ) {
@@ -324,6 +331,7 @@ struct AIChatPane: View {
         self.onSelectAppAttachment = onSelectAppAttachment
         self.onOpenAttachment = onOpenAttachment
         self.onPaneDrop = onPaneDrop
+        self.onReplacePaneMaterial = onReplacePaneMaterial
         self.onOpenRAG = onOpenRAG
         self.isRAGActive = isRAGActive
     }
@@ -422,6 +430,16 @@ struct AIChatPane: View {
                             }
                         }
                         Spacer()
+                        if let onReplacePaneMaterial {
+                            Button(action: onReplacePaneMaterial) {
+                                Image(systemName: "arrow.left.arrow.right.square")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("このペインの資料を入れ替える"))
+                            .accessibilityIdentifier("pane-replace-ai")
+                        }
                         if let onOpenRAG {
                             Button(action: onOpenRAG) {
                                 Image(systemName: "doc.text.magnifyingglass")
