@@ -2262,13 +2262,13 @@ struct NoteEditorView: View {
                         Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
                     }
                     Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && activePaneShowsNote) }
-                .disabled(!activePaneShowsNote)
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && canInsertIntoNote) }
+                .disabled(!canInsertIntoNote)
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
-                    .disabled(!activePaneShowsNote)
+                    .disabled(!canInsertIntoNote)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
-                    .disabled(!activePaneShowsNote)
+                    .disabled(!canInsertIntoNote)
                 if Self.showsDarkPageToggle {
                     toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                         .disabled(!activePaneShowsNote)
@@ -3226,7 +3226,7 @@ struct NoteEditorView: View {
     private func insertAIResponseOnPage(_ text: String) {
         // A page's text box shows plain text: no LaTeX, no Markdown markers.
         let value = MathTextFormatter.plainText(from: text).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
+        guard !value.isEmpty, let page = insertionPage else { return }
         let lineCount = max(1, value.components(separatedBy: .newlines).count)
         let estimatedRows = min(18, max(6, lineCount + value.count / 44))
         let element = PageElement(
@@ -3867,7 +3867,11 @@ struct NoteEditorView: View {
     /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
     /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
     private var activePaneShowsNote: Bool {
-        if activePane == .secondary {
+        paneShowsNote(activePane)
+    }
+
+    private func paneShowsNote(_ pane: ActivePane) -> Bool {
+        if pane == .secondary {
             return splitMode != .single
                 && secondaryNotebook != nil
                 && secondaryFlashcardDeck == nil
@@ -3883,6 +3887,27 @@ struct NoteEditorView: View {
             && primaryTemporaryChatMaterial == nil
             && photoStudyPane != .primary
             && aiSwapPane != .primary
+    }
+
+    /// The pane the insertion tools (photo, text, shapes...) act on: the only
+    /// note when the other pane is not one, else the one touched last.
+    private var insertionPane: ActivePane? {
+        let target = NoteInsertionPolicy.targetPane(
+            lastActive: activePane == .secondary ? .secondary : .primary,
+            primaryShowsNote: paneShowsNote(.primary),
+            secondaryShowsNote: paneShowsNote(.secondary)
+        )
+        return target.map { $0 == .secondary ? ActivePane.secondary : .primary }
+    }
+
+    private var canInsertIntoNote: Bool { insertionPage != nil }
+
+    private var insertionPage: NotePage? {
+        guard let pane = insertionPane else { return nil }
+        let notebook = pane == .secondary ? secondaryNotebook : displayedPrimaryNotebook
+        let index = pane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let pages = notebook?.sortedPages ?? []
+        return pages.indices.contains(index) ? pages[index] : nil
     }
 
     private var activePageIndexBinding: Binding<Int> {
@@ -4159,7 +4184,7 @@ struct NoteEditorView: View {
     }
 
     private func addTextElement() {
-        guard !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         let value = textToInsert.trimmingCharacters(in: .whitespacesAndNewlines)
         let element = PageElement(kind: .text, text: value, width: 0.42, height: 0.12, colorHex: selectedElementColorHex)
         element.layerIndex = nextLayerIndex(on: page)
@@ -4186,7 +4211,7 @@ struct NoteEditorView: View {
 
     @MainActor
     private func addImageElement(from data: Data) async {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         // Photo-library assets can be tens of megapixels. Persist a bounded
         // representation so every later render, sync, backup and duplicate
         // does not carry the original camera-sized payload.
@@ -4196,7 +4221,11 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
+        NotificationCenter.default.post(
+            name: .studiquoSelectPageElement,
+            object: element.persistentModelID
+        )
     }
 
     @MainActor
@@ -4218,7 +4247,7 @@ struct NoteEditorView: View {
     /// drags on the canvas with the pencil, sized to that drag. `studyTape`
     /// isn't a drawn shape, so it still gets placed immediately.
     private func addShapeElement(_ kind: PageElementKind) {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         if [.rectangle, .ellipse].contains(kind) {
             isReadOnlyMode = false
             pendingShapeKindRaw = kind.rawValue
@@ -4236,7 +4265,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
         if kind == .studyTape {
             NotificationCenter.default.post(
                 name: .studiquoSelectPageElement,
@@ -4246,14 +4275,14 @@ struct NoteEditorView: View {
     }
 
     private func addPageLink(to pageIndex: Int, title: String) {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         let label = title.isEmpty ? "ページ \(pageIndex + 1)へ" : title
         let element = PageElement(kind: .pageLink, text: "\(pageIndex)|\(label)", width: 0.38, height: 0.08, colorHex: "#1565C0")
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     private func nextLayerIndex(on page: NotePage) -> Double {
@@ -4413,8 +4442,22 @@ private struct PhotoPickerSheet: UIViewControllerRepresentable {
                 onPick(nil)
                 return
             }
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                DispatchQueue.main.async { self.onPick(data) }
+            // Ask for the asset's own registered image type (HEIC, JPEG, PNG)
+            // and fall back to a decoded UIImage: the generic public.image
+            // type can come back empty, which used to close the sheet
+            // without inserting anything.
+            let typeIdentifier = provider.registeredTypeIdentifiers.first {
+                UTType($0)?.conforms(to: .image) == true
+            } ?? UTType.image.identifier
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+                if let data, !data.isEmpty {
+                    DispatchQueue.main.async { self.onPick(data) }
+                    return
+                }
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    let fallback = (object as? UIImage).flatMap { $0.jpegData(compressionQuality: 0.92) }
+                    DispatchQueue.main.async { self.onPick(fallback) }
+                }
             }
         }
     }
@@ -8712,7 +8755,14 @@ private struct EditablePageElement: View {
     /// just flat image bytes, so unlike a lasso selection there's nothing
     /// to render/rasterize.
     private var dragPreviewImage: UIImage? {
-        displayedImage
+        if element.kind == .image { return displayedImage }
+        // Text, shapes, tape and links have no bitmap of their own, so the
+        // ghost is a snapshot of how they currently look.
+        let renderer = ImageRenderer(
+            content: elementContent.frame(width: elementSize.width, height: elementSize.height)
+        )
+        renderer.scale = displayScale
+        return renderer.uiImage
     }
 
     private var moveGesture: some Gesture {
@@ -8724,10 +8774,9 @@ private struct EditablePageElement: View {
                     moveSnapshot = PageElementSnapshot(element)
                 }
                 guard let origin = dragOrigin else { return }
-                // Only photos hand off to another page/pane — shapes already
-                // have the lasso for that, and every other kind (text, study
-                // tape, ...) keeps its purely local move.
-                if element.kind == .image, !pageGlobalFrameTracker.frame.contains(value.location) {
+                // Every inserted kind (photo, text, shape, tape, link) can be
+                // carried past this page's edge into the other page/pane.
+                if !pageGlobalFrameTracker.frame.contains(value.location) {
                     if !isDraggingAcrossBoundary { cachedDragPreviewImage = dragPreviewImage }
                     isDraggingAcrossBoundary = true
                     NotificationCenter.default.post(
