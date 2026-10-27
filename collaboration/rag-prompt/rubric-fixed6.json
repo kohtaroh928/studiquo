@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "fixed6-atomic-v1",
+  "id": "fixed6-atomic-v2",
   "baselineId": "20261014-policy-v1",
   "contextsHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
   "note": "固定6ケースの根拠だけから作った採点項目。生成側へ渡さない。自動判定は表記ゆれに弱い予備判定で、not_detectedとreviewは人が回答を読んで確定する。",
@@ -41,7 +41,7 @@
         {"id": "p3-f-time", "category": "omission", "all": ["7時間"], "severity": "critical", "text": "Fの点灯7時間"},
         {"id": "p3-f-price-unknown", "category": "omission", "any": ["F[^。\\n]{0,25}(価格|値段)[^。\\n]{0,25}(記載|確認|不明|わかりません|分かりません|ない|ありません)", "(価格|値段)[^。\\n]{0,20}(記載|確認|不明)[^。\\n]{0,15}F"], "severity": "critical", "text": "Fの価格は資料で確認できないと述べる"},
         {"id": "p3-delta", "category": "omission", "any": ["2時間(長|多)", "差は2時間", "2時間の差", "2時間ほど長", "2時間だけ長"], "severity": "major", "text": "点灯時間はFが2時間長いと差を明示する（過去の欠落項目）"},
-        {"id": "p3-no-verdict", "category": "omission", "any": ["(お得|割安|コスパ)[^。\\n]{0,40}(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)", "(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません)[^。\\n]{0,30}(お得|割安|コスパ)"], "severity": "major", "text": "お得な方は判断できないと理由とともに答える"},
+        {"id": "p3-no-verdict", "category": "omission", "any": ["(お得|割安|コスパ)[^。\\n]{0,40}(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません|ず)", "(判断|確定|比較|決め|言え|結論)[^。\\n]{0,8}(でき|られ|出せ)(ない|ません|ず)[^。\\n]{0,30}(お得|割安|コスパ)"], "severity": "major", "text": "お得な方は判断できないと理由とともに答える"},
         {"id": "p3-no-invented-price", "category": "grounding", "forbid": ["F[^。\\n]{0,12}(価格|値段)[^。\\n]{0,6}(は|が)?\\d+円"], "severity": "critical", "text": "Fの価格を作らない"},
         {"id": "p3-no-winner", "category": "grounding", "forbid": ["(E|F)(の方|のほう)が[^。\\n]{0,10}(お得|割安|おすすめ)(です|と言え|になります)"], "severity": "critical", "text": "全体のお得さを確定しない"},
         {"id": "p3-no-onesided-ratio", "category": "grounding", "forbid": ["円/時間", "円/h", "1時間あたり", "320円"], "severity": "major", "text": "片側だけの価格÷時間を参考値として足さない"}
@@ -61,7 +61,7 @@
       "question": "LとMの点灯時間・価格・使用場所の比較",
       "items": [
         {"id": "lm-values", "category": "omission", "all": ["6時間", "1800円"], "severity": "critical", "text": "両方6時間・1800円"},
-        {"id": "lm-same", "category": "omission", "any": ["同じ", "差はな", "差がな", "違いはな", "違いがな", "同一", "等し", "同額"], "severity": "major", "text": "点灯時間と価格に差がないと明示する"},
+        {"id": "lm-same", "category": "omission", "any": ["同じ", "差はな", "差がな", "違いはな", "違いがな", "同一", "等し", "同額", "差はありません", "差がありません", "違いはありません", "違いがありません"], "severity": "major", "text": "点灯時間と価格に差がないと明示する"},
         {"id": "lm-location", "category": "omission", "all": ["屋内", "屋外"], "severity": "critical", "text": "Lは屋内、Mは屋外"},
         {"id": "lm-no-winner", "category": "grounding", "forbid": ["(L|M)(の方|のほう)が[^。\\n]{0,15}(お得|優れ|良い|長い|安い|おすすめ)"], "severity": "critical", "text": "どちらかを優れているとしない"},
         {"id": "lm-no-inferred-spec", "category": "grounding", "styles": ["source_only"], "forbid": ["防水", "防滴", "耐候", "IP\\d"], "severity": "major", "text": "使用場所から防水などの仕様を推測しない"},
