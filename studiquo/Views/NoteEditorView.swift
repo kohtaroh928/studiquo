@@ -4197,7 +4197,7 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     @MainActor
@@ -4212,7 +4212,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     @MainActor
@@ -4226,7 +4226,7 @@ struct NoteEditorView: View {
             height: max(100, image.size.height)
         )
         page.notebook?.refreshLibraryMetadata()
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     /// Arms the shape tool for rectangle/ellipse/line: the shape itself
@@ -4252,7 +4252,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
         if kind == .studyTape {
             NotificationCenter.default.post(
                 name: .studiquoSelectPageElement,
@@ -4269,7 +4269,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     private func nextLayerIndex(on page: NotePage) -> Double {
