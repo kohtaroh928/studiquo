@@ -1,3 +1,7 @@
+## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
+
+ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
+
 ## 2026-10-26 出典ポップアップの実機確認・PR
 
 RAG出典ページをチャット内のシートで表示する変更（8ec1b80、PDF表示修正fa65731）を、iPad実機で表示・閉じる・再表示まで確認済み。最新mainを取り込んだ3fe3935後、PR #56（https://github.com/kohtaroh928/studiquo/pull/56）を作成・pushした。GitHub ActionsはWorkerテスト等が成功し、iOSビルド・Swift解析・Security SASTが実行中のためmainマージ待ち。保護ルールを迂回せず、auto mergeはリポジトリで無効。未コミットだったLocalizable.xcstringsは、出典の利用不能メッセージ追加と不要な旧文言の同期としてf981687に別コミットで保存済み。確認枠には同一の未コミット変更が残っているため、verify-slot releaseは安全のため拒否された。GitHub Projectに「RAG出典ページをチャット内シートで表示」を進行中・Codex担当で記録済み。常駐processなし。次は残る必須チェックの成功確認、PRマージ、確認枠の翻訳ファイルを安全に整理して返却。
@@ -547,5 +551,5 @@ High/full＋Planner/Code/Security。seal直後に開始済taskのfinallyがclean
 rollbackは新claimを閉じ0016/証拠/枠保持、trigger削除や旧purge復帰は不可。remote migration/deploy/実ユーザーPDF/有料AI/commit/pushなし。automation PAUSED。Notion既存RAGカードへ結果とB残件を更新する。Project対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、複製/upload未変更。
 ## 2026-10-26 Codex 資料検索ボタン常時表示
 
-今回: `codex/rag-button-always-visible`で、AIトーク上部の資料検索ボタンをRAG利用可否にかかわらず表示するよう変更（commit `68084d1`）。タップ時は従来どおり資料検索設定画面を開く。RAGの利用可否・同意・サーバー状態の安全制御は変更していない。2026-10-27にユーザーの依頼でRAGの2コミットだけを`origin/main`基点の`codex/rag-button-always-visible-pr`へ切り出し、PR #67を作成した。mainへの直接pushは保護ルール（PRと必須チェック4件）で拒否されており、PRのチェックとレビュー・マージ待ち。作業用projectのitem-listは`unknown owner type`で失敗したため、GitHub Projectは未記録。実行中processなし。次の一手: PR #67の必須チェックとレビューを確認し、承認後にGitHub上でマージする。Projectの資料の更新: なし。
+今回: `codex/rag-button-always-visible`で、AIトーク上部の資料検索ボタンをRAG利用可否にかかわらず表示するよう変更（commit `68084d1`）。タップ時は従来どおり資料検索設定画面を開く。RAGの利用可否・同意・サーバー状態の安全制御は変更していない。iOS Debug（generic iOS、署名なし）ビルド成功。2026-10-27にユーザーの依頼でRAGの2コミットだけを`origin/main`基点の`codex/rag-button-always-visible-pr`へ切り出し、PR #67を作成した。mainへの直接pushは保護ルール（PRと必須チェック4件）で拒否されたため、PR #67経由で2026-10-27にmainへマージ済み。作業用projectのitem-listは`unknown owner type`で失敗したため、GitHub Projectは未記録。実行中processなし。次の一手: 実機でAIトークの使用量表示の左にボタンが常時見え、利用不可時にも設定画面を開けることを確認する。Projectの資料の更新: なし。
 

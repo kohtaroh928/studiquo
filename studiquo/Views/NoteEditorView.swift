@@ -1391,7 +1391,10 @@ struct NoteEditorView: View {
     /// button), so no floating copy is drawn over them.
     private func paneEmbedsReplaceButton(_ pane: ActivePane) -> Bool {
         switch paneBodyKind(pane) {
-        case .photoStudy, .material, .web, .flashcard: return true
+        case .photoStudy, .material, .web, .flashcard, .aiSwap:
+            return true
+        case .aiChat:
+            return splitMode != .single
         default: return false
         }
     }
@@ -1582,7 +1585,8 @@ struct NoteEditorView: View {
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
                 onOpenAttachment: { openAIChatAttachment($0, target: pane == .primary ? .secondary : .primary) },
-                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) }
+                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) },
+                onReplacePaneMaterial: { paneReplaceTarget = pane }
             )
         }
         .accessibilityElement(children: .contain)
@@ -1608,7 +1612,8 @@ struct NoteEditorView: View {
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
                     onOpenAttachment: { openAIChatAttachment($0, target: .primary) },
-                    onPaneDrop: { handlePaneDrop($0, target: .primary) }
+                    onPaneDrop: { handlePaneDrop($0, target: .primary) },
+                    onReplacePaneMaterial: splitMode == .single ? nil : { paneReplaceTarget = .primary }
                 )
             } else if let primaryFriend = primaryFriendChat {
                 FriendChatView(
@@ -1709,7 +1714,8 @@ struct NoteEditorView: View {
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
                 onOpenAttachment: { openAIChatAttachment($0, target: .secondary) },
-                onPaneDrop: { handlePaneDrop($0, target: .secondary) }
+                onPaneDrop: { handlePaneDrop($0, target: .secondary) },
+                onReplacePaneMaterial: { paneReplaceTarget = .secondary }
             )
         } else if let secondaryFriend = secondaryFriendChat {
             FriendChatView(

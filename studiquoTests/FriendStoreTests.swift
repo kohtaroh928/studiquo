@@ -20,6 +20,18 @@ final class FriendStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testCancelledRefreshDoesNotShowConnectivityError() async {
+        for error in [CancellationError() as Error, URLError(.cancelled) as Error] {
+            let client = MockFriendChatClient()
+            await client.setErrorToThrow(error)
+            let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+            await store.refresh()
+            XCTAssertEqual(store.errorMessage, "")
+            for _ in 0..<4 { await store.refreshFriends() }
+            XCTAssertEqual(store.errorMessage, "")
+        }
+    }
+
     func testBlockingStaysOnUntilTheServerAnswersAndIsOffAfterwards() async throws {
         let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
