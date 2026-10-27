@@ -572,9 +572,11 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
   let heldFirst = false;
   let firstHeld!: () => void;
   const firstIsHeld = new Promise<void>(resolve => { firstHeld = resolve; });
+  let slowHeld!: () => void;
+  const slowIsHeld = new Promise<void>(resolve => { slowHeld = resolve; });
   kv.get = async (key: string, type?: string) => {
     const value = await realGet(key, type);
-    if (key === stateKey && ++firstReadsOfState === 1) await slowGate;
+    if (key === stateKey && ++firstReadsOfState === 1) { slowHeld(); await slowGate; }
     return value;
   };
   kv.delete = async (key: unknown) => {
@@ -583,7 +585,10 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
     return result;
   };
 
+  // 遅い方を先に始め、状態の読みで止まったのを確かめてから先の方を始める。両方を一度に始めると、
+  // 先に読んだ方が(sha256の終わる順で)入れ替わり、止まった方を待ち続けて終わらないことがある。
   const slow = deleteAccount(env, canonical);
+  await slowIsHeld;
   const first = deleteAccount(env, canonical);
   await firstIsHeld;
   releaseSlow();
@@ -1204,9 +1209,11 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
   let heldFirst = false;
   let firstHeld!: () => void;
   const firstIsHeld = new Promise<void>(resolve => { firstHeld = resolve; });
+  let slowHeld!: () => void;
+  const slowIsHeld = new Promise<void>(resolve => { slowHeld = resolve; });
   kv.get = async (key, type?) => {
     const value = await realGet(key, type);
-    if (key === stateKey && ++firstReadsOfState === 1) await slowGate;
+    if (key === stateKey && ++firstReadsOfState === 1) { slowHeld(); await slowGate; }
     return value;
   };
   kv.delete = async key => {
@@ -1215,7 +1222,10 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
     return result;
   };
 
+  // 遅い方を先に始め、状態の読みで止まったのを確かめてから先の方を始める。両方を一度に始めると、
+  // 先に読んだ方が(sha256の終わる順で)入れ替わり、止まった方を待ち続けて終わらないことがある。
   const slow = deleteAccount(env, canonical);
+  await slowIsHeld;
   const first = deleteAccount(env, canonical);
   await firstIsHeld;
   releaseSlow();
