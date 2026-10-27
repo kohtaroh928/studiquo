@@ -468,7 +468,7 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
   assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
 });
 
-test("POST /api/auth/apple and /google: an account with a passkey is told to use it", async () => {
+test("POST /api/auth/apple and /google: an account with a passkey can still sign in with them", async () => {
   const env = environment();
   const apple = await makeAppleSigningKey();
   await seedAppleJWKS(env, apple.jwk);
@@ -483,13 +483,14 @@ test("POST /api/auth/apple and /google: an account with a passkey is told to use
 
   const appleToken = await signAppleIdentityToken(apple.privateKey, apple.jwk.kid, { sub: "pk-apple-sub", email: "pk-apple@example.com" });
   const appleResponse = await worker.fetch(request("/api/auth/apple", { method: "POST", body: { identityToken: appleToken, randomValue: "a".repeat(40) } }), env, noopCtx);
-  assert.equal(appleResponse.status, 403);
-  assert.equal((await appleResponse.json()).code, "passkey_required");
+  assert.equal(appleResponse.status, 200);
+  assert.ok((await appleResponse.json()).token);
 
   const googleToken = await signGoogleIdentityToken(google.privateKey, google.jwk.kid, { sub: "pk-google-sub", email: "pk-google@example.com", emailVerified: true });
   const googleResponse = await worker.fetch(request("/api/auth/google", { method: "POST", body: { idToken: googleToken, randomValue: "g".repeat(40) } }), env, noopCtx);
-  assert.equal(googleResponse.status, 403);
-  assert.equal((await googleResponse.json()).code, "passkey_required");
+  assert.equal(googleResponse.status, 200);
+  assert.ok((await googleResponse.json()).token);
+  assert.ok(await env.STUDIQUO_DATA.get("passkeys:credential:cred-a"), "signing in does not remove the passkey");
 });
 
 test("POST /api/auth/apple: a later sign-in does not overwrite the account's stored email", async () => {
@@ -2555,12 +2556,83 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:retry-passkey"), null, "and the third removed the passkey");
 });
 
-test("POST /api/auth/email/confirm-code: an account that has a passkey is refused a first password by code, and keeps the passkey", async () => {
+test("POST /api/auth/email/confirm-code: a passkey account with no password (Apple/Google) recovers with a code, which removes the passkey", async () => {
   const env = environment({ strictSessions: true });
   await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a", 1);
-  // A code can be relayed by a look-alike site, so a passkey account does not accept one (passkey-policy.ts).
-  assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 403);
-  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "nothing is removed by a refused request");
+  assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "the lost passkey is gone, so the app asks for a new one");
+});
+
+test("after a reset removed the passkeys, deleting the account and approving an app wait 48 hours", async () => {
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-hold@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-hold@example.com", "owners-passkey", "device-a", 1);
+  const reset = await resetPasswordWith(env, "pk-hold@example.com", "another-passphrase-1", "n".repeat(40));
+  assert.equal(reset.status, 200);
+  const token = (await reset.json()).token;
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null);
+
+  const deleteAccount = () => worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
+  const pair = () => worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
+  for (const send of [deleteAccount, pair]) {
+    const refused = await send();
+    assert.equal(refused.status, 403);
+    const body = await refused.json();
+    assert.equal(body.code, "passkey_reset_hold");
+    assert.ok(body.availableAt > Date.now() + 47 * 3_600_000);
+  }
+
+  const key = (await env.STUDIQUO_DATA.list({ prefix: "passkey-reset-hold:" })).keys[0].name;
+  await env.STUDIQUO_DATA.put(key, String(Date.now() - 49 * 3_600_000));
+  assert.notEqual((await pair()).status, 403, "after the wait it is allowed again");
+  assert.notEqual((await deleteAccount()).status, 403);
+});
+
+test("a retry after a reset failed part-way still waits and still tells the owner", async () => {
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-retry2@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-retry2@example.com", "owners-passkey", "device-a", 1);
+  // An earlier attempt wrote the hold and the cut-off, then failed: the passkey no longer counts.
+  const { startPasskeyResetHold, setPasskeyValidFrom } = await import("./passkey-policy.ts");
+  await startPasskeyResetHold(env, "email:pk-retry2@example.com");
+  await setPasskeyValidFrom(env, ["email:pk-retry2@example.com"]);
+  const mail = mock.method(globalThis, "fetch", async () => new Response("{}", { status: 200 }));
+  try {
+    const reset = await resetPasswordWith(env, "pk-retry2@example.com", "another-passphrase-1", "n".repeat(40));
+    assert.equal(reset.status, 200);
+    assert.ok(mail.mock.calls.some(call => String(call.arguments[0]).includes("api.resend.com") && String((call.arguments[1] as any)?.body).includes("パスキー")), "the owner is told");
+  } finally { mail.mock.restore(); }
+});
+
+test("a reset of an account without passkeys starts no wait", async () => {
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-none@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  const reset = await resetPasswordWith(env, "pk-none@example.com", "another-passphrase-1", "n".repeat(40));
+  const token = (await reset.json()).token;
+  assert.deepEqual((await env.STUDIQUO_DATA.list({ prefix: "passkey-reset-hold:" })).keys, []);
+  const response = await worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
+  assert.notEqual(response.status, 403);
+});
+
+test("a reset on an account with a linked secondary email that holds a passkey still starts the 48-hour hold", async () => {
+  const env = environment({ strictSessions: true });
+  const { linkVerifiedEmail } = await import("./oauth-links.ts");
+  await linkVerifiedEmail(env, { provider: "apple", sub: "linked-apple-sub", email: "primary@example.com", emailVerified: true });
+  // Attach a secondary email identity to the email-accounts index for primary@example.com and seed a passkey on that secondary address.
+  const linkKey = "email-accounts:primary@example.com";
+  const existing = JSON.parse((await env.STUDIQUO_DATA.get(linkKey)) ?? "[]");
+  existing.push({ provider: "email", sub: "secondary@example.com" });
+  await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(existing));
+  await seedPasskey(env, "secondary@example.com", "linked-secondary-passkey", "device-sec", 1);
+
+  const reset = await resetPasswordWith(env, "primary@example.com", "new-passphrase-123", "p".repeat(40));
+  assert.equal(reset.status, 200);
+  const token = (await reset.json()).token;
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:linked-secondary-passkey"), null, "secondary email passkey is removed");
+
+  const refused = await worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).code, "passkey_reset_hold");
 });
 
 test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be removed changes nothing", async t => {
@@ -2813,9 +2885,8 @@ test("POST /api/session/refresh refuses expired, unknown, revoked and malformed 
   assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", body }), env, noopCtx)).status, 401);
 });
 
-// An account with a passkey no longer signs in with a password or an emailed
-// code (a look-alike site can relay both), and the actions that would keep or
-// widen a thief's access ask for the passkey again.
+// An account with a passkey still signs in with a password or an emailed code,
+// and the actions that would keep or widen a thief's access ask for the passkey.
 async function withPasskeyAccount(email = "person@example.com") {
   const env = environment();
   await createLocalAccount(env, email, "correct-horse-battery");
@@ -2828,7 +2899,7 @@ function quietMail() {
   return mock.method(globalThis, "fetch", async () => new Response("{}", { status: 200 }));
 }
 
-test("a password sign-in is refused for an account with a passkey, and no session is minted", async () => {
+test("a password sign-in works for an account with a passkey, and keeps the passkey", async () => {
   const env = await withPasskeyAccount();
   const mail = quietMail();
   try {
@@ -2836,32 +2907,13 @@ test("a password sign-in is refused for an account with a passkey, and no sessio
       request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
       env, noopCtx
     );
-    assert.equal(response.status, 403);
-    const body = await response.json();
-    assert.equal(body.code, "passkey_required");
-    assert.equal(body.token, undefined);
-  } finally { mail.mock.restore(); }
-});
-
-test("a password sign-in works once the recovery wait is over, and the account then has no passkey left", async () => {
-  const env = await withPasskeyAccount();
-  const mail = quietMail();
-  try {
-    const attempt = () => worker.fetch(
-      request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
-      env, noopCtx
-    );
-    assert.equal((await attempt()).status, 403);
-    const key = `passkey-recovery:${sha256Hex("email:person@example.com")}`;
-    await env.STUDIQUO_DATA.put(key, JSON.stringify({ requestedAt: Date.now() - 49 * 3_600_000 }));
-    const response = await attempt();
     assert.equal(response.status, 200);
     assert.ok((await response.json()).token);
-    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:cred-1"), null);
+    assert.ok(await env.STUDIQUO_DATA.get("passkeys:credential:cred-1"));
   } finally { mail.mock.restore(); }
 });
 
-test("an emailed code cannot reset the password or sign in for an account with a passkey", async () => {
+test("an emailed code resets the password of an account with a passkey, and the passkey goes with it", async () => {
   const env = await withPasskeyAccount();
   const stub = stubResendCapturingCode();
   await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
@@ -2873,9 +2925,9 @@ test("an emailed code cannot reset the password or sign in for an account with a
       request("/api/auth/email/confirm-code", { method: "POST", body: { email: "person@example.com", code: stub.code(), password: "another-long-password", randomValue: "r".repeat(40) } }),
       env, noopCtx
     );
-    assert.equal(response.status, 403);
-    assert.equal((await response.json()).code, "passkey_required");
-    assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), before, "the password was not replaced");
+    assert.equal(response.status, 200);
+    assert.notEqual(await env.STUDIQUO_DATA.get("account:local:person@example.com"), before, "the password was replaced");
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:cred-1"), null, "a reset removes the passkeys: the way back after losing one");
   } finally { mail.mock.restore(); }
 });
 
