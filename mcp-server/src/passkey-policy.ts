@@ -1,17 +1,19 @@
-// Passkeys are the only sign-in that a look-alike site relaying traffic (an
+// Passkeys are the one sign-in that a look-alike site relaying traffic (an
 // "adversary in the middle") cannot reuse: the device signs for the real
-// site's domain only. Passwords, e-mailed codes and Apple/Google tokens can be
-// relayed, so an account that has a passkey no longer signs in with them, and the actions
-// that would let a thief keep or widen access ask for the passkey again.
+// site's domain only. They are offered, not required: an account that has a
+// passkey can still sign in with its password, an e-mailed code or Apple/Google,
+// and the sign-in routes do not call gatePasskeyAccount any more. What a passkey
+// still protects are the actions that would let a thief keep or widen access
+// (requireRecentPasskey). Resetting the password removes the account's passkeys
+// (see revokePasskeysForAccount), which is the way back after losing one.
 //
 // Passkeys are listed per account here (the credential records themselves are
 // keyed by credential id), under the account's canonical identity and under
 // its e-mail identity, so a later linking of sign-in methods cannot hide them.
 //
-// A passkey counts as protection from the moment it is registered: from then
-// on the account signs in with it only (see gatePasskeyAccount). The app asks
-// every account for one at its first sign-in and has no way to remove it; the
-// way back after losing it is the e-mailed recovery below.
+// gatePasskeyAccount (the "passkey only" rule with its e-mailed 48-hour
+// recovery) is kept, with its tests, so that rule can be switched back on by
+// calling it again at the sign-in routes in app.ts.
 import { sha256Hex } from "./auth.ts";
 import { tagged } from "./environment.ts";
 import { json } from "./http.ts";
@@ -28,6 +30,9 @@ export const RECOVERY_DELAY_SECONDS = 48 * 60 * 60;
 // has to start (and be notified about) a new one.
 const RECOVERY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 export const REAUTH_VALIDITY_SECONDS = 2 * 60;
+// After a password reset removed an account's passkeys, deleting the account and
+// approving an app are refused for this long (see startPasskeyResetHold).
+export const RESET_HOLD_SECONDS = 48 * 60 * 60;
 // 0: a passkey protects the account as soon as it is registered.
 export const ESTABLISH_AFTER_SECONDS = 0;
 export const REAUTH_ACTIONS = ["delete-account", "approve-app", "add-passkey", "remove-passkeys"];
@@ -308,6 +313,39 @@ export async function gatePasskeyAccount(env: Env, accountKey: string, email: st
     error: "このアカウントはパスキーでログインする設定です。パスキーでログインしてください。",
     code: "passkey_required",
     recoveryAvailableAt: availableAt,
+  }, 403);
+}
+
+const resetHoldKey = async (accountKey: string) => `passkey-reset-hold:${await sha256Hex(accountKey)}`;
+
+/**
+ * Written when a password reset removes an account's passkeys. The reset is how
+ * a lost passkey is replaced, and an e-mailed code is something a look-alike
+ * site or a mailbox thief can have; with the passkeys gone, "needs a recent
+ * passkey" no longer protects deleting the account or approving an app. So
+ * those two wait RESET_HOLD_SECONDS, long enough for the owner to see the e-mail
+ * about the reset.
+ */
+export async function startPasskeyResetHold(env: Env, accountKey: string, now = Date.now()) {
+  await env.STUDIQUO_DATA.put(await resetHoldKey(await resolveAccountKey(env, accountKey)), String(now), { expirationTtl: RESET_HOLD_SECONDS + 60 * 60 });
+}
+
+/** Whether a hold is running (a reset that got as far as writing it counts, even if it failed later). */
+export async function passkeyResetHoldActive(env: Env, accountKey: string, now = Date.now()) {
+  const startedAt = Number(await env.STUDIQUO_DATA.get(await resetHoldKey(await resolveAccountKey(env, accountKey))));
+  return Number.isFinite(startedAt) && startedAt > 0 && now < startedAt + RESET_HOLD_SECONDS * 1000;
+}
+
+/** The refusal to send while a hold is running, or null. */
+export async function refuseDuringPasskeyResetHold(env: Env, accountKey: string, now = Date.now()) {
+  const startedAt = Number(await env.STUDIQUO_DATA.get(await resetHoldKey(await resolveAccountKey(env, accountKey))));
+  if (!Number.isFinite(startedAt) || startedAt <= 0) return null;
+  const availableAt = startedAt + RESET_HOLD_SECONDS * 1000;
+  if (now >= availableAt) return null;
+  return json({
+    error: "パスワードの再設定でパスキーを削除したため、安全のため、この操作はしばらくできません。",
+    code: "passkey_reset_hold",
+    availableAt,
   }, 403);
 }
 

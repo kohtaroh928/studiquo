@@ -366,6 +366,48 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.needsPasskeyEnrollment)
     }
 
+    func testASignInScreenOnlyAutoStartsPasskeyOnceAnAccountIsKnownToHaveOne() async {
+        let without = makeSignedInStore(registered: false)
+        await without.checkPasskeyRequirement()
+        XCTAssertFalse(without.knowsPasskeyOnThisDevice, "an account that skipped the passkey keeps the ordinary form")
+
+        let with = makeSignedInStore(registered: true)
+        XCTAssertFalse(with.knowsPasskeyOnThisDevice)
+        await with.checkPasskeyRequirement()
+        XCTAssertTrue(with.knowsPasskeyOnThisDevice)
+        with.logout()
+        XCTAssertTrue(with.knowsPasskeyOnThisDevice, "signing out must not forget it")
+
+        let reset = makeSignedInStore(registered: false)
+        await reset.checkPasskeyRequirement()
+        XCTAssertFalse(reset.knowsPasskeyOnThisDevice, "an account whose passkeys were removed is no longer known to have one")
+    }
+
+    func testAccountDeletionClearsKnownPasskeyFlagAndSurfacesPasskeyResetHoldError() async {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        let holdStore = AuthenticationStore(
+            service: storeService,
+            defaults: testDefaults,
+            deleteAccountOnServer: { throw AccountDeletionError.passkeyResetHold },
+            authenticationSession: testSession,
+            passkeyRegistered: { true }
+        )
+        await holdStore.checkPasskeyRequirement()
+        XCTAssertTrue(holdStore.knowsPasskeyOnThisDevice)
+
+        let rejected = await holdStore.requestAccountDeletion()
+        XCTAssertFalse(rejected)
+        XCTAssertEqual(
+            holdStore.errorMessage,
+            "パスワードの再設定でパスキーを削除したため、安全のため、48時間はアカウントを削除できません。しばらくしてからもう一度お試しください。"
+        )
+        XCTAssertTrue(holdStore.knowsPasskeyOnThisDevice, "refused deletion during hold must not wipe local state")
+
+        holdStore.finishAccountDeletion()
+        XCTAssertFalse(holdStore.knowsPasskeyOnThisDevice, "finishing account deletion must forget the passkey flag")
+        XCTAssertEqual(holdStore.state, AuthenticationStore.State.needsLogin)
+    }
+
     func testAFailedLookupNeverBlocksAnyone() async {
         let store = makeSignedInStore(registered: nil)
         await store.checkPasskeyRequirement()
@@ -378,12 +420,14 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.needsPasskeyEnrollment, "a passkey is tied to an e-mail address")
     }
 
-    func testTheRequestCannotBeSkippedBeforeSettingUpHasFailed() async {
+    func testTheRequestCanAlwaysBePutOffAndComesBackAtTheNextSignIn() async {
         let store = makeSignedInStore(registered: false)
         await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment)
         store.skipPasskeyEnrollmentForNow()
-        XCTAssertTrue(store.needsPasskeyEnrollment, "only offered once a try has failed")
-        XCTAssertFalse(store.passkeyEnrollmentFailed)
+        XCTAssertFalse(store.needsPasskeyEnrollment, "a passkey is offered, not required")
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment, "asked again the next time the state is checked")
     }
 
     func testAPrivateRelayAddressIsNotAskedForAPasskey() async {
