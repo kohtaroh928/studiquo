@@ -8776,7 +8776,11 @@ private struct EditablePageElement: View {
                 guard let origin = dragOrigin else { return }
                 // Every inserted kind (photo, text, shape, tape, link) can be
                 // carried past this page's edge into the other page/pane.
-                if !pageGlobalFrameTracker.frame.contains(value.location) {
+                // A page link stores a page number of its own notebook, so it
+                // stays put; and without a ghost image the element would just
+                // vanish, so it also stays when none can be made.
+                if element.kind != .pageLink, !pageGlobalFrameTracker.frame.contains(value.location),
+                   isDraggingAcrossBoundary || (dragPreviewImage != nil) {
                     if !isDraggingAcrossBoundary { cachedDragPreviewImage = dragPreviewImage }
                     isDraggingAcrossBoundary = true
                     NotificationCenter.default.post(
