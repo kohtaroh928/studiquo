@@ -83,18 +83,25 @@ final class NoteEditorPhotosPickerStyleTests: XCTestCase {
         /// immediately followed (within a short window — just past any
         /// reasonable amount of whitespace/braces) by `viewName`.
         func isPresentedAsSheet(bindingName: String, showing viewName: String) -> Bool {
-            guard let bindingRange = source.range(of: ".sheet(isPresented: $\(bindingName))") else {
+            guard let bindingRange = source.range(of: ".sheet(isPresented: $\(bindingName)") else {
                 return false
             }
-            let after = source[bindingRange.upperBound...].prefix(200)
+            let after = source[bindingRange.upperBound...].prefix(260)
             return after.contains(viewName)
         }
 
-        // 画像の追加は貼り付けも選べる PhotoPasteSheet、背景画像は PhotoPickerSheet。
+        // 画像の追加は「ライブラリ」と「貼り付けの確認」を別のシートに分ける。
+        // 1つのシートの中身を入れ替えると、ライブラリの小さなカードの外に確認画面の
+        // ボタンが出てしまい、「貼り付ける」を押してもシートが閉じるだけになる。
         XCTAssertTrue(
-            isPresentedAsSheet(bindingName: "showsImagePicker", showing: "PhotoPasteSheet"),
+            isPresentedAsSheet(bindingName: "showsImagePicker", showing: "PhotoPickerSheet"),
             "showsImagePicker は .sheet(isPresented:) の中で" +
-                " PhotoPasteSheet を表示する必要があります。"
+                " PhotoPickerSheet を表示する必要があります。"
+        )
+        XCTAssertTrue(
+            isPresentedAsSheet(bindingName: "showsPhotoPreview", showing: "PhotoPastePreview"),
+            "showsPhotoPreview は .sheet(isPresented:) の中で" +
+                " PhotoPastePreview を表示する必要があります。"
         )
         XCTAssertTrue(
             isPresentedAsSheet(bindingName: "showsBackgroundImagePicker", showing: "PhotoPickerSheet"),

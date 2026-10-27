@@ -331,6 +331,10 @@ struct NoteEditorView: View {
     @State private var isShowingTextAlert = false
     @State private var textToInsert = ""
     @State private var showsImagePicker = false
+    @State private var showsPhotoPreview = false
+    @State private var pickedPhotoData: Data?
+    @State private var wantsPhotoPaste = false
+    @State private var wantsPhotoReselect = false
     @State private var showsBackgroundImagePicker = false
     /// The photo library temporarily covers the pane opposite the note being
     /// edited. The pane's original content stays in state underneath it, so
@@ -610,12 +614,22 @@ struct NoteEditorView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsImagePicker) {
-            PhotoPasteSheet { data in
+        // Picking and previewing are two separate sheets. They used to be one
+        // sheet whose content swapped from the library to the preview; the
+        // library sizes the sheet as a small card, so the preview's buttons
+        // sat outside it and a tap on 貼り付ける just dismissed the sheet.
+        .sheet(isPresented: $showsImagePicker, onDismiss: presentPhotoPreviewIfPicked) {
+            PhotoPickerSheet { data in
+                pickedPhotoData = data
                 showsImagePicker = false
-                guard let data else { return }
-                Task { await addImageElement(from: data) }
             }
+        }
+        .sheet(isPresented: $showsPhotoPreview, onDismiss: finishPhotoPreview) {
+            PhotoPastePreview(
+                data: pickedPhotoData,
+                onReselect: { wantsPhotoReselect = true; showsPhotoPreview = false },
+                onPaste: { wantsPhotoPaste = true; showsPhotoPreview = false }
+            )
         }
         .sheet(isPresented: $showsBackgroundImagePicker) {
             PhotoPickerSheet { data in
@@ -4209,6 +4223,23 @@ struct NoteEditorView: View {
         notebook.updatedAt = .now
     }
 
+    private func presentPhotoPreviewIfPicked() {
+        if pickedPhotoData != nil { showsPhotoPreview = true }
+    }
+
+    /// Runs once the preview sheet is fully gone, so a follow-up sheet or the
+    /// insertion never races its dismissal.
+    private func finishPhotoPreview() {
+        let data = pickedPhotoData
+        defer { wantsPhotoPaste = false; wantsPhotoReselect = false }
+        pickedPhotoData = nil
+        if wantsPhotoReselect {
+            showsImagePicker = true
+        } else if wantsPhotoPaste, let data {
+            Task { await addImageElement(from: data) }
+        }
+    }
+
     @MainActor
     private func addImageElement(from data: Data) async {
         guard let page = insertionPage else { return }
@@ -4483,37 +4514,38 @@ private struct PaneReplaceButton: View {
     }
 }
 
-/// Photo tool flow: picking a photo only previews it; it reaches the note
-/// when the user taps 貼り付ける. "選び直す" returns to the library.
-private struct PhotoPasteSheet: View {
-    /// Called with the image data to paste, or nil if the user cancelled.
-    let onFinish: (Data?) -> Void
-    @State private var pickedData: Data?
+/// Photo tool flow, second step: picking a photo only previews it; it reaches
+/// the note when the user taps 貼り付ける. "選び直す" returns to the library.
+private struct PhotoPastePreview: View {
+    let data: Data?
+    let onReselect: () -> Void
+    let onPaste: () -> Void
 
     var body: some View {
-        if let pickedData, let image = UIImage(data: pickedData) {
-            NavigationStack {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .navigationTitle("この写真を貼り付けますか?")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("選び直す") { self.pickedData = nil }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("貼り付ける") { onFinish(pickedData) }
-                                .fontWeight(.semibold)
-                                .accessibilityIdentifier("note-photo-paste-button")
-                        }
-                    }
+        NavigationStack {
+            Group {
+                if let data, let image = UIImage(data: data) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding()
+                } else {
+                    ContentUnavailableView("写真を読み込めません", systemImage: "photo.badge.exclamationmark")
+                }
             }
-        } else {
-            PhotoPickerSheet { data in
-                if let data { pickedData = data } else { onFinish(nil) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("この写真を貼り付けますか?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("選び直す", action: onReselect)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("貼り付ける", action: onPaste)
+                        .fontWeight(.semibold)
+                        .disabled(data == nil)
+                        .accessibilityIdentifier("note-photo-paste-button")
+                }
             }
         }
     }
@@ -9745,3 +9777,4 @@ private struct DimsWhenDisabled: ViewModifier {
         content.opacity(isEnabled ? 1 : 0.3)
     }
 }
+
