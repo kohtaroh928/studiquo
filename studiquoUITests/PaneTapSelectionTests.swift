@@ -41,4 +41,22 @@ final class PaneTapSelectionTests: XCTestCase {
         XCTAssertTrue(chat.waitForExistence(timeout: 10), "選択したペインにAIトークが開きませんでした。")
         XCTAssertLessThan(chat.frame.midY, app.windows.firstMatch.frame.midY, "上のペインをタップしたのにAIトークが下に開いています。")
     }
+
+    func testAIChatOpensInTheSecondaryPaneTheStudentTaps() {
+        let split = app.buttons["画面分割"]
+        XCTAssertTrue(split.waitForExistence(timeout: 20))
+        split.tap()
+        let files = app.buttons["ファイルアプリと2分割"]
+        XCTAssertTrue(files.waitForExistence(timeout: 5))
+        files.tap()
+
+        app.buttons["note-ai-toolbar-button"].tap()
+        let secondaryPicker = app.descendants(matching: .any)["pane-pick-secondary"].firstMatch
+        XCTAssertTrue(secondaryPicker.waitForExistence(timeout: 5))
+        secondaryPicker.tap()
+
+        let chat = app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(chat.frame.midY, app.windows.firstMatch.frame.midY, "下のペインをタップしたのにAIトークが上に開いています。")
+    }
 }
