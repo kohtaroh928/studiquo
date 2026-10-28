@@ -6088,7 +6088,7 @@ private struct FlashcardPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 0) {
                 Label(deck.title, systemImage: "rectangle.on.rectangle.angled")
                     .font(.headline)
                 Spacer()
@@ -9000,6 +9000,7 @@ private struct PageSidebar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("ページ番号")
+                .frame(maxWidth: .infinity)
                 Menu {
                     Button {
                         let startsReordering = !isReorderingPages
@@ -9034,7 +9035,9 @@ private struct PageSidebar: View {
                 } label: {
                     Text("編集")
                 }
+                .frame(maxWidth: .infinity)
                 Button(action: onRequestAddPage) { Image(systemName: "plus") }
+                    .frame(maxWidth: .infinity)
             }
             .padding()
 
