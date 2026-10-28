@@ -1384,40 +1384,6 @@
         }
       }
     },
-    "MCPの変更を読み込む" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sync MCP Changes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MCPの変更を読み込む"
-          }
-        }
-      }
-    },
-    "MCP連携データを書き出す" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Export MCP Data"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "MCP連携データを書き出す"
-          }
-        }
-      }
-    },
     "MCP連携は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
       "extractionState" : "manual",
       "localizations" : {
