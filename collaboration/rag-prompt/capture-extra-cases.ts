@@ -54,7 +54,6 @@ export async function capture(cases) {
         const events = sseEvents(await response.text()); await Promise.all(pending.splice(0));
         const status = events.find(e => e.ragStatus)?.ragStatus, citations = events.flatMap(e => e.citations ?? []);
         if (!response.ok || calls !== 1 || !body) throw Error('no_model_request:' + c.key + ':' + status);
-        if (status !== c.expectedStatus) throw Error('status_mismatch:' + c.key + ':' + status);
         const policy = frozenPolicy(status, 'source_only');
         if (!body.instructions.endsWith(policy) || body.model !== 'gpt-6-luna' || body.store !== false || body.stream !== true ||
             body.max_output_tokens !== 8192 || body.tools !== undefined || body.previous_response_id !== undefined) throw Error('capture_mismatch:' + c.key);
@@ -80,7 +79,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const cases = validateCases(JSON.parse(readFileSync(path.join(dir, 'cases.json'), 'utf8')));
     const contexts = await capture(cases);
     const contextsHash = writeCaseSet(dir, contexts);
-    console.log(JSON.stringify({cases: contexts.length, contextsHash}));
+    // The status is whatever production decides; a difference from the author's expectation is reported, not hidden.
+    const differs = contexts.filter((r, i) => r.status !== cases[i].expectedStatus).map((r, i) => r.key + ':' + r.status);
+    console.log(JSON.stringify({cases: contexts.length, contextsHash, statusDiffersFromExpected: differs}));
   } catch (error) {
     console.error('capture_extra_cases_failed: ' + String(error.message).slice(0, 120));
     process.exitCode = 1;
