@@ -4,6 +4,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {loadPromptBaseline, baselinePolicyPair} from '../../mcp-server/scripts/rag-quality/prompt-baseline.ts';
+import {ragAnswerPolicy as frozenPolicy} from '../../mcp-server/scripts/rag-quality/baselines/20261014-policy-v1/answer-policy.ts';
 
 const root = fileURLToPath(new URL('./', import.meta.url));
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -138,12 +139,29 @@ export function assertSafeInstructions(candidate) {
   // Not the whitespace-free variant: "Neverreveal" has no word boundary, so a prohibition would not be seen.
   if (variants(text).slice(0, 2).some(weakens)) throw Error('unsafe_candidate');
 }
-export function preparePacket(candidate) {
+// 'fixed6' is the frozen baseline set. 'extra' is the additional synthetic set in extra-cases/,
+// captured offline in the same shape; its hash is checked against its manifest.
+export const CASE_SETS = ['fixed6', 'extra'];
+export function loadCaseSet(name = 'fixed6', extraDir = path.join(root, 'extra-cases')) {
+  if (!CASE_SETS.includes(name)) throw Error('invalid_case_set');
+  const {manifest, contexts} = loadPromptBaseline();
+  if (name === 'fixed6') {
+    return {name, manifest, contexts, original: (row, style) => baselinePolicyPair(row.key, style).original};
+  }
+  const extraManifest = JSON.parse(readFileSync(path.join(extraDir, 'manifest-extra.json'), 'utf8'));
+  const extraContexts = JSON.parse(readFileSync(path.join(extraDir, 'contexts-extra.json'), 'utf8'));
+  if (extraManifest.baselineId !== manifest.id || hash(extraContexts) !== extraManifest.contextsHash) throw Error('extra_cases_corrupt');
+  if (new Set(extraContexts.map(row => row.key)).size !== extraContexts.length ||
+      extraContexts.some(row => contexts.some(fixed => fixed.key === row.key))) throw Error('extra_cases_corrupt');
+  return {name, manifest: {...manifest, contextsHash: extraManifest.contextsHash}, contexts: extraContexts,
+    original: (row, style) => ({...structuredClone(row.body), instructions: row.baseInstructions + frozenPolicy(row.status, style)})};
+}
+export function preparePacket(candidate, caseSetName = 'fixed6', extraDir) {
   validateCandidate(candidate);
   assertSafeInstructions(candidate);
-  const {manifest, contexts} = loadPromptBaseline();
+  const {manifest, contexts, original} = loadCaseSet(caseSetName, extraDir);
   const pairs = contexts.flatMap(row => ['source_only', 'explain'].map(style => {
-    const baseline = baselinePolicyPair(row.key, style).original;
+    const baseline = original(row, style);
     const proposed = {...structuredClone(baseline),
       instructions: baseline.instructions + '\n\n' + candidate.additionalInstructions};
     // The frozen rules stay byte-for-byte first; a candidate may only append.
@@ -152,7 +170,7 @@ export function preparePacket(candidate) {
       baseline, candidate:proposed, citations:structuredClone(row.citations),
       baselineHash:hash(baseline), candidateHash:hash(proposed)};
   }));
-  return {version:1, syntheticOnly:true, baselineId:manifest.id,
+  return {version:1, syntheticOnly:true, baselineId:manifest.id, caseSet:caseSetName,
     candidateId:candidate.id, candidateHash:hash(candidate),
     contextsHash:manifest.contextsHash, externalCalls:0,
     comparison:'frozen historical baseline plus appended candidate instructions; not current-production or live-retrieval evaluation',
