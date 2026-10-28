@@ -5927,21 +5927,6 @@ struct ContentView: View {
                     Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
                 }
             }
-            Button {
-                showsMCPCloudSettings = true
-            } label: {
-                Label("MCPクラウド連携", systemImage: "icloud")
-            }
-            Button {
-                isImportingBackup = true
-            } label: {
-                Label("バックアップを復元", systemImage: "externaldrive.badge.plus")
-            }
-            Button {
-                showsAutomaticBackups = true
-            } label: {
-                Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
-            }
         } label: {
             Image(systemName: "plus")
         }
