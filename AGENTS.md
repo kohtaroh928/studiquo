@@ -49,7 +49,13 @@ ClaudeとCodexなど複数のエージェントの作業が被らないよう、
   3. ユーザーへ次の3点を伝える: Xcodeで`~/studiquo`を開いて`studiquo-staging`をRunすること、どのブランチのビルドか、どの画面のどこが変わったか。
   4. ユーザーの確認が終わったら`scripts/verify-slot release`で札を返す。メインのフォルダは元の状態に戻る。
   5. 問題なしの場合だけ、PRとmainへのmergeに進む。修正が要る場合は、worktreeで直して1からやり直す。
-- 札は`.git/studiquo-verify.lock`(gitの管理外、全worktree共通)。`scripts/verify-slot status`で、誰がどのブランチで使っているか、何時間経ったかを見られる。4時間以上たった札は、使用者かユーザーに確認してから返す。他のエージェントの札を勝手に消さない。
+- **まとめて確認する場合(荷台)**: 修正のたびに`scripts/verify-slot add <ブランチ>`で「荷台」(確認待ち)に入れ、確認する段階で`scripts/verify-slot acquire --queue`を1回実行する。荷台のブランチを、`main`の上に入れた順で重ねた状態(メインのフォルダ上のdetached HEAD。元のブランチは変更しない)で札が取れる。
+  - `scripts/verify-slot queue`で中身、`remove <ブランチ>`で取り外し。荷台に入れるのは、コミット済みでビルドが通ったブランチだけ。
+  - 重ねる途中で衝突したら、札は取らずメインを元に戻して止まる。どのブランチが原因かをユーザーに伝え、直すか外すかを決めてもらう。
+  - 札の使用中に`add`しても、今の確認には反映されない。確認中に中身を変えない。
+  - 確認結果は、問題が出たときに原因を絞れるよう、表示される重ねた順とコミット一覧で伝える。問題なしのブランチだけを1つずつPR・mergeする。
+  - `release`で荷台は空になる。続けて確認するものは`add`し直す。荷台はmainに入れない。
+- 札は`.git/studiquo-verify.lock`、荷台は`.git/studiquo-verify.queue`(どちらもgitの管理外、全worktree共通)。`scripts/verify-slot status`で、誰がどのブランチで使っているか、何時間経ったかを見られる。4時間以上たった札は、使用者かユーザーに確認してから返す。他のエージェントの札を勝手に消さない。
 - 確認枠は編集しない。切り替えはdetached HEADで行うので、他のworktreeが使っているブランチでも確認できる。確認枠にいる間、メインのフォルダでコミットしない(`.githooks/pre-commit`が止める)。
 - 確認が終わったら、札を返す前に、メインのフォルダへ変更が残っていないかを`git status`で見る。
 - 変更の有無を答える前に、XcodeがどのフォルダのどのコミットをRunしたかを確認する(`osascript -e 'tell application "Xcode" to get path of workspace document 1'`と、メインのフォルダの`git log -1`)。反映されない原因の多くは、開いているフォルダや切り替え先が違うこと。
