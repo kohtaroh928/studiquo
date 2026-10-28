@@ -6088,7 +6088,7 @@ private struct FlashcardPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
+            HStack {
                 Label(deck.title, systemImage: "rectangle.on.rectangle.angled")
                     .font(.headline)
                 Spacer()
@@ -8989,7 +8989,7 @@ private struct PageSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 0) {
                 Button {
                     showsJumpKeypad = true
                 } label: {
