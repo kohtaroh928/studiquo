@@ -1483,9 +1483,13 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     ///   through to a line or curve, and a loop that is none of the three
     ///   stays freehand.
     /// - An open stroke is decided among polyline, parabola/curve and line.
-    ///   A polyline must fit the points at least as closely as the smooth
-    ///   curve does, and the line is kept for strokes that really are nearly
-    ///   straight.
+    ///   Clear corners take precedence over a smooth fit. A rounded corner
+    ///   naturally lies closer to a fitted curve than to its intended sharp
+    ///   vertex, so comparing only residual error made V and Z strokes snap
+    ///   to curves. `polylineIfRecognized` already proves that every run is
+    ///   straight and that at least one turn is unmistakable; once it passes,
+    ///   it expresses the more specific user intent. The line is kept for
+    ///   strokes that really are nearly straight.
     static func classifyHold(
         _ stroke: InkStroke, start: CGPoint, current: CGPoint, enabled: Set<HoldCorrection>
     ) -> (kind: HoldCorrection, points: [InkPoint])? {
@@ -1505,8 +1509,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             return (best.kind, best.points)
         }
 
-        // Open stroke. Smooth fits first (parabola, then the general curve),
-        // so the polyline can be held against them.
+        // Open stroke. The smooth candidates are still calculated for a
+        // gentle bend, which may be either a curve or a shallow polyline.
+        // A clear corner below takes precedence over their global residual.
         var smooth: (kind: HoldCorrection, points: [InkPoint])?
         if enabled.contains(.parabola), let parabola = parabolaIfRecognized(stroke) {
             smooth = (.parabola, parabola.points)
@@ -1514,13 +1519,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             smooth = (.curve, curve.points)
         }
         if enabled.contains(.polyline), let polyline = polylineIfRecognized(stroke) {
-            let polylineError = meanDistance(points, to: polyline.points.map(\.location))
-            if let smooth {
-                let smoothError = meanDistance(points, to: smooth.points.map(\.location))
-                if polylineError <= smoothError { return (.polyline, polyline.points) }
-            } else {
+            // A rounded V can lie closer to a parabola at its vertex, even
+            // though the locally straight runs show that the user meant a
+            // fold. Gentle 35°–69° bends retain the old error comparison so
+            // that shallow waves and half-U curves stay smooth.
+            if hasUnmistakablePolylineCorner(polyline.points) {
                 return (.polyline, polyline.points)
             }
+            guard let smooth else { return (.polyline, polyline.points) }
+            let polylineError = meanDistance(points, to: polyline.points.map(\.location))
+            let smoothError = meanDistance(points, to: smooth.points.map(\.location))
+            if polylineError <= smoothError { return (.polyline, polyline.points) }
         }
         if let smooth { return smooth }
         if enabled.contains(.line), isNearlyStraight(points), hypot(current.x - start.x, current.y - start.y) > 16 {
@@ -2528,6 +2537,22 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             InkPoint(location: vertex, force: 0.5, timeOffset: Double(index) / Double(vertices.count - 1))
         }
         return result
+    }
+
+    /// Whether the refitted vertices contain a corner clear enough that it
+    /// should outrank a smooth fit. This is deliberately stricter than the
+    /// 35° needed to recognise a polyline at all: gentler bends still use
+    /// the residual comparison in `classifyHold`.
+    private static func hasUnmistakablePolylineCorner(_ points: [InkPoint]) -> Bool {
+        guard points.count >= 3 else { return false }
+        for ((a, b), c) in zip(zip(points, points.dropFirst()), points.dropFirst(2)) {
+            let first = atan2(b.location.y - a.location.y, b.location.x - a.location.x)
+            let second = atan2(c.location.y - b.location.y, c.location.x - b.location.x)
+            var turn = abs(second - first)
+            if turn > .pi { turn = 2 * .pi - turn }
+            if turn >= .pi * 70 / 180 { return true }
+        }
+        return false
     }
 
     private static func douglasPeucker(_ points: [CGPoint], from start: Int, to end: Int, tolerance: CGFloat) -> [Int] {
