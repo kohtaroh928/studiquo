@@ -8983,6 +8983,7 @@ private struct PageSidebar: View {
     @State private var jumpText = ""
     @State private var showsJumpKeypad = false
     @State private var isSelectingPages = false
+    @State private var pageListEditMode: EditMode = .inactive
     @State private var selectedPageIDs: Set<String> = []
 
     var body: some View {
@@ -9005,10 +9006,12 @@ private struct PageSidebar: View {
                 }
                 Menu {
                     Button {
-                        isSelectingPages.toggle()
-                        if !isSelectingPages { selectedPageIDs.removeAll() }
+                        let startsSelecting = !isSelectingPages
+                        isSelectingPages = startsSelecting
+                        pageListEditMode = startsSelecting ? .active : .inactive
+                        if !startsSelecting { selectedPageIDs.removeAll() }
                     } label: {
-                        Label(isSelectingPages ? "選択を終了" : "複数ページを選択", systemImage: "checkmark.circle")
+                        Label(isSelectingPages ? "選択・並べ替えを終了" : "複数選択・並べ替え", systemImage: "checkmark.circle")
                     }
                     if isSelectingPages {
                         Button(action: bookmarkSelectedPages) { Label("選択ページをブックマーク", systemImage: "bookmark") }
@@ -9030,7 +9033,6 @@ private struct PageSidebar: View {
                 } label: {
                     Image(systemName: "checklist")
                 }
-                EditButton()
                 Button(action: onRequestAddPage) { Image(systemName: "plus") }
             }
             .padding()
@@ -9091,6 +9093,7 @@ private struct PageSidebar: View {
             }
                 .themeScreenBackground()
             .listStyle(.plain)
+            .environment(\.editMode, $pageListEditMode)
         }
         .background(.bar)
         .alert("ページ名を編集", isPresented: Binding(
