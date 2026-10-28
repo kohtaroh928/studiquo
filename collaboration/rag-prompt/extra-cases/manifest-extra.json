@@ -16,11 +16,11 @@
   "extra:e1-library-loan": "grounded",
   "extra:e2-book-price": "grounded",
   "extra:e3-pool-temp": "grounded",
-  "extra:e4-bike-metric": "insufficient",
+  "extra:e4-bike-metric": "grounded",
   "extra:e5-member-discount": "grounded",
   "extra:e6-club-pages": "grounded",
   "extra:e7-cafeteria-none": "grounded",
-  "extra:e8-breakeven-explain": "insufficient"
+  "extra:e8-breakeven-explain": "grounded"
  },
- "contextsHash": "881285896a277e13c79b834db5ced10a83afb978632800dd20f6b67e75aa2560"
+ "contextsHash": "0a15f6e7a36d778fe120b9b4330be77664a43126ac080f8fb1ab42b952bd6306"
 }
