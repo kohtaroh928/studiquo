@@ -230,9 +230,9 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     // references cannot support it: no citations are returned (docs/RAG_REAL_MATERIAL_V2_REPORT.md).
     const excerpts = supported.map((r: any) => r.text).join("\n");
     // The number must belong to the question: comparisons have several subjects, so only single-subject questions are tied.
-    // A question that compares or lists several subjects is never "single", even when their names could not be
-    // extracted (e.g. "AとBは、CとDの違い"): coverageGroups is then empty, but plan.multi is still set.
-    const singleSubject = !plan.multi && plan.coverageGroups.length === 0;
+    // A comparison whose subjects could not be named ("AとBは、CとDの違い": coverageGroups is empty) is not a
+    // single-subject question either. plan.multi is not used: it is set by any word such as 共通 or それぞれ.
+    const singleSubject = plan.coverageGroups.length === 0 && !plan.unresolvedComparison;
     const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0 }));
     if (!quantityEvidencePresent(query, ranked, { tied: singleSubject })) return emptyRetrieval("insufficient", { status: "insufficient" }, "quantity");
     // A word missing from the library is only decisive when the two searches do not agree. If the

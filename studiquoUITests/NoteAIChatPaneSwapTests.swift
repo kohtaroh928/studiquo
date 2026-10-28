@@ -114,6 +114,34 @@ final class NoteAIChatPaneSwapTests: XCTestCase {
         XCTAssertTrue(companionPane.exists, "戻したあと2分割が崩れています。")
     }
 
+    func testNoteToolsRemainEnabledWhileTheAIChatPaneIsSelected() {
+        splitWithFilesBrowser()
+        aiButton.tap()
+        choosePane()
+        XCTAssertTrue(waitForChat(), "AIチャットがペインに表示されません。")
+
+        // Tapping the lower chat pane makes it the active pane. The upper
+        // pane is still a note, so its editing controls must stay available.
+        for label in ["ペン", "消しゴム", "選択", "切り抜き", "テキスト", "写真", "用紙", "ページ追加"] {
+            let tool = app.buttons[label].firstMatch
+            XCTAssertTrue(tool.exists, "\(label) が表示されません。")
+            XCTAssertTrue(tool.isEnabled, "AIチャット選択中に \(label) が無効です。")
+        }
+    }
+
+    func testSwappedChatPlacesMaterialSwitchImmediatelyBeforeDocumentSearch() {
+        splitWithFilesBrowser()
+        aiButton.tap()
+
+        let replace = app.buttons["pane-replace-ai"]
+        let documentSearch = app.buttons["資料検索"]
+        XCTAssertTrue(replace.waitForExistence(timeout: 10), "AIチャットの資料切り替えボタンがありません。")
+        XCTAssertTrue(documentSearch.waitForExistence(timeout: 10), "資料検索ボタンがありません。")
+        XCTAssertLessThanOrEqual(replace.frame.maxX, documentSearch.frame.minX, "資料切り替えは資料検索の左隣に表示されるはずです。")
+        XCTAssertEqual(replace.frame.midY, documentSearch.frame.midY, accuracy: 2, "資料切り替えと資料検索は同じヘッダー列に表示されるはずです。")
+        XCTAssertFalse(app.buttons["pane-replace-secondary"].exists, "分割AIチャットに旧位置の資料切り替えボタンを重ねてはいけません。")
+    }
+
     func testSwapFollowsTheActivePane() {
         splitWithFilesBrowser()
         // 「画面を入れ替え」でノートが下のペインへ移り、操作中のペインもそれに付いていく。

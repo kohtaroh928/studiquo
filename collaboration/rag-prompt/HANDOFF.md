@@ -32,3 +32,30 @@
 - 採点表のlm-same・p3-no-verdictのパターンに取りこぼしあり（未修正）。
 - 次の一手: 採点パターンの修正、v01-rule/結論先出しを指示に足した候補で再実行、複数回実行で揺らぎを見る。
 - Notion: 接続なしで未記録。
+
+## 2026-10-26: 採点表v2と候補v2（Claude）
+
+- run-luna.mjs が workspace.mjs を読んでいて、.ts化（c427b7b）以降起動できなかったため workspace.ts に修正。
+- 採点表を fixed6-atomic-v2 に更新（lm-same「差はありません」等、p3-no-verdict「判断できず」）。テスト1件追加、Node 24で24件成功。trial-01を再採点し、要確認21→14行で人の確認と一致（results/trial-01.md）。trial-01の取りこぼしは9行ではなく7行だったので訂正。
+- candidates/requirement-coverage-v2.json を追加: v1に「適用条件（日付・版・対象・測定条件）を一文添える」「判断できないときは結論と理由を先に」を追加。workspace.ts check 成功。生成は未実施、有料API0回。
+- 次の一手: baselineとv2で trial-02（24回×3回、予約は1回あたり約$0.117、実費の概算は合計約$0.04）。承認後に実行。
+
+## 2026-10-26: trial-02 実行（Claude）
+
+- baselineとrequirement-coverage-v2を固定6ケース×2style×3回(trial-02a/b/c、72回、全成功、概算約$0.038、gpt-6-luna)。結果: `results/trial-02.md`。
+- 要点: v2はp3-delta欠落5/6→2/6、v01-rule 4/6→2/6、結論先出しの後置き6/6→2/6。一方v01-basis(開催日で判定)が0→2/6、np-same-priceが0→1/6で落ちた(source_only)。違反0件。3回なので揺らぎの範囲を出ない。
+- 採点表の取りこぼし1件: p3-f-price-unknownが「Fは資料で確認できません」を拾えない（未修正）。
+- 次の一手: v01-basisとnp-same-priceを落とさない文言のv3を作るか、v2を暫定候補とするかを決める。有料API追加は承認後。
+- Notion: カード更新済み。
+
+## 2026-10-26: trial-03 実行（Claude）
+
+- `candidates/requirement-coverage-v3.json` を追加(v2+「比較できなくても共通点は述べる」「判定基準も残す」)。baselineとv3を3回(trial-03a/b/c、72回、全成功、概算約$0.039、gpt-6-luna)。結果: `results/trial-03.md`。
+- 要点: v3は v01-basis と np-same-price をv2より戻し(0/6)、結論先出しとp3-deltaは保ったが、v01-rule(日付)がv2の2/6から4/6に戻った。違反0件。v01-rule と v01-basis の両方を満たしたのは6回答中2回。
+- 採点表の取りこぼし2件（np-same-priceの語順、p3-f-price-unknown）は未修正。
+- 次の一手: 指示の調整を続けず、別の合成ケース(追加練習問題)を足して傾向を確認する。足し方は統合担当と合意。
+
+## 2026-10-26: 追加ケースの設計案（Claude）
+
+- `EXTRA_CASES.md` を追加（設計案のみ）。凍結6ケースは変えず、`extra-cases/` に別ファイルで置く案。型8個、8〜12ケース、概算約$0.08（144回）。ケース本体・コード変更は未作成、有料API0回。
+- 次の一手: 統合担当（kohtaroh928）と、ケース作成者・レビュー担当・コード変更の範囲を合意。

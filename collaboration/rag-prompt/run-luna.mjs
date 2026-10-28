@@ -6,7 +6,7 @@ import {readFileSync, mkdirSync, writeFileSync, renameSync, openSync, writeSync,
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {preparePacket} from './workspace.mjs';
+import {preparePacket} from './workspace.ts';
 
 const root = fileURLToPath(new URL('./', import.meta.url));
 const API_URL = 'https://api.openai.com/v1/responses';
