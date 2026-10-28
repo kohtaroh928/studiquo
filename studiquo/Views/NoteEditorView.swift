@@ -8983,6 +8983,7 @@ private struct PageSidebar: View {
     @State private var jumpText = ""
     @State private var showsJumpKeypad = false
     @State private var isSelectingPages = false
+    @State private var isReorderingPages = false
     @State private var pageListEditMode: EditMode = .inactive
     @State private var selectedPageIDs: Set<String> = []
 
@@ -9006,12 +9007,17 @@ private struct PageSidebar: View {
                 }
                 Menu {
                     Button {
-                        let startsSelecting = !isSelectingPages
-                        isSelectingPages = startsSelecting
-                        pageListEditMode = startsSelecting ? .active : .inactive
-                        if !startsSelecting { selectedPageIDs.removeAll() }
+                        let startsReordering = !isReorderingPages
+                        isReorderingPages = startsReordering
+                        pageListEditMode = startsReordering ? .active : .inactive
                     } label: {
-                        Label(isSelectingPages ? "選択・並べ替えを終了" : "複数選択・並べ替え", systemImage: "checkmark.circle")
+                        Label(isReorderingPages ? "並べ替えを終了" : "並べ替え", systemImage: "arrow.up.arrow.down")
+                    }
+                    Button {
+                        isSelectingPages.toggle()
+                        if !isSelectingPages { selectedPageIDs.removeAll() }
+                    } label: {
+                        Label(isSelectingPages ? "複数選択を終了" : "複数選択", systemImage: "checkmark.circle")
                     }
                     if isSelectingPages {
                         Button(action: bookmarkSelectedPages) { Label("選択ページをブックマーク", systemImage: "bookmark") }
@@ -9031,7 +9037,7 @@ private struct PageSidebar: View {
                     }
                     .disabled(!canDeleteBookmarkedPages)
                 } label: {
-                    Image(systemName: "checklist")
+                    Text("編集")
                 }
                 Button(action: onRequestAddPage) { Image(systemName: "plus") }
             }
