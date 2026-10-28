@@ -134,6 +134,10 @@ targets:
         # for iPad"). Also untick the Mac availability in App Store Connect.
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SWIFT_VERSION: "5.0"
+        # Keep the string catalog under deliberate source-control updates.
+        # Without this, Xcode rewrites Localizable.xcstrings on every build
+        # whenever it discovers a SwiftUI Text/Label literal.
+        LOCALIZED_STRING_SWIFTUI_SUPPORT: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
         PRODUCT_NAME: studiquo
         STUDIQUO_APP_PRODUCT_NAME: studiquo
