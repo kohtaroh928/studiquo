@@ -1422,6 +1422,10 @@ struct NoteEditorView: View {
             return (3, shown?.containsPDF == true ? 12 + 32 + 6 : 12)
         case .empty:
             return (8, 8)
+        case .friend:
+            // Friend chat has no visible pane header in the note editor, so
+            // align its floating switch directly with the pane's trailing edge.
+            return (8, 8)
         default:
             // Sits in the 38pt title bar, left of the PDF summary (sparkles)
             // button that occupies the trailing 12 + 32pt.
