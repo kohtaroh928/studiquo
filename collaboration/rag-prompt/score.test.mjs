@@ -57,3 +57,14 @@ test('unknown cases, styles and manual verdicts are rejected', () => {
   assert.throws(() => score({variants: {v: {[P3 + '|both']: 'x'}}}), /invalid_answer_key/);
   assert.throws(() => score({variants: {v: {[P3 + '|explain']: 'x'}}}, {k: 'pass'}), /invalid_manual_verdict/);
 });
+
+test('rubric v2 accepts "差はありません" and "判断できず" without accepting "差はあります"', () => {
+  const LM = 'boundary:boundary-equal-category';
+  const same = '点灯時間はL・Mともに6時間で、差はありません。価格はどちらも1800円です。Lは屋内、Mは屋外です。';
+  const differs = '点灯時間はL・Mともに6時間ですが、差はあります。価格は1800円です。Lは屋内、Mは屋外です。';
+  const verdict = 'Eは点灯5時間で1600円、Fは点灯7時間です。Fの価格が分からないため、お得な方は判断できず、全体の比較を資料で裏付けることはできません。';
+  const report = score({variants: {a: {[LM + '|explain']: same, [P3 + '|explain']: verdict}, b: {[LM + '|explain']: differs}}});
+  assert.equal(status(report, 'a', LM, 'explain', 'lm-same'), 'satisfied');
+  assert.equal(status(report, 'b', LM, 'explain', 'lm-same'), 'pending_omission');
+  assert.equal(status(report, 'a', P3, 'explain', 'p3-no-verdict'), 'satisfied');
+});
