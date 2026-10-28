@@ -9000,11 +9000,6 @@ private struct PageSidebar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("ページ番号")
-                .popover(isPresented: $showsJumpKeypad, arrowEdge: .bottom) {
-                    pageJumpKeypad
-                        .padding(12)
-                        .presentationCompactAdaptation(.popover)
-                }
                 Menu {
                     Button {
                         let startsReordering = !isReorderingPages
@@ -9042,6 +9037,16 @@ private struct PageSidebar: View {
                 Button(action: onRequestAddPage) { Image(systemName: "plus") }
             }
             .padding()
+
+            if showsJumpKeypad {
+                pageJumpKeypad
+                    .frame(maxWidth: .infinity)
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             List {
                 ForEach(Array(notebook.sortedPages.enumerated()), id: \.element.persistentModelID) { index, page in
