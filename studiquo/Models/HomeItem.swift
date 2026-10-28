@@ -21,6 +21,8 @@ protocol HomeItem: AnyObject {
     /// Legacy "/"-joined path, kept in sync with `folder` by
     /// `ContentView.assign(_:toLegacyPath:)` — see that method's doc comment.
     var folderName: String { get set }
+    /// Manual order among materials in the same folder.
+    var sortIndex: Int { get set }
     var itemKind: HomeItemKind { get }
 }
 
@@ -88,6 +90,10 @@ enum HomeEntry: Identifiable {
     var folder: Folder? {
         get { underlying.folder }
         set { underlying.folder = newValue }
+    }
+    var sortIndex: Int {
+        get { underlying.sortIndex }
+        set { underlying.sortIndex = newValue }
     }
 
     var iconName: String {
