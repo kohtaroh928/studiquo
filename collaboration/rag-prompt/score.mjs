@@ -7,7 +7,11 @@ import path from 'node:path';
 
 const STYLES = ['source_only', 'explain'];
 const MANUAL = ['satisfied', 'omitted', 'incorrect', 'unsupported', 'not_applicable', 'pending'];
-export const loadRubric = () => JSON.parse(readFileSync(new URL('./rubric-fixed6.json', import.meta.url), 'utf8'));
+const RUBRIC_FILES = {fixed6: './rubric-fixed6.json', extra: './extra-cases/rubric-extra.json'};
+export const loadRubric = (name = 'fixed6') => {
+  if (!RUBRIC_FILES[name]) throw Error('invalid_rubric_name');
+  return JSON.parse(readFileSync(new URL(RUBRIC_FILES[name], import.meta.url), 'utf8'));
+};
 
 // Absorb notation differences: full-width, digit commas, LaTeX wrappers, Markdown emphasis, spaces.
 export function normalize(text) {
@@ -110,11 +114,13 @@ function paired(rows) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    const [answersPath, manualPath] = process.argv.slice(2);
+    const args = process.argv.slice(2), at = args.indexOf('--rubric');
+    const rubricName = at < 0 ? 'fixed6' : args.splice(at, 2)[1];
+    const [answersPath, manualPath] = args;
     if (!answersPath) throw Error('usage');
     const answers = JSON.parse(readFileSync(answersPath, 'utf8'));
     const manual = manualPath ? JSON.parse(readFileSync(manualPath, 'utf8')) : {};
-    const report = score(answers, manual);
+    const report = score(answers, manual, loadRubric(rubricName));
     // Answer text is never printed; only item ids and statuses.
     console.log(JSON.stringify({rubricId: report.rubricId, summary: report.summary, paired: report.paired,
       needsReview: report.rows.filter(r => !r.manual && !['satisfied', 'ok', 'not_applicable'].includes(r.auto))

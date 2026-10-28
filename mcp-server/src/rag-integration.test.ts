@@ -608,9 +608,15 @@ test("while a held reply is being written, a comment line keeps the connection a
     },
   }));
   try {
+    // Time is advanced only once the reply has registered its keepalive timer. A fixed number of
+    // event-loop turns is not enough on a slow machine: the tick then fires before the timer exists.
+    const realSetInterval = globalThis.setInterval;
+    let registered = false;
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => { registered = true; return realSetInterval(...args); }) as typeof setInterval;
     const pending = chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
     const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((resolve) => setImmediate(resolve)); };
-    await settle(); // the request reaches the point where it waits for the model
+    for (let i = 0; i < 200 && !registered; i++) await settle(); // the request reaches the point where it waits for the model
+    assert.ok(registered, "the keepalive timer was never set");
     mock.timers.tick(15000);
     await settle();
     release();
