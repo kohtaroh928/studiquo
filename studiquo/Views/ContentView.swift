@@ -1073,8 +1073,6 @@ private struct MoreHomeView: View {
     let onShowProfile: () -> Void
     let onOpenCalendarConnection: () -> Void
     let onOpenCloudSettings: () -> Void
-    let onExportMCPData: () -> Void
-    let onImportMCPChanges: () -> Void
     let onRestoreBackup: () -> Void
     let onRestoreAutomaticBackups: () -> Void
     let onOpenTrash: () -> Void
@@ -1190,12 +1188,6 @@ private struct MoreHomeView: View {
             }
             Button(action: onRestoreAutomaticBackups) {
                 Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
-            }
-            Button(action: onExportMCPData) {
-                Label("MCP連携データを書き出す", systemImage: "brain.head.profile")
-            }
-            Button(action: onImportMCPChanges) {
-                Label("MCPの変更を読み込む", systemImage: "tray.and.arrow.down")
             }
         } header: {
             Text("データ")
@@ -3376,8 +3368,8 @@ struct ContentView: View {
     }
 
     /// The その他 tab: every setting in one place. Anything whose state lives
-    /// in this view (MCP cloud sheet, backup importers, the share sheet for
-    /// the MCP export, the report sheet, …) is reached through these
+    /// in this view (MCP cloud sheet, backup importers, the report sheet, …)
+    /// is reached through these
     /// callbacks so the existing sheets/importers on `body` are reused as-is.
     private var homeMore: some View {
         MoreHomeView(
@@ -3390,8 +3382,6 @@ struct ContentView: View {
                 homeSection = .calendar
             },
             onOpenCloudSettings: { showsMCPCloudSettings = true },
-            onExportMCPData: { backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:)) },
-            onImportMCPChanges: { presentFileImporter() },
             onRestoreBackup: { isImportingBackup = true },
             onRestoreAutomaticBackups: { showsAutomaticBackups = true },
             onOpenTrash: {
@@ -5937,17 +5927,6 @@ struct ContentView: View {
                     Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
                 }
             }
-            Divider()
-            Button {
-                backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:))
-            } label: {
-                Label("MCP連携データを書き出す", systemImage: "brain.head.profile")
-            }
-            Button {
-                presentFileImporter()
-            } label: {
-                Label("MCPの変更を読み込む", systemImage: "tray.and.arrow.down")
-            }
             Button {
                 showsMCPCloudSettings = true
             } label: {
@@ -6309,9 +6288,6 @@ struct ContentView: View {
             docxImportFailed = true
             return
         }
-        if fileExtension == "json", importMCPActions(from: url) {
-            return
-        }
         if type?.conforms(to: .pdf) == true || fileExtension == "pdf" {
             await importPDF(from: url)
             return
@@ -6413,17 +6389,6 @@ struct ContentView: View {
         finishCreation { openTextDocument(document) }
     }
 
-    private func exportMCPSnapshot() -> URL? {
-        guard let data = makeMCPSnapshotData() else { return nil }
-        let url = StudiquoWorkFiles.file(named: "studiquo-mcp-snapshot.json")
-        do {
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
-            return url
-        } catch {
-            return nil
-        }
-    }
-
     private func makeMCPSnapshotData() -> Data? {
         let snapshot = MCPSnapshot(
             version: 1,
@@ -6479,18 +6444,6 @@ struct ContentView: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try? encoder.encode(snapshot)
-    }
-
-    @discardableResult
-    private func importMCPActions(from url: URL) -> Bool {
-        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
-              let data = try? Data(contentsOf: url) else { return false }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
-            return false
-        }
-        return applyMCPActions(actions)
     }
 
     @discardableResult
