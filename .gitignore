@@ -31,3 +31,6 @@ xcuserdata/
 # Local Workers runtime cache (test data is never persisted).
 /.wrangler/
 Configuration/Staging.local.xcconfig
+
+# Obsidianが開くたびに書き換える画面配置の記録(個人の状態なので追跡しない)
+docs/.obsidian/workspace.json
