@@ -8981,17 +8981,28 @@ private struct PageSidebar: View {
     @State private var pageToRename: NotePage?
     @State private var pageName = ""
     @State private var jumpText = ""
+    @State private var showsJumpKeypad = false
     @State private var isSelectingPages = false
     @State private var selectedPageIDs: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                TextField("番号", text: $jumpText)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 58)
-                    .onSubmit { jumpToPage() }
+                Button {
+                    showsJumpKeypad = true
+                } label: {
+                    Text(jumpText.isEmpty ? "番号" : jumpText)
+                        .foregroundStyle(jumpText.isEmpty ? .secondary : .primary)
+                        .frame(width: 58, height: 32)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("ページ番号")
+                .popover(isPresented: $showsJumpKeypad, arrowEdge: .bottom) {
+                    pageJumpKeypad
+                        .padding(12)
+                        .presentationCompactAdaptation(.popover)
+                }
                 Menu {
                     Button {
                         isSelectingPages.toggle()
@@ -9100,6 +9111,47 @@ private struct PageSidebar: View {
         guard let pageNumber = Int(jumpText), notebook.sortedPages.indices.contains(pageNumber - 1) else { return }
         currentPageIndex = pageNumber - 1
         jumpText = ""
+        showsJumpKeypad = false
+    }
+
+    private var pageJumpKeypad: some View {
+        VStack(spacing: 8) {
+            Text(jumpText.isEmpty ? "ページ番号を入力" : jumpText)
+                .font(.headline.monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9"], id: \.self) { digit in
+                    keypadButton(digit) { jumpText.append(digit) }
+                }
+                keypadButton("消去", icon: "delete.left") {
+                    guard !jumpText.isEmpty else { return }
+                    jumpText.removeLast()
+                }
+                keypadButton("0") { jumpText.append("0") }
+                keypadButton("移動", icon: "arrow.right") { jumpToPage() }
+            }
+
+            Button("閉じる") { showsJumpKeypad = false }
+                .font(.footnote)
+        }
+        .frame(width: 190)
+    }
+
+    private func keypadButton(_ title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if let icon {
+                    Image(systemName: icon)
+                } else {
+                    Text(title)
+                }
+            }
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(title)
     }
 
     private var canDeleteBookmarkedPages: Bool {
