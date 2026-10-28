@@ -1392,6 +1392,9 @@ struct NoteEditorView: View {
     private func paneEmbedsReplaceButton(_ pane: ActivePane) -> Bool {
         switch paneBodyKind(pane) {
         case .photoStudy, .material, .web, .flashcard: return true
+        case .note:
+            let notebook = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook
+            return pane == .secondary || splitMode != .single || notebook?.containsPDF == true
         default: return false
         }
     }
@@ -1406,17 +1409,11 @@ struct NoteEditorView: View {
         }
     }
 
-    /// Notes with no title bar put the button as far from the right edge as
-    /// the page-list toggle is from the left one. With a title bar it sits
-    /// in the bar, beside the PDF summary button when there is one.
+    /// Notes without a title bar keep their switch button over the canvas.
+    /// Notes with a title bar embed it in that bar instead.
     private func paneReplaceInsets(for pane: ActivePane) -> (top: CGFloat, trailing: CGFloat) {
         switch paneBodyKind(pane) {
-        case .note:
-            let shown = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook
-            let hasTitleBar = pane == .secondary || splitMode != .single || shown?.containsPDF == true
-            guard hasTitleBar else { return (8, 8) }
-            return (3, shown?.containsPDF == true ? 12 + 32 + 6 : 12)
-        case .empty:
+        case .note, .empty:
             return (8, 8)
         default:
             // Sits in the 38pt title bar, left of the PDF summary (sparkles)
@@ -1763,6 +1760,7 @@ struct NoteEditorView: View {
                                 notebook: secondaryNotebook,
                                 currentPageIndex: $secondaryPageIndex,
                                 showsTitle: true,
+                                headerAccessory: paneHeaderReplaceButton(for: .secondary),
                                 pageListEdge: splitMode == .horizontal ? .trailing : .leading,
                                 onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
                                 onSummarizeCurrentPDFPage: {
@@ -3739,6 +3737,9 @@ struct NoteEditorView: View {
             notebook: displayedPrimaryNotebook,
             currentPageIndex: $primaryPageIndex,
             showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
+            headerAccessory: splitMode != .single || displayedPrimaryNotebook.containsPDF
+                ? paneHeaderReplaceButton(for: .primary)
+                : nil,
             usesDarkPageDisplay: usesDarkPageDisplay,
             pageListEdge: .leading,
             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
@@ -6210,6 +6211,9 @@ private struct NotebookPaneView: View {
     @Bindable var notebook: Notebook
     @Binding var currentPageIndex: Int
     var showsTitle = false
+    /// Material switcher shown within the title bar so it tracks the pane
+    /// when the page list changes the pane's width.
+    var headerAccessory: AnyView?
     var usesDarkPageDisplay = false
     /// Which side the page list opens from. `nil` hides the page list and its
     /// toggle (used by the read-only chat material preview).
@@ -6285,6 +6289,9 @@ private struct NotebookPaneView: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer()
+                    if let headerAccessory {
+                        headerAccessory
+                    }
                     if notebook.containsPDF {
                         Menu {
                             Button(action: onSummarizeCurrentPDFPage) {
@@ -8980,16 +8987,11 @@ private struct PageSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("ページ").font(.headline)
-                Spacer()
                 TextField("番号", text: $jumpText)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 58)
                     .onSubmit { jumpToPage() }
-                Button(action: jumpToPage) {
-                    Image(systemName: "arrow.right.circle")
-                }
                 Menu {
                     Button {
                         isSelectingPages.toggle()
