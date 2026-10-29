@@ -47,3 +47,12 @@ test('invalid case sets, case files and rubric names are rejected', () => {
 test('the default plan is unchanged by the case-set option', () => {
   assert.equal(buildPlan(['example']).planHash, buildPlan(['example'], undefined, 'fixed6').planHash);
 });
+
+test('the fresh case set loads from its own files and rubric name', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rag-fresh-'));
+  const contexts = await capture(validateCases(cases));
+  writeCaseSet(dir, contexts, 'fresh');
+  assert.equal(loadCaseSet('fresh', dir).contexts.length, contexts.length);
+  assert.throws(() => loadCaseSet('extra', dir));
+  assert.throws(() => loadRubric('fresh'), /ENOENT/);
+});
