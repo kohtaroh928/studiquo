@@ -156,15 +156,19 @@ export function assertSafeInstructions(candidate) {
 }
 // 'fixed6' is the frozen baseline set. 'extra' is the additional synthetic set in extra-cases/,
 // captured offline in the same shape; its hash is checked against its manifest.
-export const CASE_SETS = ['fixed6', 'extra'];
-export function loadCaseSet(name = 'fixed6', extraDir = path.join(root, 'extra-cases')) {
+// 'fresh' is a second extra-style set (fresh-cases/), written without sight of any candidate or earlier result.
+export const CASE_SETS = ['fixed6', 'extra', 'fresh'];
+const SET_FILES = {extra: ['extra-cases', 'extra'], fresh: ['fresh-cases', 'fresh']};
+export function loadCaseSet(name = 'fixed6', extraDir) {
   if (!CASE_SETS.includes(name)) throw Error('invalid_case_set');
   const {manifest, contexts} = loadPromptBaseline();
   if (name === 'fixed6') {
     return {name, manifest, contexts, original: (row, style) => baselinePolicyPair(row.key, style).original};
   }
-  const extraManifest = JSON.parse(readFileSync(path.join(extraDir, 'manifest-extra.json'), 'utf8'));
-  const extraContexts = JSON.parse(readFileSync(path.join(extraDir, 'contexts-extra.json'), 'utf8'));
+  const [defaultDir, suffix] = SET_FILES[name];
+  extraDir ??= path.join(root, defaultDir);
+  const extraManifest = JSON.parse(readFileSync(path.join(extraDir, `manifest-${suffix}.json`), 'utf8'));
+  const extraContexts = JSON.parse(readFileSync(path.join(extraDir, `contexts-${suffix}.json`), 'utf8'));
   if (extraManifest.baselineId !== manifest.id || hash(extraContexts) !== extraManifest.contextsHash) throw Error('extra_cases_corrupt');
   if (new Set(extraContexts.map(row => row.key)).size !== extraContexts.length ||
       extraContexts.some(row => contexts.some(fixed => fixed.key === row.key))) throw Error('extra_cases_corrupt');
