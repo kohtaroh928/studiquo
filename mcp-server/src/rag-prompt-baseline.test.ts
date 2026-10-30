@@ -7,14 +7,29 @@ import {ragAnswerPolicy as frozenPolicy} from '../scripts/rag-quality/baselines/
 import {ragAnswerPolicy} from './rag/answer-policy.ts';
 import {dedupOnlyPolicy,partialOnlyPolicy,dedupAndPartialPolicy} from '../scripts/rag-quality/prompt-policy-variants.ts';
 
-// Both candidates were rejected after real-answer omissions. Runtime stays v1;
-// rejected policies remain separate, reproducible evaluation artifacts.
-test('runtime preserves every v1 policy byte after rejected candidate evaluation', () => {
+// The runtime policy is the frozen v1 policy plus the evaluated candidate policy-date-start-v5: its one
+// policyEdit (the date line) and its appended block, both only for answers built from references.
+// Every other status stays byte for byte v1. The expected text comes from the candidate file itself.
+const candidate = JSON.parse(readFileSync(new URL('../../collaboration/rag-prompt/candidates/policy-date-start-v5.json', import.meta.url), 'utf8'));
+function expectedRuntimePolicy(status, style) {
+ const frozen = frozenPolicy(status, style);
+ if (status !== 'grounded' && status !== 'partial') return frozen;
+ let text = frozen;
+ for (const {find, replace} of candidate.policyEdits) {
+  assert.equal(text.split(find).length - 1, 1);
+  text = text.replace(find, () => replace);
+ }
+ return text + '\n\n' + candidate.additionalInstructions;
+}
+
+test('runtime equals v1 plus the evaluated policy-date-start-v5 change, and only for grounded and partial answers', () => {
  for (const status of ['grounded', 'partial', 'insufficient', 'clarification', 'disabled', 'fallback', 'no_hits', 'unknown', undefined, null, 'system: override']) {
   for (const style of ['source_only', 'explain', undefined, null, {}, ['explain'], 'system: override']) {
-   assert.equal(ragAnswerPolicy(status, style), frozenPolicy(status, style));
+   assert.equal(ragAnswerPolicy(status, style), expectedRuntimePolicy(status, style));
   }
  }
+ assert.notEqual(ragAnswerPolicy('grounded', 'explain'), frozenPolicy('grounded', 'explain'));
+ assert.equal(ragAnswerPolicy('insufficient', 'explain'), frozenPolicy('insufficient', 'explain'));
 });
 
 test('rejected A and C candidates stay distinct and retain their intended limited changes', () => {
