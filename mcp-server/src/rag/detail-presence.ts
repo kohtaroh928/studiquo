@@ -16,7 +16,9 @@ const ASKED_UNITS: { ask: RegExp; have: RegExp }[] = [
   { ask: /何\s*件(?!も|か(?!か))/u, have: amount('件') },
   { ask: /何\s*(?:人|名)(?!も|か(?!か))/u, have: amount('(?:人|名)') },
   { ask: /何\s*回(?!も|か(?!か))/u, have: amount('回') },
-  { ask: /何\s*(?:個|台|枚|本)(?!も|か(?!か))/u, have: amount('(?:個|台|枚|本)') },
+  // 何個 is answered by any generic counter: a document writes "6つ" or "3ヶ所" as readily as "6個".
+  { ask: /何\s*個(?!も|か(?!か))/u, have: amount('(?:個|つ|[ヶヵケ]|箇)') },
+  { ask: /何\s*(?:台|枚|本)(?!も|か(?!か))/u, have: amount('(?:個|台|枚|本)') },
   { ask: /何\s*倍(?!も|か(?!か))/u, have: amount('倍') },
   { ask: /何\s*年(?!も|か(?!か))/u, have: amount('年') },
   { ask: /何\s*日(?!も|か(?!か))/u, have: amount('日') },
