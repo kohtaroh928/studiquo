@@ -23,14 +23,17 @@ test("the OAuth login works only when it is allowed on purpose", () => {
   assert.throws(() => cloudflareToken(env, () => { throw new Error("ENOENT secret/path"); }), { message: "cloudflare_auth_unavailable" });
 });
 
-test("judge accepts a short-lived active token", () => {
-  const v = judge({ status: "active", expires_on: new Date(NOW + 7 * DAY).toISOString() }, NOW);
-  assert.equal(v.ok, true);
+test("judge accepts an active token with or without an expiry", () => {
+  const dated = judge({ status: "active", expires_on: new Date(NOW + 7 * DAY).toISOString() }, NOW);
+  assert.equal(dated.ok, true);
+  const long = judge({ status: "active", expires_on: new Date(NOW + 365 * DAY).toISOString() }, NOW);
+  assert.equal(long.ok, true);
+  const open = judge({ status: "active" }, NOW);
+  assert.equal(open.ok, true);
+  assert.ok(open.lines.some((l) => l.startsWith("--  No expiry")));
 });
 
-test("judge rejects no expiry, a long expiry, an expired token and an inactive token", () => {
-  assert.equal(judge({ status: "active" }, NOW).ok, false);
-  assert.equal(judge({ status: "active", expires_on: new Date(NOW + 60 * DAY).toISOString() }, NOW).ok, false);
+test("judge rejects an expired token, an inactive token and no answer", () => {
   assert.equal(judge({ status: "active", expires_on: new Date(NOW - DAY).toISOString() }, NOW).ok, false);
   assert.equal(judge({ status: "disabled", expires_on: new Date(NOW + DAY).toISOString() }, NOW).ok, false);
   assert.equal(judge(null, NOW).ok, false);
