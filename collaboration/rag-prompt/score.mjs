@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const STYLES = ['source_only', 'explain'];
 const MANUAL = ['satisfied', 'omitted', 'incorrect', 'unsupported', 'not_applicable', 'pending'];
-const RUBRIC_FILES = {fixed6: './rubric-fixed6.json', extra: './extra-cases/rubric-extra.json'};
+const RUBRIC_FILES = {fixed6: './rubric-fixed6.json', extra: './extra-cases/rubric-extra.json', fresh: './fresh-cases/rubric-fresh.json'};
 export const loadRubric = (name = 'fixed6') => {
   if (!RUBRIC_FILES[name]) throw Error('invalid_rubric_name');
   return JSON.parse(readFileSync(new URL(RUBRIC_FILES[name], import.meta.url), 'utf8'));
