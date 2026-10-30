@@ -124,4 +124,36 @@ final class PaneTapSelectionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["ドロップ先ノート"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch.exists)
     }
+
+    func testSelectingAIChatReplacesPendingTabSelection() {
+        app.terminate()
+        app.launchArguments = ["--tab-drop-ui-test"]
+        app.launch()
+
+        let split = app.buttons["画面分割"]
+        XCTAssertTrue(split.waitForExistence(timeout: 20))
+        split.tap()
+        let files = app.buttons["ファイルアプリと2分割"]
+        XCTAssertTrue(files.waitForExistence(timeout: 5))
+        files.tap()
+
+        // 先に別ノートタブを選んでペイン選択待ちにする
+        let tab = app.buttons["tab-select-source-notebook"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
+        tab.tap()
+        let primaryPicker = app.descendants(matching: .any)["pane-pick-primary"].firstMatch
+        XCTAssertTrue(primaryPicker.waitForExistence(timeout: 5))
+
+        // ペインを選ぶ前にAIトークを押すと、タブ選択待ちが消えてAIトーク選択待ちに置き換わる
+        let ai = app.buttons["note-ai-toolbar-button"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 5))
+        ai.tap()
+
+        let secondaryPicker = app.descendants(matching: .any)["pane-pick-secondary"].firstMatch
+        XCTAssertTrue(secondaryPicker.waitForExistence(timeout: 5))
+        secondaryPicker.tap()
+
+        let chat = app.descendants(matching: .any)["note-ai-swapped-pane"].firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 10), "タブ選択待ちの後にAIトークを選んだのに、AIトークが開きませんでした。")
+    }
 }

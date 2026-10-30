@@ -258,4 +258,86 @@ final class NoteEditorPhotosPickerStyleTests: XCTestCase {
             XCTAssertFalse(source.contains(persistedName), "再起動後に点線枠や送信先選択画面を復元してはいけません。")
         }
     }
+
+    // MARK: - 2段階写真選択フロー(PhotoPickerSheet -> PhotoPastePreview)と読み込みフォールバック
+
+    func testPhotoPreviewSheetStateTransitionsAfterDismissal() throws {
+        let source = try noteEditorViewSource()
+
+        // 1. ピッカー閉幕時に presentPhotoPreviewIfPicked が呼ばれ、pickedPhotoData != nil のときのみ確認シートが開くこと
+        XCTAssertTrue(
+            source.contains(".sheet(isPresented: $showsImagePicker, onDismiss: presentPhotoPreviewIfPicked)"),
+            "写真ピッカーシートの onDismiss で presentPhotoPreviewIfPicked を呼ぶ必要があります。"
+        )
+        let presentStart = try XCTUnwrap(source.range(of: "private func presentPhotoPreviewIfPicked()"))
+        let presentRest = source[presentStart.lowerBound...]
+        let presentEnd = try XCTUnwrap(presentRest.range(of: "private func finishPhotoPreview()"))
+        let presentBody = String(presentRest[..<presentEnd.lowerBound])
+        XCTAssertTrue(
+            presentBody.contains("if pickedPhotoData != nil { showsPhotoPreview = true }"),
+            "写真選択をキャンセルしたとき(pickedPhotoData == nil)は確認シートを開かず、選択時のみ showsPhotoPreview = true にする必要があります。"
+        )
+
+        // 2. 確認シート閉幕時に finishPhotoPreview が呼ばれ、貼り付け・選び直し・キャンセルが分岐すること
+        XCTAssertTrue(
+            source.contains(".sheet(isPresented: $showsPhotoPreview, onDismiss: finishPhotoPreview)"),
+            "貼り付け確認シートの onDismiss で finishPhotoPreview を呼ぶ必要があります。"
+        )
+        let finishStart = presentEnd.lowerBound
+        let finishRest = source[finishStart...]
+        let finishEnd = try XCTUnwrap(finishRest.range(of: "private func addImageElement"))
+        let finishBody = String(finishRest[..<finishEnd.lowerBound])
+        XCTAssertTrue(
+            finishBody.contains("defer { wantsPhotoPaste = false; wantsPhotoReselect = false }")
+                && finishBody.contains("pickedPhotoData = nil"),
+            "確認シート閉幕後は wantsPhotoPaste / wantsPhotoReselect / pickedPhotoData を必ずリセットする必要があります。"
+        )
+        XCTAssertTrue(
+            finishBody.contains("if wantsPhotoReselect {\n            showsImagePicker = true")
+                && finishBody.contains("else if wantsPhotoPaste, let data {\n            Task { await addImageElement(from: data) }"),
+            "「選び直す」なら showsImagePicker = true でピッカーを再表示し、「貼り付ける」なら addImageElement を呼び、どちらでもなければ何も挿入しない必要があります。"
+        )
+    }
+
+    func testPhotoPastePreviewHandlesCorruptedOrNilDataAndExposesAccessibilityId() throws {
+        let source = try noteEditorViewSource()
+        let previewStart = try XCTUnwrap(source.range(of: "private struct PhotoPastePreview: View"))
+        let previewRest = source[previewStart.lowerBound...]
+        let previewEnd = try XCTUnwrap(previewRest.range(of: "// MARK: - Scientific calculator engine"))
+        let previewBody = String(previewRest[..<previewEnd.lowerBound])
+
+        XCTAssertTrue(
+            previewBody.contains("if let data, let image = UIImage(data: data)")
+                && previewBody.contains("ContentUnavailableView(\"写真を読み込めません\""),
+            "PhotoPastePreview は data が nil またはデコード不能なときに ContentUnavailableView を表示する必要があります。"
+        )
+        XCTAssertTrue(
+            previewBody.contains("Button(\"選び直す\", action: onReselect)")
+                && previewBody.contains("Button(\"貼り付ける\", action: onPaste)")
+                && previewBody.contains(".disabled(data == nil)")
+                && previewBody.contains(".accessibilityIdentifier(\"note-photo-paste-button\")"),
+            "PhotoPastePreview には「選び直す」と、data == nil で無効化される「貼り付ける」(note-photo-paste-button)が必要です。"
+        )
+    }
+
+    func testPhotoPickerCoordinatorPrefersRegisteredImageUTTypeAndFallsBackToUIImage() throws {
+        let source = try noteEditorViewSource()
+        let coordStart = try XCTUnwrap(source.range(of: "func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult])"))
+        let coordRest = source[coordStart.lowerBound...]
+        let coordEnd = try XCTUnwrap(coordRest.range(of: "private struct PaneReplaceButton: View"))
+        let coordBody = String(coordRest[..<coordEnd.lowerBound])
+
+        XCTAssertTrue(
+            coordBody.contains("provider.registeredTypeIdentifiers.first")
+                && coordBody.contains("UTType($0)?.conforms(to: .image) == true")
+                && coordBody.contains("?? UTType.image.identifier"),
+            "PhotoPickerSheet.Coordinator はアセット固有の画像UTType(HEIC/JPEG/PNG等)を優先し、無ければ public.image を使う必要があります。"
+        )
+        XCTAssertTrue(
+            coordBody.contains("if let data, !data.isEmpty")
+                && coordBody.contains("provider.loadObject(ofClass: UIImage.self)")
+                && coordBody.contains("jpegData(compressionQuality: 0.92)"),
+            "loadDataRepresentation が空データを返した場合は loadObject(ofClass: UIImage.self) へフォールバックして無言閉幕を防ぐ必要があります。"
+        )
+    }
 }
