@@ -25,6 +25,24 @@ test('each asked unit looks for its own kind of number', () => {
   assert.equal(quantityEvidencePresent('水温は何度必要ですか。', '海水温が高いこと。'), false);
 });
 
+test('a question asking 何個 accepts the other generic counters a document may use', () => {
+  const ask = '地理教育支援策は何個示されていますか。';
+  assert.equal(quantityEvidencePresent(ask, '６つの支援策を実施する。'), true);
+  assert.equal(quantityEvidencePresent(ask, '支援策は三つある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '支援策は6個ある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '拠点は3ヶ所、会場は2箇所ある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '支援策を実施する。'), false);
+  assert.equal(quantityEvidencePresent(ask, '2019年3月の提言に基づく。'), false);
+  assert.equal(quantityEvidencePresent(ask, 'いくつかの支援策を実施する。'), false);
+});
+
+test('台・枚・本 keep their own counters and do not accept つ', () => {
+  assert.equal(quantityEvidencePresent('配備は何台ですか。', '配備は3台である。'), true);
+  assert.equal(quantityEvidencePresent('配備は何台ですか。', '配備は3つである。'), false);
+  assert.equal(quantityEvidencePresent('資料は何枚ですか。', '資料は10枚である。'), true);
+  assert.equal(quantityEvidencePresent('資料は何枚ですか。', '資料は10つである。'), false);
+});
+
 test('several asked units are alternatives, and unit-less quantity words only need some number', () => {
   const ask = '中層は何hPaで、水温は何度以上、どのくらいの深さですか。';
   assert.equal(quantityEvidencePresent(ask, '中層（700hPa）で相対湿度が高いこと。'), true);
