@@ -3,11 +3,12 @@ import fs from 'node:fs';import os from 'node:os';import {createHash} from 'node
 import {indexSource,accountKey} from '../../src/rag/storage.ts';
 import {retrieve} from '../../src/rag/retrieval.ts';
 import {rrf,queryPlan} from '../../src/rag/query.ts';
+import {cloudflareToken} from './cf-credential.ts';
 if(process.env.STUDIQUO_RAG_QUALITY_REMOTE!=='true')throw Error('Set STUDIQUO_RAG_QUALITY_REMOTE=true to authorize real Workers AI calls.');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID;if(!account)throw Error('CLOUDFLARE_ACCOUNT_ID required');
 const root=process.argv[2];if(!root)throw Error('Evaluation directory required');const fixture=JSON.parse(fs.readFileSync(root+(process.env.STUDIQUO_RAG_QUALITY_SET==='validation'?'/validation-fixture.json':process.env.STUDIQUO_RAG_QUALITY_SET==='holdout'?'/holdout-fixture.json':'/fixture.json')));const extracted=JSON.parse(fs.readFileSync(root+'/extracted-pages.json'));
 if(process.env.STUDIQUO_RAG_REWRITE_CONTROLS==='true')fixture.queries=fixture.queries.filter((q: any)=>q.kind==='rewrite').flatMap((q: any)=>[{...q,id:q.id+'-recognized',kind:'recognized_rewrite',query:'これを説明して'},{...q,id:q.id+'-explicit',kind:'explicit_control',query:q.previousQuestion}]);
-const auth=process.env.CLOUDFLARE_API_TOKEN ? '' : fs.readFileSync(process.env.STUDIQUO_CF_AUTH_FILE ?? `${os.homedir()}/.wrangler/config/default.toml`,'utf8');const token=process.env.CLOUDFLARE_API_TOKEN ?? auth.match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1];if(!token)throw Error('oauth_unavailable');
+const token=cloudflareToken();
 const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync(new URL('../../migrations/0020_rag.sql',import.meta.url),'utf8') as any);
 db.exec(fs.readFileSync(new URL("../../migrations/0021_rag_context.sql",import.meta.url),"utf8") as any);
 let trace: any=null;const prepare=(sql: any)=>({bind(...args: any[]){return{first:async()=>db.prepare(sql).get(...args)??null,all:async()=>{const results=db.prepare(sql).all(...args);if(trace&&sql.includes('bm25('))trace.keyword.push(results);return{results}},run:async()=>({meta:{changes:Number(db.prepare(sql).run(...args).changes)}})}}});

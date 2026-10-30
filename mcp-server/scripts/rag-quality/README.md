@@ -13,7 +13,7 @@ swift mcp-server/scripts/rag-quality/pdf-ocr.swift /private/tmp/studiquo-rag-qua
 python3 mcp-server/scripts/rag-quality/ocr-metrics.py /private/tmp/studiquo-rag-quality-run
 ```
 
-実API呼出しは少額の使用量を発生させます。`CLOUDFLARE_ACCOUNT_ID`を対象アカウントへ設定し、Workers AI権限のある既存Wrangler OAuthログイン、または`CLOUDFLARE_API_TOKEN`を使用します。secret値はファイル・コマンド引数・結果に書き込まないでください。OAuth保存場所が異なる場合は`STUDIQUO_CF_AUTH_FILE`で認証ファイルのパスを指定できます。
+実API呼出しは少額の使用量を発生させます。`CLOUDFLARE_ACCOUNT_ID`を対象アカウントへ設定し、Workers AIだけの専用トークンを`CLOUDFLARE_API_TOKEN`に設定します(発行・期限・受け渡し・削除の決まりは`docs/RUNBOOK.md`の付録A-5。事前に`node mcp-server/scripts/rag-quality/check-cf-token.ts`で有効性と期限を確認できます)。Wrangler OAuthは権限が広いため既定では使えず、手元の開発機で意図して使うときだけ`STUDIQUO_ALLOW_WRANGLER_OAUTH=true`を付けます。secret値はファイル・コマンド引数・結果に書き込まないでください。OAuth保存場所が異なる場合は`STUDIQUO_CF_AUTH_FILE`で認証ファイルのパスを指定できます。
 
 ```sh
 STUDIQUO_RAG_QUALITY_REMOTE=true node mcp-server/scripts/rag-quality/evaluate.ts /private/tmp/studiquo-rag-quality-run
@@ -56,7 +56,7 @@ STUDIQUO_RAG_REAL_MATERIAL_REMOTE=true node mcp-server/scripts/rag-quality/real-
 
 manifestには `sources`（sourceId/title/kind/sourceHash/totalPages/pagesFile、任意folderId/pagesHash）と `questions`（id/query/expected/expectedEvidence、任意kind/previousQuestion/scope）を指定します。expectedはsupportedまたはno_evidence。expectedEvidenceは必要な根拠のgroup配列で、各groupは代替候補 `{sourceId,pageNumber,anchor}` の配列です。ページは物理PDFの1始まりです。ページファイルはmanifestと同じディレクトリの配下へ置きます。正解を実行前に固定し、anchorは本文に実在する短い記述にしてください。
 
-account IDはローカルのCLOUDFLARE_ACCOUNT_ID、資格情報は既存Wrangler OAuthまたはCLOUDFLARE_API_TOKENから利用します。結果には質問・本文・題名・vector・認証値を保存しません。STUDIQUO_RAG_REAL_MATERIAL_PROGRESS=trueなら件数のみ進捗を表示します。最大500API calls。
+account IDはローカルのCLOUDFLARE_ACCOUNT_ID、資格情報は専用のCLOUDFLARE_API_TOKEN(例外としてSTUDIQUO_ALLOW_WRANGLER_OAUTH=true時のWrangler OAuth)から利用します。結果には質問・本文・題名・vector・認証値を保存しません。STUDIQUO_RAG_REAL_MATERIAL_PROGRESS=trueなら件数のみ進捗を表示します。最大500API calls。
 
 pageRecallとevidenceRecallを区別し、qualityEligible=falseのAPI障害・不正Embedding・deadline付近は品質の分母から除外します。Reranker障害時の既存順位fallbackは別途報告します。D1/Vectorizeはローカル代替で、実binding・Gemini最終回答・実機の精度とは区別します。
 
