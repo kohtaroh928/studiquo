@@ -1,0 +1,34 @@
+{
+ "version": 1,
+ "syntheticOnly": true,
+ "baselineId": "20261014-policy-v1",
+ "caseKeys": [
+  "fresh:f01-bulky-fee",
+  "fresh:f02-commuter-refund",
+  "fresh:f03-handsoap-units",
+  "fresh:f04-bus-tour-unknown",
+  "fresh:f05-earphone-conditions",
+  "fresh:f06-lesson-missing",
+  "fresh:f07-museum-tiers",
+  "fresh:f08-two-pages",
+  "fresh:f09-gym-absent",
+  "fresh:f10-battery-explain",
+  "fresh:f11-mikan-explain",
+  "fresh:f12-theater-exception"
+ ],
+ "statuses": {
+  "fresh:f01-bulky-fee": "grounded",
+  "fresh:f02-commuter-refund": "grounded",
+  "fresh:f03-handsoap-units": "grounded",
+  "fresh:f04-bus-tour-unknown": "grounded",
+  "fresh:f05-earphone-conditions": "grounded",
+  "fresh:f06-lesson-missing": "grounded",
+  "fresh:f07-museum-tiers": "grounded",
+  "fresh:f08-two-pages": "grounded",
+  "fresh:f09-gym-absent": "grounded",
+  "fresh:f10-battery-explain": "grounded",
+  "fresh:f11-mikan-explain": "grounded",
+  "fresh:f12-theater-exception": "grounded"
+ },
+ "contextsHash": "e1faa35ff893545b956c3fd71b14ba25a867c608e9e74e1d51d198b0ede7941d"
+}
