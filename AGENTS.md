@@ -34,7 +34,7 @@ ClaudeとCodexなど複数のエージェントの作業が被らないよう、
   - Codexのアプリが作る`~/.codex/worktrees/`配下も可。
 - ブランチ名は`claude/<task>`、`codex/<task>`または`antigravity/<task>`とする。他エージェントの接頭辞のブランチはcheckout・コミットしない。
 - 着手前に`git worktree list`で同じ`<task>`や同じ対象ファイルが使われていないか確認する。被る場合はユーザーに確認する。
-- 作業が終わり統合したら、worktreeとブランチを片付ける。
+- 作業が終わり統合したら、worktreeとブランチを片付ける。PRがmergeされたら、作業の終わりに`scripts/cleanup-branches`で対象を確認し(何も消さない)、問題なければ`scripts/cleanup-branches --yes`で消す。対象はPRがマージ済みで内容がorigin/mainに入っているブランチだけで、未コミット変更のあるworktree、PRが開いているブランチ、mainのフォルダで使用中のブランチは残る。他のエージェントのブランチも、この条件を満たせば消えてよい。
 - `.githooks/`が上記を機械的に強制する。有効化は初回に`git config core.hooksPath .githooks`。人が意図的に回避する場合のみ`STUDIQUO_ALLOW_SHARED_CHECKOUT=1`を付ける。エージェントが勝手に付けてはならない。
 
 ## 実機確認の流れ(mergeの前に確認する)
