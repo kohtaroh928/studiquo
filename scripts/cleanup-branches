@@ -1,0 +1,51 @@
+#!/bin/sh
+# マージ済みPRのブランチとworktreeを片付ける。
+#   scripts/cleanup-branches          削除対象を表示するだけ(何も消さない)
+#   scripts/cleanup-branches --yes    表示した対象を実際に消す
+# 対象: PRがマージ済みで、ブランチの内容がorigin/mainに入っているローカルブランチ。
+#   そのworktreeは、未コミット変更・未追跡ファイルが無い場合だけ消す。
+#   リモートに同名ブランチが残っていれば、それも消す。
+# 対象外: main、PRが開いている/無いブランチ、mainのフォルダで使用中のブランチ、
+#   origin/mainに入っていないコミットがあるブランチ。
+set -eu
+
+YES=0
+[ "${1:-}" = "--yes" ] && YES=1
+
+COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
+MAIN=$(dirname "$COMMON")
+
+git fetch --prune origin >/dev/null 2>&1 || echo "警告: fetchに失敗。手元のorigin/mainで判定します。"
+
+# ブランチ名 -> worktreeパス
+wt_of() {
+  git worktree list --porcelain | awk -v b="refs/heads/$1" '/^worktree /{w=$2} $1=="branch" && $2==b {print w}'
+}
+
+for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
+  [ "$b" = "main" ] && continue
+  state=$(gh pr list --state all --head "$b" --json state --jq '.[0].state' 2>/dev/null || true)
+  [ "$state" = "MERGED" ] || { echo "残す  $b (PR: ${state:-なし})"; continue; }
+
+  # 内容がorigin/mainに入っているか(squashマージも patch-id で判定)
+  if git merge-base --is-ancestor "$b" origin/main 2>/dev/null; then :
+  elif [ -z "$(git cherry origin/main "$b" | grep '^+' || true)" ]; then :
+  else echo "残す  $b (origin/mainに無いコミットあり)"; continue; fi
+
+  wt=$(wt_of "$b")
+  if [ -n "$wt" ]; then
+    if [ "$wt" = "$MAIN" ]; then echo "残す  $b (mainのフォルダで使用中)"; continue; fi
+    if [ -n "$(git -C "$wt" status --porcelain)" ]; then echo "残す  $b (worktreeに未コミット変更あり: $wt)"; continue; fi
+  fi
+
+  echo "削除  $b${wt:+ + worktree $wt}"
+  [ "$YES" = 1 ] || continue
+  [ -n "$wt" ] && git worktree remove "$wt"
+  git branch -D "$b" >/dev/null
+  if git show-ref --verify --quiet "refs/remotes/origin/$b"; then
+    git push origin --delete "$b" >/dev/null 2>&1 && echo "      リモートも削除" || echo "      リモート削除に失敗"
+  fi
+done
+
+git worktree prune
+[ "$YES" = 1 ] || echo "(確認のみ。実行するには --yes)"
