@@ -530,7 +530,7 @@ D1・KV・Durable Objectsの何を失ってよいか、目標(RPO/RTO)、復元�
 
 秘密ではないもの(ソースに出てよい): Google・AppleのサインインのクライアントID、RevenueCatの公開SDKキー、`APNS_TOPIC`、`wrangler.jsonc`のKV・D1のID。サーバーはAppleとGoogleのIDトークンを公開鍵で検証するので、その発行元の秘密鍵はサーバーに無い。
 
-人や端末に紐づく資格情報: `wrangler login`のOAuth(開発機。漏れたら`wrangler logout`とCloudflareの「API Tokens」画面での取り消し)、`gh`のログイン(`gh auth logout`とGitHubの「Personal access tokens」画面)、GitHub・Cloudflare・Appleなど各アカウント(二要素認証と回復手段の確認は別に行う)。
+人や端末に紐づく資格情報: `wrangler login`のOAuth(開発機。RAGの有料評価には使わない。A-5。漏れたら`wrangler logout`とCloudflareの「API Tokens」画面での取り消し)、`gh`のログイン(`gh auth logout`とGitHubの「Personal access tokens」画面)、GitHub・Cloudflare・Appleなど各アカウント(二要素認証と回復手段の確認は別に行う)。
 
 ### A-2. ローテーションの定期
 
@@ -550,3 +550,30 @@ D1・KV・Durable Objectsの何を失ってよいか、目標(RPO/RTO)、復元�
 
 - `scripts/secret-scan.sh`は、全履歴をgitleaksとtrufflehogで調べる(手動)。同じ検査は`.github/workflows/ci.yml`でも、プルリクエストとmainへのpush、毎週月曜に動く。
 - 誤検知を除外するときは、`.gitleaks.toml`または`.trufflehog-exclude-paths`に、**なぜ秘密ではないか**を書く。
+
+### A-5. 評価用Cloudflareトークン(人ごと・専用・短期)
+
+RAGの有料評価(Workers AIの実呼び出し)に使う資格情報の決まり。`wrangler login`のOAuthは、Workerの配備、D1の書き込み、シークレットストア、メール送信まで含む広い権限なので、**評価には使わない**。
+
+**決まり**
+
+1. **専用トークンだけを使う。** Cloudflareの「API Tokens」で、権限を Account → Workers AI だけにし、対象をStudiquoのアカウントだけにして作る。評価スクリプトは`CLOUDFLARE_API_TOKEN`が無いと止まる(`dedicated_cloudflare_token_required`)。手元の開発機で、OAuthを意図して使うときだけ`STUDIQUO_ALLOW_WRANGLER_OAUTH=true`を付ける。
+2. **1人に1本。** 共有しない。名前は`studiquo-rag-eval-<人>-<発行日YYYYMMDD>`にする(例: `studiquo-rag-eval-shoma-20261030`)。誰がいつ使ったかを追え、1人分だけ止められる。
+3. **期限は14日以内。** 作成時の「TTL」で終了日を入れる。期限なし・15日以上は`check-cf-token.ts`が不合格にする。
+4. **終わったら消す。** 評価が終わったら、その日のうちにダッシュボードで削除する(または新しい値にロールする)。下の台帳の状態を「削除済み」にする。
+5. **値は秘密管理にだけ置く。** チャット、GitHub、Notion、Issue、PR、ログ、コミットに貼らない。渡すときはパスワード管理アプリの共有、または直接会って渡す(通話の口頭は避ける)。クラウド環境ではClaudeの設定画面の「Network secrets」(種類はBearer、許可サイトは`api.cloudflare.com`)に入れる。自分の端末では、シェルの履歴に残らない形(対話入力、または0600の`.dev.vars`)で環境変数にする。アカウントIDは秘密ではない。
+6. **使う前に検査する。** 次のコマンドは、Workers AIの利用量を使わずに、トークンが有効か、期限が14日以内かを調べる。値は表示しない。権限が「Workers AIだけ」かは、この方法では見えないため、ダッシュボードで確認する。
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=<アカウントID> CLOUDFLARE_API_TOKEN=<トークン> node mcp-server/scripts/rag-quality/check-cf-token.ts
+```
+
+7. **漏れたとき。** ダッシュボードで該当トークンを即削除する(併用不要)。影響はWorkers AIの利用料金に限られる。A-3の手順に従い、台帳に記録する。
+
+**台帳(値は書かない)**
+
+| トークン名 | 使う人 | 発行日 | 期限 | 権限 | 状態 |
+|---|---|---|---|---|---|
+| (未発行) | | | | Workers AI のみ | |
+
+発行したら1行足し、削除したら状態を「削除済み」にして、行は残す。
