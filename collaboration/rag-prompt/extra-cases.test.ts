@@ -54,5 +54,5 @@ test('the fresh case set loads from its own files and rubric name', async () => 
   writeCaseSet(dir, contexts, 'fresh');
   assert.equal(loadCaseSet('fresh', dir).contexts.length, contexts.length);
   assert.throws(() => loadCaseSet('extra', dir));
-  assert.throws(() => loadRubric('fresh'), /ENOENT/);
+  assert.equal(loadRubric('fresh').id, 'fresh12-atomic-v1');
 });
