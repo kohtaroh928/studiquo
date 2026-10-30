@@ -8,13 +8,25 @@ import {ragAnswerPolicy as frozenPolicy} from '../../mcp-server/scripts/rag-qual
 
 const root = fileURLToPath(new URL('./', import.meta.url));
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// A candidate appends instructions and may also edit the kit's copy of the frozen policy text
+// (policyEdits). The edits never touch mcp-server/src; they only change the request bodies built here.
+const CANDIDATE_KEYS = ['additionalInstructions', 'baselineId', 'id', 'version'];
 export function validateCandidate(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      Object.keys(value).sort().join(',') !== 'additionalInstructions,baselineId,id,version' ||
+  const keys = value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).sort().join(',') : '';
+  const edits = value?.policyEdits;
+  const withEdits = keys === [...CANDIDATE_KEYS, 'policyEdits'].sort().join(',');
+  if (!(keys === CANDIDATE_KEYS.join(',') || withEdits) ||
       value.version !== 1 || value.baselineId !== '20261014-policy-v1' ||
       typeof value.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(value.id) ||
       typeof value.additionalInstructions !== 'string' ||
-      !value.additionalInstructions.trim() || Buffer.byteLength(value.additionalInstructions) > 16384) {
+      (!value.additionalInstructions.trim() && !withEdits) ||
+      Buffer.byteLength(value.additionalInstructions) > 16384) {
+    throw Error('invalid_candidate');
+  }
+  if (withEdits && (!Array.isArray(edits) || !edits.length || edits.length > 5 || edits.some(edit =>
+      !edit || typeof edit !== 'object' || Object.keys(edit).sort().join(',') !== 'find,replace' ||
+      typeof edit.find !== 'string' || !edit.find.trim() || typeof edit.replace !== 'string' || !edit.replace.trim() ||
+      Buffer.byteLength(edit.find) > 4096 || Buffer.byteLength(edit.replace) > 4096))) {
     throw Error('invalid_candidate');
   }
   return value;
@@ -107,7 +119,10 @@ const SQUASHED_UNSAFE = [
   /(?:ignore|disregard)(?:all|any|the|these|those)?(?:rules?|instructions?|guidelines?)/i,
 ];
 export function assertSafeInstructions(candidate) {
+  // The appended text and every replacement text in policyEdits are reviewed by the same checks.
+  for (const edit of candidate.policyEdits ?? []) assertSafeInstructions({additionalInstructions: edit.replace});
   const text = candidate.additionalInstructions;
+  if (!text.trim()) return;
   // Hidden characters have no place in a prompt a human is meant to review.
   if ([...text.matchAll(INVISIBLE)].some(([c]) => !['\n', '\t', '\r'].includes(c))) throw Error('unsafe_candidate');
   // Long encoded blobs and links cannot be reviewed by reading them.
@@ -141,15 +156,19 @@ export function assertSafeInstructions(candidate) {
 }
 // 'fixed6' is the frozen baseline set. 'extra' is the additional synthetic set in extra-cases/,
 // captured offline in the same shape; its hash is checked against its manifest.
-export const CASE_SETS = ['fixed6', 'extra'];
-export function loadCaseSet(name = 'fixed6', extraDir = path.join(root, 'extra-cases')) {
+// 'fresh' is a second extra-style set (fresh-cases/), written without sight of any candidate or earlier result.
+export const CASE_SETS = ['fixed6', 'extra', 'fresh'];
+const SET_FILES = {extra: ['extra-cases', 'extra'], fresh: ['fresh-cases', 'fresh']};
+export function loadCaseSet(name = 'fixed6', extraDir) {
   if (!CASE_SETS.includes(name)) throw Error('invalid_case_set');
   const {manifest, contexts} = loadPromptBaseline();
   if (name === 'fixed6') {
     return {name, manifest, contexts, original: (row, style) => baselinePolicyPair(row.key, style).original};
   }
-  const extraManifest = JSON.parse(readFileSync(path.join(extraDir, 'manifest-extra.json'), 'utf8'));
-  const extraContexts = JSON.parse(readFileSync(path.join(extraDir, 'contexts-extra.json'), 'utf8'));
+  const [defaultDir, suffix] = SET_FILES[name];
+  extraDir ??= path.join(root, defaultDir);
+  const extraManifest = JSON.parse(readFileSync(path.join(extraDir, `manifest-${suffix}.json`), 'utf8'));
+  const extraContexts = JSON.parse(readFileSync(path.join(extraDir, `contexts-${suffix}.json`), 'utf8'));
   if (extraManifest.baselineId !== manifest.id || hash(extraContexts) !== extraManifest.contextsHash) throw Error('extra_cases_corrupt');
   if (new Set(extraContexts.map(row => row.key)).size !== extraContexts.length ||
       extraContexts.some(row => contexts.some(fixed => fixed.key === row.key))) throw Error('extra_cases_corrupt');
@@ -160,20 +179,32 @@ export function preparePacket(candidate, caseSetName = 'fixed6', extraDir) {
   validateCandidate(candidate);
   assertSafeInstructions(candidate);
   const {manifest, contexts, original} = loadCaseSet(caseSetName, extraDir);
+  let editsUsed = 0;
   const pairs = contexts.flatMap(row => ['source_only', 'explain'].map(style => {
     const baseline = original(row, style);
+    const policy = frozenPolicy(row.status, style);
+    if (!baseline.instructions.endsWith(policy)) throw Error('policy_mismatch');
+    // Each edit applies where its text appears exactly once in the frozen policy for this status and style.
+    let edited = policy;
+    for (const edit of candidate.policyEdits ?? []) {
+      const hits = edited.split(edit.find).length - 1;
+      if (hits > 1) throw Error('policy_edit_ambiguous');
+      if (hits === 1) {edited = edited.replace(edit.find, () => edit.replace); editsUsed += 1;}
+    }
     const proposed = {...structuredClone(baseline),
-      instructions: baseline.instructions + '\n\n' + candidate.additionalInstructions};
-    // The frozen rules stay byte-for-byte first; a candidate may only append.
-    if (!proposed.instructions.startsWith(baseline.instructions)) throw Error('unsafe_candidate');
+      instructions: baseline.instructions.slice(0, baseline.instructions.length - policy.length) + edited +
+        (candidate.additionalInstructions.trim() ? '\n\n' + candidate.additionalInstructions : '')};
+    // Without policy edits the frozen rules stay byte-for-byte first; a candidate may only append.
+    if (!candidate.policyEdits && !proposed.instructions.startsWith(baseline.instructions)) throw Error('unsafe_candidate');
     return {caseKey:row.key, style, status:row.status,
       baseline, candidate:proposed, citations:structuredClone(row.citations),
       baselineHash:hash(baseline), candidateHash:hash(proposed)};
   }));
+  if (candidate.policyEdits && !editsUsed) throw Error('policy_edit_not_found');
   return {version:1, syntheticOnly:true, baselineId:manifest.id, caseSet:caseSetName,
     candidateId:candidate.id, candidateHash:hash(candidate),
     contextsHash:manifest.contextsHash, externalCalls:0,
-    comparison:'frozen historical baseline plus appended candidate instructions; not current-production or live-retrieval evaluation',
+    comparison:'frozen historical baseline plus appended candidate instructions' + (candidate.policyEdits ? ' and edits to the kit copy of the frozen policy' : '') + '; not current-production or live-retrieval evaluation',
     pairs};
 }
 export function summary(packet) {
