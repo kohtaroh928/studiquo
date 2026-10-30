@@ -12,7 +12,9 @@ import {sseEvents} from '../../mcp-server/scripts/rag-quality/final-answer-evalu
 import {loadPromptBaseline} from '../../mcp-server/scripts/rag-quality/prompt-baseline.ts';
 import {ragAnswerPolicy as frozenPolicy} from '../../mcp-server/scripts/rag-quality/baselines/20261014-policy-v1/answer-policy.ts';
 
-const dir = path.join(fileURLToPath(new URL('./', import.meta.url)), 'extra-cases');
+// `node capture-extra-cases.ts [extra|fresh]` reads <set>-cases/cases.json and writes contexts-<set>.json / manifest-<set>.json.
+const setName = process.argv[2] === 'fresh' ? 'fresh' : 'extra';
+const dir = path.join(fileURLToPath(new URL('./', import.meta.url)), `${setName}-cases`);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const nonempty = s => typeof s === 'string' && s.trim().length > 0;
 
@@ -20,7 +22,7 @@ export function validateCases(cases) {
   const keys = new Set();
   if (!Array.isArray(cases) || !cases.length) throw Error('invalid_cases');
   for (const c of cases) {
-    if (!/^extra:[a-z][a-z0-9-]{0,40}$/.test(c.key) || keys.has(c.key) || !nonempty(c.question) ||
+    if (!new RegExp(`^(extra|fresh):[a-z][a-z0-9-]{0,40}$`).test(c.key) || keys.has(c.key) || !nonempty(c.question) ||
         !['grounded', 'partial', 'none'].includes(c.expectedStatus) ||
         !Array.isArray(c.pages) || !c.pages.length || c.pages.some((p, i) => p.pageNumber !== i + 1 || !nonempty(p.text)) ||
         (c.history ?? []).some(h => !['user', 'assistant'].includes(h.role) || !nonempty(h.text))) throw Error('invalid_cases');
@@ -66,10 +68,10 @@ export async function capture(cases) {
   return rows;
 }
 
-export function writeCaseSet(outDir, contexts) {
+export function writeCaseSet(outDir, contexts, suffix = setName) {
   const {manifest} = loadPromptBaseline();
-  writeFileSync(path.join(outDir, 'contexts-extra.json'), JSON.stringify(contexts, null, 1) + '\n');
-  writeFileSync(path.join(outDir, 'manifest-extra.json'), JSON.stringify({version: 1, syntheticOnly: true, baselineId: manifest.id,
+  writeFileSync(path.join(outDir, `contexts-${suffix}.json`), JSON.stringify(contexts, null, 1) + '\n');
+  writeFileSync(path.join(outDir, `manifest-${suffix}.json`), JSON.stringify({version: 1, syntheticOnly: true, baselineId: manifest.id,
     caseKeys: contexts.map(r => r.key), statuses: Object.fromEntries(contexts.map(r => [r.key, r.status])), contextsHash: hash(contexts)}, null, 1) + '\n');
   return hash(contexts);
 }
