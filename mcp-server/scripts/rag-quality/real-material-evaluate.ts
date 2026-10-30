@@ -2,7 +2,7 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, resolve, relative, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { homedir } from 'node:os';
+import { cloudflareToken } from './cf-credential.ts';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { qualityEnvironment } from '../../src/rag-quality-fixture.ts';
@@ -243,11 +243,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (process.env.STUDIQUO_RAG_REAL_MATERIAL_REMOTE !== 'true') throw Error('remote_evaluation_opt_in_required');
   if (argv.length !== 2) throw Error('manifest_and_output_required');
   const manifest = loadManifest(argv[0]); const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-  let token = process.env.CLOUDFLARE_API_TOKEN;
-  if (!token) {
-    try { token = readFileSync(process.env.STUDIQUO_CF_AUTH_FILE ?? `${homedir()}/.wrangler/config/default.toml`, 'utf8').match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1]; }
-    catch { throw Error('cloudflare_auth_unavailable'); }
-  }
+  const token = cloudflareToken();
   const onProgress = process.env.STUDIQUO_RAG_REAL_MATERIAL_PROGRESS === 'true' ? (value: any) => process.stdout.write(JSON.stringify(value) + '\n') : undefined;
   const report = await evaluateMaterials(manifest, { runAI: remoteRunAI({ account, token }), onProgress, judgeMode: process.env.STUDIQUO_RAG_JUDGE_MODE });
   writeFileSync(argv[1], JSON.stringify(report, null, 2), { mode: 0o600 });
