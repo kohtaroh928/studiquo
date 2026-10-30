@@ -135,9 +135,11 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SWIFT_VERSION: "5.0"
         # Keep the string catalog under deliberate source-control updates.
-        # Without this, Xcode rewrites Localizable.xcstrings on every build
-        # whenever it discovers a SwiftUI Text/Label literal.
+        # Without these, Xcode rewrites Localizable.xcstrings on every build
+        # (new keys from SwiftUI Text/Label literals, "stale" marks, EOF newline).
+        # SWIFT_EMIT_LOC_STRINGS is the build's string extraction itself.
         LOCALIZED_STRING_SWIFTUI_SUPPORT: NO
+        SWIFT_EMIT_LOC_STRINGS: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
         PRODUCT_NAME: studiquo
         STUDIQUO_APP_PRODUCT_NAME: studiquo
