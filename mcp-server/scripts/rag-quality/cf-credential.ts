@@ -1,6 +1,6 @@
 // Cloudflare credential for the paid RAG evaluations.
 //
-// The default is a dedicated API token (Workers AI only, short expiry, one per person; see
+// The default is a dedicated API token (Workers AI only, one per person, long-lived; see
 // docs/RUNBOOK.md A-5). The Wrangler OAuth login on a developer machine can deploy Workers and
 // write D1, so it is used only when STUDIQUO_ALLOW_WRANGLER_OAUTH=true is set on purpose.
 // Neither value is ever logged or returned in an error message.

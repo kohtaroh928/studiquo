@@ -1,12 +1,10 @@
 // Checks the evaluation token WITHOUT spending Workers AI usage and without printing the value.
 //   CLOUDFLARE_ACCOUNT_ID=<id> CLOUDFLARE_API_TOKEN=<token> node scripts/rag-quality/check-cf-token.ts
-// Prints: whether Cloudflare accepts the token, its expiry, and whether it follows docs/RUNBOOK.md A-5.
+// Prints: whether Cloudflare accepts the token and when it expires (if it does); see docs/RUNBOOK.md A-5.
 // The verify endpoint reports status and expiry only; it cannot list permissions. Confirm "Workers AI
 // only" on the token's page in the Cloudflare dashboard.
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-
-const MAX_LIFETIME_DAYS = 14;
 
 export type Verdict = { ok: boolean; lines: string[] };
 
@@ -15,17 +13,14 @@ export function judge(result: { status?: string; expires_on?: string } | null, n
   if (!result || result.status !== "active") return { ok: false, lines: ["NG  Cloudflare does not accept this token as active."] };
   lines.push("OK  Cloudflare accepts the token (active).");
   let ok = true;
-  if (!result.expires_on) {
-    ok = false;
-    lines.push(`NG  No expiry. Set an expiry of ${MAX_LIFETIME_DAYS} days or less when creating the token.`);
-  } else {
+  // No expiry is allowed (docs/RUNBOOK.md A-5): the token is long-lived by choice, so the other
+  // limits (one person, Workers AI only, revoke on leak, yearly rotation) carry the safety.
+  if (!result.expires_on) lines.push("--  No expiry (allowed). Rotate it yearly and revoke it if it may have leaked.");
+  else {
     const days = (Date.parse(result.expires_on) - now) / 86_400_000;
     if (!(days > 0)) {
       ok = false;
       lines.push("NG  The token has already expired.");
-    } else if (days > MAX_LIFETIME_DAYS) {
-      ok = false;
-      lines.push(`NG  Expires in ${Math.ceil(days)} days; the limit is ${MAX_LIFETIME_DAYS}.`);
     } else lines.push(`OK  Expires in ${Math.ceil(days)} day(s).`);
   }
   lines.push("--  Permissions are not visible here. Confirm Workers AI is the only permission in the dashboard.");
