@@ -31,6 +31,7 @@ final class Notebook {
     /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
     var folder: Folder?
+    var sortIndex: Int = 0
     var tagsText: String = ""
     var isLocked: Bool = false
     /// Every page and element's content, AES-GCM encrypted, whenever this

@@ -4210,7 +4210,7 @@ struct ContentView: View {
         } else {
             destination = nil
         }
-        var movedItems: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date)] = []
+        var movedItems: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date, sortIndex: Int)] = []
         var movedFolders: [FolderMoveSnapshot] = []
         for value in values {
             if let sourceFolder = resolveFolder(fromDragValue: value) {
@@ -4221,8 +4221,11 @@ struct ContentView: View {
             }
             guard let entry = resolveEntry(fromDragValue: value) else { continue }
             let item = entry.underlying
-            let previous = (item: item, folder: item.folder, path: item.folderName, updatedAt: item.updatedAt)
+            let previous = (item: item, folder: item.folder, path: item.folderName, updatedAt: item.updatedAt, sortIndex: item.sortIndex)
             if LibraryFolderMove.move(item, into: destination) {
+                if sortOption == .manual {
+                    item.sortIndex = nextManualIndex(in: destination?.legacyPath ?? "")
+                }
                 movedItems.append(previous)
             }
         }
@@ -4234,6 +4237,7 @@ struct ContentView: View {
                 previous.item.folder = previous.folder
                 previous.item.folderName = previous.path
                 previous.item.updatedAt = previous.updatedAt
+                previous.item.sortIndex = previous.sortIndex
             }
             for snapshot in movedFolders.reversed() {
                 restoreFolderMove(snapshot)
@@ -4242,6 +4246,10 @@ struct ContentView: View {
         }
         if let folder { expandedSidebarFolders.insert(folder) }
         return true
+    }
+
+    private func nextManualIndex(in folderPath: String) -> Int {
+        (entries(inLegacyPath: folderPath).map(\.sortIndex).max() ?? -1) + 1
     }
 
     private struct FolderMoveSnapshot {
@@ -4551,6 +4559,12 @@ struct ContentView: View {
               !source.isTrashed, !target.isTrashed else {
             return false
         }
+        if sortOption == .manual {
+            // In manual order, dropping on another material means reorder —
+            // never create a folder accidentally. Folder targets keep their
+            // separate drop handler and still move materials into folders.
+            return reorder(source, after: target)
+        }
         let parentPath = target.underlying.folderName
         let parent = folderObject(forLegacyPath: parentPath)
         guard parentPath.isEmpty || parent != nil else { return false }
@@ -4566,6 +4580,23 @@ struct ContentView: View {
         folderRenameText = newFolder.name
         folderToRename = newFolder
         return true
+    }
+
+    @discardableResult
+    private func reorder(_ source: HomeEntry, after target: HomeEntry) -> Bool {
+        let folderPath = target.underlying.folderName
+        guard source.underlying.folderName == folderPath else { return false }
+        var entries = entries(inLegacyPath: folderPath)
+        entries.removeAll { $0.id == source.id }
+        guard let targetIndex = entries.firstIndex(where: { $0.id == target.id }) else { return false }
+        entries.insert(source, at: targetIndex + 1)
+        for index in entries.indices { entries[index].sortIndex = index }
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// "新規フォルダ", "新規フォルダ 2", … — keeps `handleEntryDrop` from ever
@@ -4775,6 +4806,13 @@ struct ContentView: View {
                         }
                     }
                     Menu {
+                        Button {
+                            sortOption = .manual
+                        } label: {
+                            if sortOption == .manual { Label("手動", systemImage: "checkmark") }
+                            else { Text("手動") }
+                        }
+                        Divider()
                         Toggle("資料の種類ごとに並べる", isOn: $sortByMaterialType)
                             .accessibilityIdentifier("library-sort-by-material-type")
                         Divider()
@@ -5391,6 +5429,17 @@ struct ContentView: View {
         }
         let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
         return items.sorted { first, second in
+            if sortOption == .manual {
+                func manualIndex(_ item: LibraryRowItem) -> Int {
+                    switch item {
+                    case .folder(let path): return folderObject(forLegacyPath: path)?.sortIndex ?? 0
+                    case .entry(let entry): return entry.sortIndex
+                    }
+                }
+                let firstIndex = manualIndex(first)
+                let secondIndex = manualIndex(second)
+                if firstIndex != secondIndex { return firstIndex < secondIndex }
+            }
             if sortByMaterialType {
                 let firstKind = materialSortRank(for: first)
                 let secondKind = materialSortRank(for: second)
@@ -5429,7 +5478,15 @@ struct ContentView: View {
         var result = notebooks.map(HomeEntry.notebook)
         result += displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
         result += displayedTextDocuments.map(HomeEntry.textDocument)
-        return result.sorted(by: sortOption.areInOrder)
+        return result.sorted(by: manualEntryOrder)
+    }
+
+    private func manualEntryOrder(_ first: HomeEntry, _ second: HomeEntry) -> Bool {
+        guard sortOption == .manual else { return sortOption.areInOrder(first, second) }
+        if first.sortIndex != second.sortIndex { return first.sortIndex < second.sortIndex }
+        // Existing libraries start with index 0. Preserve their familiar order
+        // until the first drag assigns a distinct manual order.
+        return NotebookSortOption.updatedNewest.areInOrder(first, second)
     }
 
     @ViewBuilder
@@ -5846,7 +5903,7 @@ struct ContentView: View {
         result += textDocuments
             .filter { !$0.isTrashed && $0.folderName == path }
             .map(HomeEntry.textDocument)
-        return result.sorted(by: sortOption.areInOrder)
+        return result.sorted(by: manualEntryOrder)
     }
 
     private func subfolderPaths(of parentPath: String?) -> [String] {
@@ -7509,11 +7566,12 @@ private enum NotebookSortKey: CaseIterable, Identifiable {
 }
 
 private enum NotebookSortOption: String, CaseIterable, Identifiable {
-    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
+    case manual, updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
     var id: String { rawValue }
 
     var key: NotebookSortKey {
         switch self {
+        case .manual: .updated
         case .updatedNewest, .updatedOldest: .updated
         case .createdNewest, .createdOldest: .created
         case .nameAscending, .nameDescending: .name
@@ -7522,6 +7580,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var isAscending: Bool {
         switch self {
+        case .manual: false
         case .updatedOldest, .createdOldest, .nameAscending: true
         default: false
         }
@@ -7532,6 +7591,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
     func selecting(_ newKey: NotebookSortKey) -> NotebookSortOption {
         if newKey == key {
             switch self {
+            case .manual: return .updatedNewest
             case .updatedNewest: return .updatedOldest
             case .updatedOldest: return .updatedNewest
             case .createdNewest: return .createdOldest
@@ -7549,6 +7609,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .manual: L("手動")
         case .updatedNewest: L("更新日が新しい順")
         case .updatedOldest: L("更新日が古い順")
         case .createdNewest: L("作成日が新しい順")
@@ -7560,6 +7621,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var comparator: (Notebook, Notebook) -> Bool {
         switch self {
+        case .manual: { $0.updatedAt > $1.updatedAt }
         case .updatedNewest: { $0.updatedAt > $1.updatedAt }
         case .updatedOldest: { $0.updatedAt < $1.updatedAt }
         case .createdNewest: { $0.createdAt > $1.createdAt }
@@ -7581,6 +7643,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     func areInOrder(_ a: (title: String, created: Date, updated: Date), _ b: (title: String, created: Date, updated: Date)) -> Bool {
         switch self {
+        case .manual: a.updated > b.updated
         case .updatedNewest: a.updated > b.updated
         case .updatedOldest: a.updated < b.updated
         case .createdNewest: a.created > b.created

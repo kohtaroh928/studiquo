@@ -21,6 +21,7 @@ final class TextDocument {
     /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
     var folder: Folder?
+    var sortIndex: Int = 0
     var isFavorite: Bool = false
     var isTrashed: Bool = false
     var trashedAt: Date?
