@@ -1,0 +1,784 @@
+{
+ "version": 1,
+ "id": "fresh12-atomic-v1",
+ "baselineId": "20261014-policy-v1",
+ "note": "新規の合成ケース12件の根拠だけから作った採点項目(下書き)。生成側へ渡さない。自動判定は表記ゆれに弱い予備判定で、not_detectedとreviewは人が回答を読んで確定する。",
+ "categories": {
+  "omission": "回答漏れ: 質問が求めた項目と、判断に不可欠な条件",
+  "grounding": "根拠: 資料にない値・優劣・差分を作らない、別対象を混ぜない、出典表記を本文に出さない",
+  "supplement": "補足説明: source_onlyは資料外の補足を足さない。explainは補足を表示で区別し、資料より後に置く",
+  "presentation": "表示: 結論の位置、不要なまとめ"
+ },
+ "common": [
+  {
+   "id": "x-no-citation",
+   "category": "grounding",
+   "styles": [
+    "source_only",
+    "explain"
+   ],
+   "forbid": [
+    "e50-",
+    "boundary-",
+    "chunk",
+    "出典[:：]",
+    "\\[\\d+\\]",
+    "p\\.\\s*1",
+    "合成教材",
+    "fresh-",
+    "f[0-9]+-"
+   ],
+   "severity": "major",
+   "text": "出典ID・資料名・ページ番号を本文に書かない"
+  },
+  {
+   "id": "x-source-only-no-supplement",
+   "category": "supplement",
+   "styles": [
+    "source_only"
+   ],
+   "flag": [
+    "補足",
+    "一般的に",
+    "一般に",
+    "通常は",
+    "背景として",
+    "たとえば"
+   ],
+   "severity": "major",
+   "text": "source_onlyでは資料外の定義・背景・たとえを足さない（出現時は人が確認）"
+  },
+  {
+   "id": "x-explain-label-first",
+   "category": "supplement",
+   "styles": [
+    "explain"
+   ],
+   "labelBeforeCue": {
+    "label": [
+     "補足",
+     "背景"
+    ],
+    "cue": [
+     "一般的に",
+     "一般に",
+     "通常は",
+     "ふつう",
+     "多くの場合",
+     "たとえば"
+    ]
+   },
+   "severity": "major",
+   "text": "explainで一般知識を使うなら、最初の一般説明より前に補足の表示を置く"
+  },
+  {
+   "id": "x-no-summary",
+   "category": "presentation",
+   "styles": [
+    "source_only",
+    "explain"
+   ],
+   "forbid": [
+    "(^|\\n)[#*\\s]*(まとめ|結論)[:：]?\\s*(\\n|$)"
+   ],
+   "severity": "minor",
+   "text": "末尾に同じ内容のまとめを足さない"
+  }
+ ],
+ "cases": {
+  "fresh:f01-bulky-fee": {
+   "question": "合成区の粗大ごみで、2028年8月3日に申し込んだ場合の1点あたりの手数料の金額を教えてください。",
+   "items": [
+    {
+     "id": "f01-value",
+     "category": "omission",
+     "all": [
+      "1000円"
+     ],
+     "severity": "critical",
+     "text": "8月3日申込の手数料は1点1000円と答える"
+    },
+    {
+     "id": "f01-start",
+     "category": "omission",
+     "any": [
+      "2028年7月1日以降",
+      "7月1日以降",
+      "2028年7月1日から",
+      "7月1日から"
+     ],
+     "severity": "major",
+     "text": "新金額が2028年7月1日以降の申込に適用されることを示す"
+    },
+    {
+     "id": "f01-basis",
+     "category": "omission",
+     "any": [
+      "申し?込み?日[^。]{0,8}(判定|基準|決ま|決め|よる|で適用|で変わ|で分か)",
+      "(判定|基準)[^。]{0,10}申し?込み?日",
+      "回収日(で|に)?は(な|関係)",
+      "回収日[^。]{0,6}(関係|問わ)"
+     ],
+     "severity": "major",
+     "text": "判定は回収日ではなく申込日で決まる、という基準を残す"
+    },
+    {
+     "id": "f01-no-old",
+     "category": "grounding",
+     "forbid": [
+      "(手数料|金額|料金)は[^。]{0,4}800円(です|となります|になります|がかかります)",
+      "(8月3日|8月20日|今回|この場合)[^。]{0,25}800円(です|となります|になります)"
+     ],
+     "flag": [
+      "800円"
+     ],
+     "severity": "critical",
+     "text": "旧金額の800円をこの人の答えにしない(旧規定への言及は人が確認)"
+    },
+    {
+     "id": "f01-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "\\d+点(まで|以上|を超え)",
+      "(減免|免除)"
+     ],
+     "severity": "major",
+     "text": "資料にない点数上限・減免を作らない"
+    }
+   ]
+  },
+  "fresh:f02-commuter-refund": {
+   "question": "合成電鉄の通学定期券を2029年6月に購入した場合の払い戻し手数料の金額を教えてください。",
+   "items": [
+    {
+     "id": "f02-value",
+     "category": "omission",
+     "all": [
+      "220円"
+     ],
+     "severity": "critical",
+     "text": "2029年6月購入の手数料は1枚220円と答える"
+    },
+    {
+     "id": "f02-start",
+     "category": "omission",
+     "any": [
+      "2029年4月1日以降",
+      "4月1日以降",
+      "2029年4月1日から",
+      "4月1日から"
+     ],
+     "severity": "major",
+     "text": "新金額が2029年4月1日以降の購入に適用されることを示す"
+    },
+    {
+     "id": "f02-basis",
+     "category": "omission",
+     "any": [
+      "購入日[^。]{0,8}(判定|基準|決ま|決め|よる|で適用|で変わ|で分か)",
+      "(判定|基準)[^。]{0,10}購入日",
+      "(払い戻し|払戻し?|申し出)[^。]{0,8}日(で|に)?は(な|関係)",
+      "(払い戻し|払戻し?|申し出)[^。]{0,8}日[^。]{0,6}(関係|問わ)"
+     ],
+     "severity": "major",
+     "text": "判定は払い戻しを申し出た日ではなく購入日で決まる、という基準を残す"
+    },
+    {
+     "id": "f02-no-old",
+     "category": "grounding",
+     "forbid": [
+      "(手数料|金額|料金)は[^。]{0,4}110円(です|となります|になります|がかかります)",
+      "(2029年6月|2029年9月|今回|この場合)[^。]{0,25}110円(です|となります|になります)"
+     ],
+     "flag": [
+      "110円"
+     ],
+     "severity": "critical",
+     "text": "旧金額の110円をこの人の答えにしない(旧規定への言及は人が確認)"
+    },
+    {
+     "id": "f02-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "(日割り|月割り)",
+      "残り(の)?(期間|日数|月数)[^。]{0,10}(返金|払い戻)"
+     ],
+     "severity": "major",
+     "text": "日割り・月割りなど資料にない計算を作らない"
+    }
+   ]
+  },
+  "fresh:f03-handsoap-units": {
+   "question": "合成ハンドソープAと合成ハンドソープBは、どちらが1mlあたり安いですか。",
+   "items": [
+    {
+     "id": "f03-a",
+     "category": "omission",
+     "all": [
+      "400([mM][lL]|ミリリットル)",
+      "480円"
+     ],
+     "severity": "critical",
+     "text": "Aの容量400mlと価格480円(資料の元の値)を書く"
+    },
+    {
+     "id": "f03-b",
+     "category": "omission",
+     "all": [
+      "700([mM][lL]|ミリリットル)",
+      "756円"
+     ],
+     "severity": "critical",
+     "text": "Bの容量700mlと価格756円(資料の元の値)を書く"
+    },
+    {
+     "id": "f03-unit",
+     "category": "omission",
+     "all": [
+      "1\\.2円",
+      "1\\.08円"
+     ],
+     "severity": "major",
+     "text": "1mlあたりはAが1.2円、Bが1.08円"
+    },
+    {
+     "id": "f03-cheaper",
+     "category": "omission",
+     "any": [
+      "Bの(方|ほう)が[^。]{0,16}(安|割安|お得)",
+      "Bが[^。]{0,16}(安|割安|お得)",
+      "B[^。]{0,10}1[mM][lL][^。]{0,16}(安|割安|お得)"
+     ],
+     "severity": "major",
+     "text": "1mlあたりではBの方が安いと答える"
+    },
+    {
+     "id": "f03-wrong-direction",
+     "category": "grounding",
+     "forbid": [
+      "Aの(方|ほう)が[^。]{0,8}(1[mM][lL]|あたり|単価)[^。]{0,8}(安|割安|お得)"
+     ],
+     "severity": "critical",
+     "text": "1mlあたりでAが安いと逆に答えない"
+    }
+   ]
+  },
+  "fresh:f04-bus-tour-unknown": {
+   "question": "合成日帰りバスツアーの参加費、昼食代、旅行保険料を教えてください。",
+   "items": [
+    {
+     "id": "f04-fee",
+     "category": "omission",
+     "all": [
+      "5800円",
+      "3900円"
+     ],
+     "severity": "critical",
+     "text": "参加費は大人5800円、小学生以下3900円"
+    },
+    {
+     "id": "f04-lunch-unknown",
+     "category": "omission",
+     "any": [
+      "昼食代[^。]{0,30}(掲載|記載)[^。]{0,8}(ありません|ない|いません|なし)",
+      "昼食代[^。]{0,30}(金額|額)[^。]{0,10}(掲載|記載|わから|分から|不明|載って)",
+      "(掲載|記載)[^。]{0,8}(ありません|ない|いません|なし)[^。]{0,20}昼食代"
+     ],
+     "severity": "critical",
+     "text": "昼食代は別途かかるが金額は掲載されていない、と資料の範囲をそのまま書く"
+    },
+    {
+     "id": "f04-insurance-undecided",
+     "category": "omission",
+     "any": [
+      "保険料[^。]{0,30}未定",
+      "未定[^。]{0,20}保険料"
+     ],
+     "severity": "critical",
+     "text": "旅行保険料は未定のため掲載されていない"
+    },
+    {
+     "id": "f04-separate",
+     "category": "omission",
+     "any": [
+      "別途"
+     ],
+     "severity": "major",
+     "text": "昼食代は別途かかる"
+    },
+    {
+     "id": "f04-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "(昼食代|保険料)(は|が|の金額は)\\d+円",
+      "(昼食代|保険料)[^。]{0,6}(程度|目安|おおよそ|約\\d)"
+     ],
+     "severity": "critical",
+     "text": "昼食代・保険料の金額や目安を作らない"
+    }
+   ]
+  },
+  "fresh:f05-earphone-conditions": {
+   "question": "合成イヤホンPと合成イヤホンQは、どちらが長く使えますか。重さも教えてください。",
+   "items": [
+    {
+     "id": "f05-values",
+     "category": "omission",
+     "all": [
+      "8時間",
+      "10時間"
+     ],
+     "severity": "critical",
+     "text": "P 8時間・Q 10時間"
+    },
+    {
+     "id": "f05-conditions",
+     "category": "omission",
+     "all": [
+      "(オン|使[っう])",
+      "(オフ|使わ)"
+     ],
+     "severity": "critical",
+     "text": "Pはノイズ低減オン、Qはオフで測定"
+    },
+    {
+     "id": "f05-cannot",
+     "category": "omission",
+     "any": [
+      "(比較|判断|計算|算出|確定|決め|言え|結論)[^。]{0,8}(でき|られ|出せ|いえ)(ない|ません|ず)",
+      "(比較|判断)は?(不可能|困難)",
+      "(長い|短い|優劣|上下|高低)[^。]{0,8}(言え|決め|判断|比較)[^。]{0,4}(ない|ません|ず)"
+     ],
+     "severity": "critical",
+     "text": "測定条件が違うため長く使える方は比較できないと答える"
+    },
+    {
+     "id": "f05-weight-same",
+     "category": "omission",
+     "any": [
+      "(どちらも|ともに|いずれも|同じ|両方(とも)?)5(g|グラム)",
+      "(P|Q)も(P|Q)も5(g|グラム)",
+      "5(g|グラム)[^。]{0,10}(同じ|共通)",
+      "(重さ|重量)[^。]{0,15}(同じ|同等|共通)"
+     ],
+     "severity": "major",
+     "text": "重さはどちらも5gで同じ"
+    },
+    {
+     "id": "f05-conclusion-first",
+     "category": "presentation",
+     "before": {
+      "first": "f05-cannot",
+      "then": [
+       "8時間",
+       "10時間"
+      ]
+     },
+     "severity": "minor",
+     "text": "比較できない結論を、時間の値の列挙より先に示す"
+    },
+    {
+     "id": "f05-no-winner",
+     "category": "grounding",
+     "forbid": [
+      "(P|Q)(の方|のほう|が)[^。]{0,12}(長く使える|長持ち|長い)(です|でしょう|と言えます|といえます|ようです|と考えられます|と思われます)",
+      "2時間(長|多)"
+     ],
+     "flag": [
+      "差は2時間",
+      "2時間の差"
+     ],
+     "severity": "critical",
+     "text": "長く使える方・時間の差を確定しない(差への言及は人が確認)"
+    }
+   ]
+  },
+  "fresh:f06-lesson-missing": {
+   "question": "合成ピアノ教室と合成そろばん教室について、月謝と通う回数を教えてください。どちらが安いかもわかりますか。",
+   "items": [
+    {
+     "id": "f06-piano",
+     "category": "omission",
+     "all": [
+      "8000円",
+      "週1回"
+     ],
+     "severity": "major",
+     "text": "ピアノ教室は月謝8000円・週1回"
+    },
+    {
+     "id": "f06-soroban-freq",
+     "category": "omission",
+     "any": [
+      "週2回"
+     ],
+     "severity": "major",
+     "text": "そろばん教室は週2回"
+    },
+    {
+     "id": "f06-unknown",
+     "category": "omission",
+     "any": [
+      "そろばん[^。]{0,15}月謝[^。]{0,20}(掲載|記載|わから|分から|不明|資料に(は)?(あり|な)|確認でき|載って)",
+      "月謝[^。]{0,15}(掲載|記載)[^。]{0,8}(ありません|ない|いません|なし)"
+     ],
+     "severity": "critical",
+     "text": "そろばん教室の月謝は資料に掲載されていない(確認できない)と述べる"
+    },
+    {
+     "id": "f06-cannot",
+     "category": "omission",
+     "any": [
+      "(比較|判断|比べ|どちらが安い|安いか|安さ|優劣)[^。]{0,16}(できない|できません|できず|られない|られません|言えない|言えません|いえません|わからない|わかりません|分からない|分かりません|不可能)"
+     ],
+     "severity": "critical",
+     "text": "月謝が比べられないため、どちらが安いかは判断できないと述べる"
+    },
+    {
+     "id": "f06-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "そろばん[^。]{0,10}月謝は\\d+円",
+      "(ピアノ|そろばん)(教室)?の?(方|ほう)が[^。]{0,10}(安い|割安)(です|でしょう|と言えます|ようです)"
+     ],
+     "severity": "critical",
+     "text": "そろばん教室の月謝を作らない・どちらかを安いと断定しない"
+    }
+   ]
+  },
+  "fresh:f07-museum-tiers": {
+   "question": "合成科学館に、14歳の生徒15人で入館するときの1人あたりの入館料を教えてください。",
+   "items": [
+    {
+     "id": "f07-fee",
+     "category": "omission",
+     "all": [
+      "800円"
+     ],
+     "severity": "critical",
+     "text": "1人あたり800円と答える"
+    },
+    {
+     "id": "f07-group",
+     "category": "omission",
+     "any": [
+      "20人以上",
+      "20人に満たな",
+      "20人未満"
+     ],
+     "severity": "major",
+     "text": "団体割引は20人以上が対象で、15人では適用されない"
+    },
+    {
+     "id": "f07-category",
+     "category": "omission",
+     "any": [
+      "中高生",
+      "13歳?(〜|~|から|-|ー)17歳"
+     ],
+     "severity": "major",
+     "text": "14歳は中高生(13歳から17歳)の区分"
+    },
+    {
+     "id": "f07-wrong-tier",
+     "category": "grounding",
+     "forbid": [
+      "(入館料|1人あたり|一人あたり|料金)は[^。]{0,4}(500円|700円|1200円)(です|となります|になります)",
+      "700円(です|になります|となります)"
+     ],
+     "flag": [
+      "700円",
+      "500円",
+      "1200円"
+     ],
+     "severity": "critical",
+     "text": "隣の区分の金額や割引後の700円を答えにしない(区分の列挙は人が確認)"
+    }
+   ]
+  },
+  "fresh:f08-two-pages": {
+   "question": "合成防災センターの見学と体験コーナーについて、受付時間と定員を教えてください。",
+   "items": [
+    {
+     "id": "f08-tour",
+     "category": "omission",
+     "all": [
+      "(9時|9:00)",
+      "(午後4時|16時|16:00)",
+      "30人"
+     ],
+     "severity": "critical",
+     "text": "見学: 午前9時〜午後4時、定員30人"
+    },
+    {
+     "id": "f08-experience",
+     "category": "omission",
+     "all": [
+      "(10時|10:00)",
+      "(午後3時|15時|15:00)",
+      "12人"
+     ],
+     "severity": "critical",
+     "text": "体験コーナー: 午前10時〜午後3時、定員12人"
+    },
+    {
+     "id": "f08-no-mix-capacity",
+     "category": "grounding",
+     "forbid": [
+      "見学[^。体]{0,30}12人",
+      "体験[^。見]{0,30}30人"
+     ],
+     "severity": "critical",
+     "text": "見学に12人、体験に30人を当てはめない"
+    },
+    {
+     "id": "f08-no-mix-time",
+     "category": "grounding",
+     "forbid": [
+      "見学[^。体]{0,30}(10時|午後3時|15時|10:00|15:00)",
+      "体験[^。見]{0,30}(9時|午後4時|16時|9:00|16:00)"
+     ],
+     "severity": "critical",
+     "text": "見学に体験の時間、体験に見学の時間を当てはめない"
+    },
+    {
+     "id": "f08-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "予約[^。]{0,6}(必要|不要|いりません|が要)",
+      "\\d+円"
+     ],
+     "severity": "major",
+     "text": "資料にない予約の要否・料金を作らない"
+    }
+   ]
+  },
+  "fresh:f09-gym-absent": {
+   "question": "合成体育館のロッカーの数と、シャワーの利用方法を教えてください。",
+   "items": [
+    {
+     "id": "f09-locker",
+     "category": "omission",
+     "all": [
+      "80個"
+     ],
+     "severity": "major",
+     "text": "ロッカーは80個"
+    },
+    {
+     "id": "f09-none",
+     "category": "omission",
+     "any": [
+      "シャワー[^。]{0,25}(記載|掲載|情報|説明|言及)[^。]{0,10}(ありません|ない|いません|なし|見当たりません|確認でき)",
+      "シャワー[^。]{0,25}(わかりません|分かりません|わからない|分からない|不明|載って)",
+      "(記載|掲載)[^。]{0,10}(ありません|ない|いません)[^。]{0,20}シャワー"
+     ],
+     "severity": "critical",
+     "text": "シャワーの利用方法は資料に記載がない(わからない)と述べる"
+    },
+    {
+     "id": "f09-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "シャワー[^。]{0,12}\\d+円",
+      "シャワー[^。]{0,10}(無料|有料)(です|になります|となります|でしょう|と思われます)"
+     ],
+     "severity": "critical",
+     "text": "シャワーの利用方法・料金・無料有料を作らない"
+    },
+    {
+     "id": "f09-no-hedge",
+     "category": "grounding",
+     "forbid": [
+      "シャワー[^。]{0,15}(おそらく|たぶん|と思われ|と考えられ|でしょう|かもしれ)"
+     ],
+     "severity": "major",
+     "text": "シャワーについて推測の言い回しを使わない"
+    }
+   ]
+  },
+  "fresh:f10-battery-explain": {
+   "question": "合成電池の内部抵抗の値と、その言葉の意味を教えてください。",
+   "items": [
+    {
+     "id": "f10-value",
+     "category": "omission",
+     "all": [
+      "30(ミリオーム|mΩ)"
+     ],
+     "severity": "critical",
+     "text": "内部抵抗は30ミリオーム"
+    },
+    {
+     "id": "f10-meaning",
+     "category": "omission",
+     "any": [
+      "(電流|電気)[^。]{0,20}(流れにくさ|流れにくい|流れを妨げ|流れを邪魔|妨げる|さまたげ)",
+      "(電流|電気)の流れ[^。]{0,6}(にくさ|にくい|妨げ)"
+     ],
+     "severity": "major",
+     "text": "内部抵抗の意味(電池の内部で電流の流れを妨げる抵抗)を答える",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f10-label",
+     "category": "supplement",
+     "any": [
+      "補足",
+      "背景"
+     ],
+     "severity": "major",
+     "text": "資料にない言葉の意味に「補足」「背景」の表示を付ける",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f10-supplement-after",
+     "category": "supplement",
+     "before": {
+      "first": "f10-value",
+      "then": [
+       "補足",
+       "背景",
+       "一般的に",
+       "一般に",
+       "通常は"
+      ]
+     },
+     "severity": "major",
+     "text": "補足は、資料の事実(30ミリオーム)より後に置く",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f10-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "(内部抵抗|抵抗値)(は|が|の値は)(?!30)\\d+",
+      "(電圧|寿命|サイクル)[^。]{0,6}\\d+(\\.\\d+)?(V|ボルト|回|年)"
+     ],
+     "severity": "critical",
+     "text": "内部抵抗の別の値や、電圧・寿命などの値を作らない"
+    }
+   ]
+  },
+  "fresh:f11-mikan-explain": {
+   "question": "合成農園のみかんの糖度の基準と、糖度という言葉の意味を教えてください。",
+   "items": [
+    {
+     "id": "f11-value",
+     "category": "omission",
+     "all": [
+      "12度"
+     ],
+     "severity": "critical",
+     "text": "糖度の基準は12度以上"
+    },
+    {
+     "id": "f11-meaning",
+     "category": "omission",
+     "any": [
+      "(甘さ|糖分|糖の量|糖の割合|糖質)[^。]{0,20}(示|表|指標|目安|割合|量|含)"
+     ],
+     "severity": "major",
+     "text": "糖度の意味(糖分の割合・甘さの指標)を答える",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f11-label",
+     "category": "supplement",
+     "any": [
+      "補足",
+      "背景"
+     ],
+     "severity": "major",
+     "text": "資料にない言葉の意味に「補足」「背景」の表示を付ける",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f11-supplement-after",
+     "category": "supplement",
+     "before": {
+      "first": "f11-value",
+      "then": [
+       "補足",
+       "背景",
+       "一般的に",
+       "一般に",
+       "通常は"
+      ]
+     },
+     "severity": "major",
+     "text": "補足は、資料の事実(12度以上)より後に置く",
+     "styles": [
+      "explain"
+     ]
+    },
+    {
+     "id": "f11-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "糖度(は|が)(?!12)\\d",
+      "1箱の重さは(?!5)\\d"
+     ],
+     "severity": "critical",
+     "text": "糖度の別の値や、1箱の別の重さを作らない"
+    }
+   ]
+  },
+  "fresh:f12-theater-exception": {
+   "question": "合成劇場のS席を公演の10日前にキャンセルした場合、払い戻しは何%ですか。",
+   "items": [
+    {
+     "id": "f12-exception",
+     "category": "omission",
+     "any": [
+      "S席[^。]{0,25}(対象外|対象になりません|対象にならない|除外|払い戻(し|す)?[^。]{0,6}(できません|できない|されません|されない|ありません|ない))",
+      "対象外[^。]{0,15}S席"
+     ],
+     "severity": "critical",
+     "text": "S席は払い戻しの対象外(例外)に当たると述べる"
+    },
+    {
+     "id": "f12-days",
+     "category": "omission",
+     "any": [
+      "10日前(に|で|でも|であっても)[^。]{0,16}(払い戻|対象|できません|受けられ|同じ|変わりません|変わらない)",
+      "(7日前|日数|時期|期限)[^。]{0,10}(関係(な|あり)|問わ|にかかわらず|に関わらず|であっても|でも)"
+     ],
+     "severity": "minor",
+     "text": "10日前でも(時期にかかわらず)対象外であることが読み取れる"
+    },
+    {
+     "id": "f12-no-normal",
+     "category": "grounding",
+     "forbid": [
+      "(払い戻し|払戻し?|返金)(は|率は|額は|が)?[^。]{0,6}(?<![0-9])([1-9][0-9]?|100)%(です(?!が|けれど|けど)|となります(?!が)|になります(?!が)|を受け|が受け)"
+     ],
+     "flag": [
+      "100%"
+     ],
+     "severity": "critical",
+     "text": "通常の100%など、払い戻し率をこの人の答えにしない(100%への言及は人が確認)"
+    },
+    {
+     "id": "f12-no-invented",
+     "category": "grounding",
+     "forbid": [
+      "(振替|振り替え|交換)[^。]{0,8}(できま|可能|あります|となります)"
+     ],
+     "severity": "major",
+     "text": "振替・交換など資料にない代替措置を作らない"
+    }
+   ]
+  }
+ }
+}
