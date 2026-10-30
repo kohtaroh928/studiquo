@@ -13,6 +13,16 @@ swift mcp-server/scripts/rag-quality/pdf-ocr.swift /private/tmp/studiquo-rag-qua
 python3 mcp-server/scripts/rag-quality/ocr-metrics.py /private/tmp/studiquo-rag-quality-run
 ```
 
+Macでは、`scripts/rag-eval`を入口にすると、専用トークンをキーチェーンから読んで安全に実行できます(値を毎回入力しません)。有料の呼び出しの前に確認を求めます。
+
+```sh
+scripts/rag-eval store                                   # 最初に1回: アカウントIDとトークンを保存
+scripts/rag-eval check                                   # トークンが有効か(利用量は使わない)
+scripts/rag-eval real-material <manifest.json> <出力.json>
+scripts/rag-eval quality /private/tmp/studiquo-rag-quality-run
+scripts/rag-eval forget                                  # 保存したトークンを消す
+```
+
 実API呼出しは少額の使用量を発生させます。`CLOUDFLARE_ACCOUNT_ID`を対象アカウントへ設定し、Workers AIだけの専用トークンを`CLOUDFLARE_API_TOKEN`に設定します(発行・期限・受け渡し・削除の決まりは`docs/RUNBOOK.md`の付録A-5。事前に`node mcp-server/scripts/rag-quality/check-cf-token.ts`で有効性と期限を確認できます)。Wrangler OAuthは権限が広いため既定では使えず、手元の開発機で意図して使うときだけ`STUDIQUO_ALLOW_WRANGLER_OAUTH=true`を付けます。secret値はファイル・コマンド引数・結果に書き込まないでください。OAuth保存場所が異なる場合は`STUDIQUO_CF_AUTH_FILE`で認証ファイルのパスを指定できます。
 
 ```sh
