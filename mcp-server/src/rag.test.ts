@@ -825,17 +825,37 @@ test("rows already stored with hidden characters (older index, structured input)
   assert.equal(ok.injectionHints, 0);
 });
 
-test("personal identifiers and secrets in an excerpt are masked before they reach the model", async () => {
+test("personal identifiers and secrets are masked before reranking and final model context", async () => {
   const env = environment();
-  await indexSource(env, await accountKey("alice"), source({ pages: [{ pageNumber: 1, text: "細胞の説明。友達の連絡先 taro@example.com と 090-1234-5678、カード 4111 1111 1111 1111。" }] }));
+  const raw = {
+    title: "taro@example.com の教材",
+    heading: "連絡先 090-1234-5678",
+    text: "細胞の説明。友達の連絡先 taro@example.com と 090-1234-5678、カード 4111 1111 1111 1111、token sk-abcdefghijklmnopqrstuvwxyz0123456789。",
+  };
+  await indexSource(env, await accountKey("alice"), source({ title: raw.title, pages: [{ pageNumber: 1, text: raw.text }] }));
+  env.ADMIN_DB.db.prepare("UPDATE rag_chunks SET heading_context=?").run(raw.heading);
+  const run = env.AI.run;
+  let rerankInput;
+  env.AI.run = async (model, input) => {
+    if (model.includes("reranker")) rerankInput = input;
+    return run(model, input);
+  };
   const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
   assert.equal(result.citations.length, 1);
-  for (const leaked of ["taro@example.com", "090-1234-5678"]) assert.ok(!result.context.includes(leaked), leaked);
+  assert.ok(rerankInput, "reranker was not called");
+  const rerankText = rerankInput.contexts.map(({ text }) => text).join("\n");
+  for (const leaked of Object.values(raw)) {
+    assert.ok(!rerankText.includes(leaked), `reranker leaked: ${leaked}`);
+    assert.ok(!result.context.includes(leaked), `final context leaked: ${leaked}`);
+  }
+  for (const label of ["[メールアドレス]", "[電話番号]", "[カード番号]", "[鍵・トークン]"]) {
+    assert.ok(rerankText.includes(label), `reranker did not mask ${label}`);
+    assert.ok(result.context.includes(label), `final context did not mask ${label}`);
+  }
   // The context also holds chunk ids (random 64-digit hex strings), which can contain "4111" by chance: a card number
   // is only leaked when "4111" is not part of such a hex run.
   assert.ok(!/(?<![0-9a-f])4111(?![0-9a-f])/u.test(result.context), "4111");
-  assert.ok(result.context.includes("[メールアドレス]") && result.context.includes("[電話番号]") && result.context.includes("[カード番号]"));
-  assert.equal(result.redacted, 3);
+  assert.equal(result.redacted, 4);
 });
 
 test("a vector match that reports another account is dropped before lookup, and a missing report is never trusted to allow", async () => {
