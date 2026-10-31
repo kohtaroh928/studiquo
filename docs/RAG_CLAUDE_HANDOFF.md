@@ -553,3 +553,9 @@ rollbackは新claimを閉じ0016/証拠/枠保持、trigger削除や旧purge復�
 
 今回: `codex/rag-button-always-visible`で、AIトーク上部の資料検索ボタンをRAG利用可否にかかわらず表示するよう変更（commit `68084d1`）。タップ時は従来どおり資料検索設定画面を開く。RAGの利用可否・同意・サーバー状態の安全制御は変更していない。iOS Debug（generic iOS、署名なし）ビルド成功。2026-10-27にユーザーの依頼でRAGの2コミットだけを`origin/main`基点の`codex/rag-button-always-visible-pr`へ切り出し、PR #67を作成した。mainへの直接pushは保護ルール（PRと必須チェック4件）で拒否されたため、PR #67経由で2026-10-27にmainへマージ済み。作業用projectのitem-listは`unknown owner type`で失敗したため、GitHub Projectは未記録。実行中processなし。次の一手: 実機でAIトークの使用量表示の左にボタンが常時見え、利用不可時にも設定画面を開けることを確認する。Projectの資料の更新: なし。
 
+## 2026-10-31 reranker送信前のPIIマスク（未コミット）
+
+`codex/rag-reranker-pii`（最新main `ddacf24` から作成した専用worktree）で、検索候補の本文だけでなく資料タイトル・見出しを、Workers AIのrerankerへ送る直前に `stripInvisible` と既存の `redactPII` でマスクするよう修正した。候補本体、D1、出典ID、ローカル順位付け、最終出典の組み立ては生値のまま保持し、外部送信用の派生 `contexts` だけを置き換える。合成のメールアドレス・電話番号・カード番号・トークンをタイトル/見出し/本文に分け、rerankerの実入力を捕捉して生値が無くマスク記号があること、最終contextも同様であることを回帰テストにした。既存の最終contextでのマスク件数の意味は変更していない。
+
+検証: `node --test src/rag.test.ts src/rag-redact-pii.test.ts`（49成功）、`npm run typecheck` 成功、`npm test` 成功、`git diff --check` 成功。独立Security ReviewはCritical/High/Medium/Lowの未解決指摘なし。索引作成時のembedding送信は既存の別経路であり、今回防いだのは検索時rerankerへの再送のみ。実データ/実外部AI/配備/migration/push/mergeは未実施。ロールバックはこのコード変更を戻すだけでよく、データ変更なし。GitHub Projectの今回の更新は未記録。Projectの資料の更新: なし。
+

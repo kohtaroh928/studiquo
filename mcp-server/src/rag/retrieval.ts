@@ -134,10 +134,20 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
       let rerankTimer;
       let result;
       try {
+        // Reranking is an external AI call too. Keep the stored candidates intact
+        // for local ranking/citations, but only send a sanitized view of every
+        // user-controlled field (including title and heading) to the model.
+        const rerankContexts = candidates.map((c) => ({
+          text: JSON.stringify({
+            title: redactPII(stripInvisible(c.title).text).text,
+            headings: redactPII(stripInvisible(c.heading_context ?? "").text).text,
+            text: redactPII(stripInvisible(c.text).text).text,
+          }),
+        }));
         result = await Promise.race([
           (aiCalls++, env.AI.run(MODELS.rerank, {
             query: plan.canonicalQuery,
-            contexts: candidates.map((c) => ({ text: JSON.stringify({ title: c.title, headings: c.heading_context ?? "", text: c.text }) })),
+            contexts: rerankContexts,
             top_k: candidates.length,
           })),
           new Promise((_, reject) => {
