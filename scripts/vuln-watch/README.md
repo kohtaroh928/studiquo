@@ -14,22 +14,23 @@ node src/cli.ts triage-apply --verdicts f # エージェントの返信を検証
 npm test                                  # 単体テスト
 ```
 
-主なオプション: `--offline`(キャッシュだけで動かす)、`--no-nvd`、`--no-jvn`、`--out <dir>`、`--swift-resolved <path>`。
+主なオプション: `--offline`(キャッシュだけで動かす)、`--no-nvd`、`--no-jvn`、`--out <dir>`、`--state <path>`、`--inventory <path>`、`--cache <dir>`、`--swift-resolved <path>`。無人実行では後ろ3つを `out/` 配下に指定し、リポジトリ管理下の台帳を変更しない。
 
 終了コード: `0`=完了 / `1`=失敗 / `2`=取得に失敗したデータ源があり結果が不完全 / `3`=LLM判定が反映されなかった / `4`=その両方(取得失敗あり、かつ判定なし)。取得に失敗したデータ源があるときは、判定が付いても区分は下げない。
 
 ## 定期実行(スケジュールタスク)
 
-手順は `RUNBOOK.md`(自己完結)。タスクのプロンプトは「このファイルに従う」だけにして、手順の変更がレビューとテストを通るようにする。実行はmainのワークツリーで行うので、手順の変更はmainへのマージ後に効く。
+手順は `RUNBOOK.md`(自己完結)。タスクのプロンプトは「このファイルに従う」だけにして、手順の変更がレビューとテストを通るようにする。実行はプロジェクトルートで行い、`out/` 以外を更新しない。
 
 主なコマンド:
 
 ```bash
 node src/cli.ts scan                              # 収集→採点。判定に回す指摘の件数を出す
 node src/cli.ts triage-apply --verdicts out/reply.json   # 判定の返信を検証して反映(返信が不要な回は --no-reply)
-node src/cli.ts cards-plan --existing out/cards-existing.json   # Notionカードの操作リスト(out/cards-ops.json)
 node src/cli.ts summary --created 1 --updated 0 --commented 0 --failed 0   # 固定書式の要約と NOTIFY= 行
 ```
+
+未解決の指摘は GitHub Project「Studiquo タスク」にドラフト項目として記録する。既存項目を検索してから更新・作成し、IssueやNotionは使わない。
 
 ## ファイル
 

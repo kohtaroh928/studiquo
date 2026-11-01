@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import type { Finding, Kev, RankedFinding, State, TriageItem } from './types.ts';
 // 使い方:
-//   node src/cli.ts inventory [--swift-resolved <path>]   資産台帳(inventory.json)を作り直す
-//   node src/cli.ts scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>]   収集→照合→採点→機械判定のレポート
+//   node src/cli.ts inventory [--swift-resolved <path>] [--inventory <path>]   資産台帳を作り直す
+//   node src/cli.ts scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>] [--state <path>] [--inventory <path>] [--cache <dir>]   収集→照合→採点→機械判定のレポート
 //   node src/cli.ts triage-pack [--fresh] [--out <dir>]        判定に回す指摘を triage-input.json に出す(scanも出す)。月曜と --fresh はキャッシュを使わない
 //   node src/cli.ts triage-apply [--verdicts <file> | --no-reply] [--out <dir>]   エージェントの返信(ファイルか標準入力)を検証して反映
 //   node src/cli.ts cards-plan --existing <file> [--dry-run] [--out <dir>]   Notionカードの操作リスト cards-ops.json を作る
 //   node src/cli.ts summary [--created n --updated n --commented n --failed n]   固定書式の要約と通知文を出す
-// 共通: --state <path> で state.json の場所を変えられる(試験用)
+// 共通: --state <path>、--inventory <path>、--cache <dir> で実行時データの場所を変えられる(無人実行・試験用)
 // 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった / 4=その両方
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
@@ -29,7 +29,7 @@ import { renderReport } from './report.ts';
 const here = dirname(fileURLToPath(import.meta.url));
 const toolDir = resolve(here, '..');
 const repoRoot = resolve(toolDir, '../..');
-const inventoryPath = `${toolDir}/inventory.json`;
+const defaultInventoryPath = `${toolDir}/inventory.json`;
 
 function parseArgs(argv: string[]) {
   const args: Record<string, string | true | string[]> & { _: string[] } = { _: [] };
@@ -58,6 +58,7 @@ function findSwiftResolved(explicit: unknown) {
 }
 
 function cmdInventory(args: Record<string,unknown>) {
+  const inventoryPath = inventoryPathOf(args);
   const previous = existsSync(inventoryPath) ? JSON.parse(readFileSync(inventoryPath, 'utf8')) : null;
   const { items, warnings } = buildInventory({
     npmDir: `${repoRoot}/mcp-server`,
@@ -66,6 +67,7 @@ function cmdInventory(args: Record<string,unknown>) {
     previous,
   });
   // 生成日時は入れない(中身が同じなら差分が出ないようにする)
+  mkdirSync(dirname(inventoryPath), { recursive: true });
   writeFileSync(inventoryPath, JSON.stringify({ items }, null, 2) + '\n');
   console.log(`資産台帳を更新しました: ${items.length}件(npm ${items.filter((i) => i.ecosystem === 'npm').length} / Swift ${items.filter((i) => i.ecosystem === 'SwiftURL').length})`);
   for (const w of warnings) console.warn(`注意: ${w}`);
@@ -74,7 +76,7 @@ function cmdInventory(args: Record<string,unknown>) {
 
 async function cmdScan(args: Record<string,unknown>) {
   const { items, warnings } = cmdInventory(args);
-  const client = createClient({ cacheDir: `${toolDir}/.cache`, offline: Boolean(args.offline) });
+  const client = createClient({ cacheDir: cacheDirOf(args), offline: Boolean(args.offline) });
   const sourceErrors: string[] = [];
   let findings: Finding[] = [];
 
@@ -150,6 +152,14 @@ function outDirOf(args: Record<string,unknown>) {
 
 function statePathOf(args: Record<string,unknown>) {
   return typeof args.state === 'string' ? resolve(args.state) : `${toolDir}/state.json`;
+}
+
+function inventoryPathOf(args: Record<string,unknown>) {
+  return typeof args.inventory === 'string' ? resolve(args.inventory) : defaultInventoryPath;
+}
+
+function cacheDirOf(args: Record<string,unknown>) {
+  return typeof args.cache === 'string' ? resolve(args.cache) : `${toolDir}/.cache`;
 }
 
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
@@ -285,7 +295,7 @@ try {
   else if (cmd === 'cards-plan') cmdCardsPlan(args);
   else if (cmd === 'summary') cmdSummary(args);
   else {
-    console.error('使い方: cli.ts inventory | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --existing file | summary');
+    console.error('使い方: cli.ts inventory [--inventory file] | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] [--state file] [--inventory file] [--cache dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --existing file | summary');
     process.exitCode = 1;
   }
 } catch (e) {
