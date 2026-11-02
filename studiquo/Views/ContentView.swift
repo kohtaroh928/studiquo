@@ -4892,7 +4892,8 @@ struct ContentView: View {
                 } description: {
                     Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
-            } else if !isHomeScreen && isCurrentLibraryLocationEmpty {
+            } else if !isHomeScreen && isCurrentLibraryLocationEmpty
+                        && !(libraryMode == .documents && viewMode == .column) {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -5196,43 +5197,53 @@ struct ContentView: View {
     /// mirroring Finder's "selected row stays tinted in the column it came
     /// from" cue.
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
-        ScrollView(.vertical) {
+        let items = columnItems(parentPath: parentPath)
+        return ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
-            ForEach(columnItems(parentPath: parentPath)) { item in
-                switch item {
-                case .folder(let path):
-                    columnFolderRow(path, highlightedPath: highlightedPath)
-                        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
-                            if let target = folderObject(forLegacyPath: path) {
-                                trashFolder(target)
-                            }
-                        })
-                case .entry(let entry):
-                    columnEntryRow(entry)
-                        .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
-                            trash(entry)
-                            try? modelContext.save()
-                        })
+                if items.isEmpty {
+                    Text("このフォルダは空です")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 24)
                 }
-            }
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: 240)
-                .contentShape(Rectangle())
-                .accessibilityIdentifier("library-empty-\(parentPath ?? "root")")
-                .overlay(alignment: .top) {
-                    if emptyPaneDropTarget == (parentPath ?? "") {
-                        Label("ここに移動", systemImage: "plus.circle.fill")
-                            .foregroundStyle(.green)
-                            .padding(.top, 24)
-                            .allowsHitTesting(false)
+                ForEach(items) { item in
+                    switch item {
+                    case .folder(let path):
+                        columnFolderRow(path, highlightedPath: highlightedPath)
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
+                                if let target = folderObject(forLegacyPath: path) {
+                                    trashFolder(target)
+                                }
+                            })
+                    case .entry(let entry):
+                        columnEntryRow(entry)
+                            .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
+                                trash(entry)
+                                try? modelContext.save()
+                            })
                     }
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    handleFolderDrop(items, into: parentPath)
-                } isTargeted: { isTargeted in
-                    setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
-                }
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 240)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("library-empty-\(parentPath ?? "root")")
+                    .overlay(alignment: .top) {
+                        if emptyPaneDropTarget == (parentPath ?? "") {
+                            Label("ここに移動", systemImage: "plus.circle.fill")
+                                .foregroundStyle(.green)
+                                .padding(.top, 24)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        handleFolderDrop(items, into: parentPath)
+                    } isTargeted: { isTargeted in
+                        setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
+                    }
             }
         }
     }
