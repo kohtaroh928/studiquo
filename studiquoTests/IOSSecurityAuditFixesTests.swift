@@ -288,6 +288,101 @@ final class IOSSecurityAuditFixesTests: XCTestCase {
         )
     }
 
+    func testEvictedIncomingOrOutsideAttachmentCannotDeleteLocalFilesAndStrippingLocalSourcePathsRemovesRemoteSourcePath() throws {
+        let allowedRoot = tempDir.appendingPathComponent("FriendChatAttachments", isDirectory: true)
+        let outsideRoot = tempDir.appendingPathComponent("OutsideSecrets", isDirectory: true)
+        try FileManager.default.createDirectory(at: allowedRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideRoot, withIntermediateDirectories: true)
+
+        let victimInAllowed = allowedRoot.appendingPathComponent("victim-in-allowed.pdf")
+        let victimOutside = outsideRoot.appendingPathComponent("LibraryLedger.json")
+        let ownedInAllowed = allowedRoot.appendingPathComponent("owned-in-allowed.pdf")
+        try Data("keep-allowed".utf8).write(to: victimInAllowed)
+        try Data("keep-outside".utf8).write(to: victimOutside)
+        try Data("delete-me".utf8).write(to: ownedInAllowed)
+
+        let peerSpoofedAttachment = FriendMessageAttachment(
+            id: "file-peer-1",
+            title: "../../notes.pdf",
+            kind: "PDF",
+            icon: "doc.richtext",
+            sourceKind: "pdf",
+            sourceID: "remote_1",
+            sourcePath: victimInAllowed.path,
+            remoteRoomID: "room-a"
+        )
+        let sanitizedLine = FriendMessageAttachment.strippingLocalSourcePaths(in: "こんにちは\n\(peerSpoofedAttachment.messageLine)")
+        let sanitizedAttachments = FriendMessageAttachment.attachments(in: sanitizedLine)
+        XCTAssertEqual(sanitizedAttachments.count, 1)
+        XCTAssertNil(sanitizedAttachments.first?.sourcePath, "Incoming attachment payload must have local sourcePath stripped")
+        XCTAssertEqual(sanitizedAttachments.first?.sourceID, "remote_1")
+
+        let friendID = UUID()
+        let incomingMessage = FriendMessage(
+            id: UUID(),
+            friendID: friendID,
+            text: peerSpoofedAttachment.messageLine,
+            sentAt: Date(),
+            isMine: false,
+            isCanceled: false
+        )
+        let outsideMineAttachment = FriendMessageAttachment(
+            id: "file-outside-1",
+            title: "ledger",
+            kind: "PDF",
+            icon: "doc.richtext",
+            sourceKind: "pdf",
+            sourceID: "../LibraryLedger",
+            sourcePath: victimOutside.path,
+            remoteRoomID: "room-a"
+        )
+        let outsideMineMessage = FriendMessage(
+            id: UUID(),
+            friendID: friendID,
+            text: outsideMineAttachment.messageLine,
+            sentAt: Date(),
+            isMine: true,
+            isCanceled: false
+        )
+        let validMineAttachment = FriendMessageAttachment(
+            id: "file-owned-1",
+            title: "owned.pdf",
+            kind: "PDF",
+            icon: "doc.richtext",
+            sourceKind: "pdf",
+            sourceID: "valid_id_1",
+            sourcePath: ownedInAllowed.path,
+            remoteRoomID: "room-a"
+        )
+        let validMineMessage = FriendMessage(
+            id: UUID(),
+            friendID: friendID,
+            text: validMineAttachment.messageLine,
+            sentAt: Date(),
+            isMine: true,
+            isCanceled: false
+        )
+
+        FriendStore.deleteLocalAttachmentFilesNow(
+            for: [incomingMessage, outsideMineMessage, validMineMessage],
+            allowedRoots: [allowedRoot]
+        )
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: victimInAllowed.path),
+            "Evicting an incoming (!isMine) message must never delete a local file referenced by sourcePath"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: victimOutside.path),
+            "Evicting a message must never delete a file outside FriendChatAttachments"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: ownedInAllowed.path),
+            "Evicting an own message inside FriendChatAttachments should still clean up its attachment file"
+        )
+        XCTAssertEqual(FriendMessageAttachment.boundedFilename("../../etc/passwd"), "____etc_passwd")
+    }
+
     // MARK: - AUTH-1, AUTH-2, ERASE-1: Identity Isolation & Account Erasure
 
     func testPersistOAuthIdentityDoesNotLeakEmailAcrossDifferentAccountsAndLogoutClearsIdentity() {
@@ -330,6 +425,63 @@ final class IOSSecurityAuditFixesTests: XCTestCase {
         XCTAssertEqual(store.email, "userB@example.com")
         store.logout()
         XCTAssertEqual(store.email, "", "logout() must clear stored OAuth/Passkey identity")
+    }
+
+    func testLogoutResetsFriendStoreAndPreventsCrossAccountFriendChatAndProfileLeakage() {
+        let service = "com.yabuko.studiquo.tests.friend-logout.\(UUID().uuidString)"
+        let suiteName = "com.yabuko.studiquo.tests.friend-logout.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            for account in ["session", "passkey-identity", "oauth-identity"] {
+                SecItemDelete([
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                ] as CFDictionary)
+            }
+        }
+
+        defaults.set("USERA1", forKey: "studiquoFriendCode")
+        defaults.set("TOKENA1", forKey: "studiquoFriendLinkToken")
+        defaults.set("アカウントA", forKey: "profileName")
+        defaults.set("アカウントAの自己紹介", forKey: "profileBio")
+        defaults.set(Data("avatar-a".utf8), forKey: "profileImage")
+
+        let authStore = AuthenticationStore(
+            service: service,
+            defaults: defaults,
+            unregisterPushDevice: {},
+            revokeCloudCredentials: {},
+            eraseBrowserData: {}
+        )
+        let friendStore = FriendStore(defaults: defaults, autoRefresh: false)
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 120, roomID: "room-a", isDemo: false)
+        friendStore.friends = [alice]
+        friendStore.messages = [
+            FriendMessage(id: UUID(), friendID: alice.id, text: "Aの秘密チャット", sentAt: Date(), isMine: true, isCanceled: false, serverID: 1, roomID: "room-a")
+        ]
+        friendStore.unreadCounts = [alice.id: 3]
+
+        XCTAssertEqual(friendStore.friends.count, 1)
+        XCTAssertEqual(friendStore.messages.count, 1)
+        XCTAssertEqual(friendStore.myCode, "USERA1")
+
+        authStore.logout()
+
+        XCTAssertTrue(friendStore.friends.isEmpty, "logout() must clear active friends in FriendStore")
+        XCTAssertTrue(friendStore.archivedFriends.isEmpty, "logout() must clear archived friends in FriendStore")
+        XCTAssertTrue(friendStore.messages.isEmpty, "logout() must clear persisted 1:1 chat history in FriendStore")
+        XCTAssertTrue(friendStore.unreadCounts.isEmpty, "logout() must clear unread counts in FriendStore")
+        XCTAssertEqual(friendStore.myCode, "準備中", "logout() must reset myCode to placeholder")
+        XCTAssertNil(defaults.string(forKey: "profileName"), "logout() must clear profileName so next account does not register previous user's name")
+        XCTAssertNil(defaults.string(forKey: "profileBio"), "logout() must clear profileBio")
+        XCTAssertNil(defaults.data(forKey: "profileImage"), "logout() must clear profileImage so next account does not upload previous user's avatar")
+
+        let secondAccountStore = FriendStore(defaults: defaults, autoRefresh: false)
+        XCTAssertTrue(secondAccountStore.friends.isEmpty)
+        XCTAssertTrue(secondAccountStore.archivedFriends.isEmpty)
+        XCTAssertTrue(secondAccountStore.messages.isEmpty)
     }
 
     func testAccountFileEraserRemovesLibraryLedgerAndBookmarkStoreClearAllRemovesFile() throws {

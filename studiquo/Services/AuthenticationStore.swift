@@ -16,6 +16,7 @@ extension Notification.Name {
     /// screen, instead of leaving the user stuck on a screen that will keep
     /// failing with the same token forever.
     static let studiquoAuthFailed = Notification.Name("StudiquoAuthFailed")
+    static let studiquoDidLogout = Notification.Name("StudiquoDidLogout")
 }
 
 @MainActor
@@ -261,6 +262,11 @@ final class AuthenticationStore: ObservableObject {
         ExternalFileBookmarkStore.shared.clearAll()
         NoteActionHistory.shared.clearAll()
         DrawingHistoryStore.shared.clearAll()
+        FriendStore.clearPersistedAccountState(
+            defaults: defaults,
+            removeAttachmentFiles: defaults === UserDefaults.standard
+        )
+        NotificationCenter.default.post(name: .studiquoDidLogout, object: defaults)
         Task { await NoteImageCache.shared.removeAll() }
         // Best-effort and non-blocking: remove this device while the bearer
         // token is still available, then revoke that token. Local sign-out
@@ -318,6 +324,11 @@ final class AuthenticationStore: ObservableObject {
         ExternalFileBookmarkStore.shared.clearAll()
         NoteActionHistory.shared.clearAll()
         DrawingHistoryStore.shared.clearAll()
+        FriendStore.clearPersistedAccountState(
+            defaults: defaults,
+            removeAttachmentFiles: defaults === UserDefaults.standard
+        )
+        NotificationCenter.default.post(name: .studiquoDidLogout, object: defaults)
         Task { await NoteImageCache.shared.removeAll() }
         // The account itself is gone server-side; detach RevenueCat from it
         // too so a subsequent sign-in (even as the same deleted identity,
