@@ -11,7 +11,7 @@ import { missingEvidence, selectEvidence } from "./evidence-selection.ts";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.ts';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.ts";
 import { LIMITS, MODELS, RELEVANCE } from "./limits.ts";
-import { quantityEvidencePresent, termsMissingFrom, searchStem, withoutTerms, missingTermsDetail } from "./detail-presence.ts";
+import { quantityEvidencePresent, termsMissingFrom, distinctiveTermCount, searchStem, withoutTerms, missingTermsDetail } from "./detail-presence.ts";
 import { judgeAnswerable } from "./judge.ts";
 import { stripInvisible } from "./sanitize.ts";
 import { countInjectionHints } from "./injection-hints.ts";
@@ -265,7 +265,8 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
         ), LIMITS.hydrateTimeoutMs).catch(() => [{ found: 1 }]); // An unreadable check must never remove evidence.
         if (!known.length) absent.push(term);
       }
-      if (absent.length) {
+      // Prototype: a minority of absent terms (one unknown word beside a word the library does use) is not decisive.
+      if (absent.length && absent.length * 2 > distinctiveTermCount(plan.canonicalQuery)) {
         // Same subject area but not that word: say the excerpts do not contain it.
         // Nothing in common with the question: the library is simply not about it.
         const rest = withoutTerms(plan.canonicalQuery, absent);
