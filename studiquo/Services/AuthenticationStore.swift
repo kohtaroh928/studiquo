@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import GoogleSignIn
 import RevenueCat
 import Security
 import AuthenticationServices
@@ -249,11 +250,18 @@ final class AuthenticationStore: ObservableObject {
     func logout() {
         AIDataDisclosure.revoke()
         delete(account: sessionAccount)
+        delete(account: passkeyIdentityAccount)
+        delete(account: oauthIdentityAccount)
         needsPasskeyEnrollment = false
         passkeyEnrollmentFailed = false
         passkeyNeedsEmailCode = false
         passkeyEmailCodeSent = false
         state = .needsLogin
+        GIDSignIn.sharedInstance.signOut()
+        ExternalFileBookmarkStore.shared.clearAll()
+        NoteActionHistory.shared.clearAll()
+        DrawingHistoryStore.shared.clearAll()
+        Task { await NoteImageCache.shared.removeAll() }
         // Best-effort and non-blocking: remove this device while the bearer
         // token is still available, then revoke that token. Local sign-out
         // itself never waits on either network call.
@@ -296,6 +304,7 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func finishAccountDeletion() {
+        Task { await unregisterPushDevice() }
         MCPCloudCredentials.clear()
         delete(account: sessionAccount)
         delete(account: passkeyIdentityAccount)
@@ -305,6 +314,11 @@ final class AuthenticationStore: ObservableObject {
         defaults.removeObject(forKey: passkeyKnownKey)
         errorMessage = ""
         state = .needsLogin
+        GIDSignIn.sharedInstance.signOut()
+        ExternalFileBookmarkStore.shared.clearAll()
+        NoteActionHistory.shared.clearAll()
+        DrawingHistoryStore.shared.clearAll()
+        Task { await NoteImageCache.shared.removeAll() }
         // The account itself is gone server-side; detach RevenueCat from it
         // too so a subsequent sign-in (even as the same deleted identity,
         // should the provider allow it) starts from a clean entitlement
@@ -557,6 +571,7 @@ final class AuthenticationStore: ObservableObject {
             guard save(PasskeyIdentity(email: identity.email), account: passkeyIdentityAccount) else {
                 throw PasskeyError.invalidResponse
             }
+            delete(account: oauthIdentityAccount)
             createSession()
             defaults.set(true, forKey: passkeyKnownKey)
             syncRevenueCatIdentity(provider: "email", subject: identity.email)
@@ -705,11 +720,24 @@ final class AuthenticationStore: ObservableObject {
 
     /// Records that this device has an Apple/Google/email identity so
     /// `restore()` recognizes it on the next cold launch. `email` is nil on
-    /// every Apple sign-in after the first, so a later sign-in must not
-    /// overwrite an email an earlier one already learned.
-    private func persistOAuthIdentity(provider: String, subject: String, email: String?) {
-        let resolvedEmail = email ?? oauthIdentity()?.email
+    /// every Apple sign-in after the first, so a later sign-in for the same
+    /// provider and subject must not overwrite an email an earlier one already
+    /// learned, while switching to a different account never inherits the
+    /// previous account's email.
+    func persistOAuthIdentity(provider: String, subject: String, email: String?) {
+        let existing = oauthIdentity()
+        let resolvedEmail: String?
+        if let email, !email.isEmpty {
+            resolvedEmail = email
+        } else if let existing, existing.provider == provider, existing.subject == subject {
+            resolvedEmail = existing.email
+        } else {
+            resolvedEmail = nil
+        }
         _ = save(OAuthIdentity(provider: provider, subject: subject, email: resolvedEmail), account: oauthIdentityAccount)
+        if let passkey = passkeyIdentity(), passkey.email != resolvedEmail {
+            delete(account: passkeyIdentityAccount)
+        }
     }
 
     private func save<T: Encodable>(_ value: T, account: String) -> Bool {

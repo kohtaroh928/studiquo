@@ -110,6 +110,11 @@ final class ExternalFileBookmarkStore {
         save()
     }
 
+    func clearAll() {
+        entries.removeAll()
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     private func sameFile(_ entry: ExternalFileEntry, as url: URL) -> Bool {
         guard let resolved = try? bookmarking.resolve(entry.bookmarkData) else { return false }
         return resolved.url.standardizedFileURL == url.standardizedFileURL

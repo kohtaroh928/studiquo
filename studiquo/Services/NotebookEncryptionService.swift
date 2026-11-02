@@ -207,6 +207,10 @@ enum NotebookEncryptionService {
             var backgroundPDFData: Data?
             var flashcardQuestion: String
             var flashcardAnswer: String
+            var proofQuestion: String?
+            var proofModelAnswer: String?
+            var proofRubricData: Data?
+            var proofReviewData: Data?
             var elements: [Element]
         }
         /// Elements aren't kept in a guaranteed stable array order (see
@@ -248,6 +252,10 @@ enum NotebookEncryptionService {
                 backgroundPDFData: page.backgroundPDFData,
                 flashcardQuestion: page.flashcardQuestion,
                 flashcardAnswer: page.flashcardAnswer,
+                proofQuestion: page.proofQuestion,
+                proofModelAnswer: page.proofModelAnswer,
+                proofRubricData: page.proofRubricData,
+                proofReviewData: page.proofReviewData,
                 elements: page.allElements.map {
                     EncryptedContent.Element(layerIndex: $0.layerIndex, text: $0.text, imageData: $0.imageData)
                 }
@@ -275,6 +283,10 @@ enum NotebookEncryptionService {
             page.backgroundPDFData = nil
             page.flashcardQuestion = ""
             page.flashcardAnswer = ""
+            page.proofQuestion = ""
+            page.proofModelAnswer = ""
+            page.proofRubricData = nil
+            page.proofReviewData = nil
             for element in page.allElements {
                 element.text = ""
                 element.imageData = nil
@@ -297,8 +309,18 @@ enum NotebookEncryptionService {
         // to make a new key (see `NotebookEncryptionKeyStore`).
         guard let content = openedContent(encrypted, keyService: keyService) else { return false }
 
-        let pages = notebook.sortedPages
-        guard pages.count == content.pages.count else { return false }
+        var pages = notebook.sortedPages
+        if pages.count < content.pages.count {
+            for (index, existing) in pages.enumerated() {
+                existing.order = index
+            }
+            for index in pages.count..<content.pages.count {
+                let restoredPage = NotePage(order: index)
+                restoredPage.notebook = notebook
+                notebook.addPage(restoredPage)
+            }
+            pages = notebook.sortedPages
+        }
         for (page, pageContent) in zip(pages, content.pages) {
             page.drawingData = pageContent.drawingData
             page.backgroundImageData = pageContent.backgroundImageData
@@ -307,6 +329,10 @@ enum NotebookEncryptionService {
             page.backgroundPDFData = pageContent.backgroundPDFData
             page.flashcardQuestion = pageContent.flashcardQuestion
             page.flashcardAnswer = pageContent.flashcardAnswer
+            page.proofQuestion = pageContent.proofQuestion ?? ""
+            page.proofModelAnswer = pageContent.proofModelAnswer ?? ""
+            page.proofRubricData = pageContent.proofRubricData
+            page.proofReviewData = pageContent.proofReviewData
             let elements = page.allElements
             for elementContent in pageContent.elements {
                 guard let element = elements.first(where: { $0.layerIndex == elementContent.layerIndex }) else { continue }

@@ -76,6 +76,12 @@ final class NoteActionHistory {
         lastHandledRequest = requestID
         return true
     }
+
+    func clearAll() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        lastHandledRequest = nil
+    }
 }
 
 // MARK: - Recording helpers
@@ -221,7 +227,7 @@ enum NotePageHistory {
         let box = PageSnapshotBox(ordered.map(NotePageSnapshot.init))
 
         let remove: () -> Void = { [weak notebook] in
-            guard let notebook else { return }
+            guard let notebook, notebook.encryptedContent == nil else { return }
             box.snapshots = zip(slots, box.snapshots).map { slot, old in
                 slot.page.map(NotePageSnapshot.init) ?? old
             }
@@ -238,7 +244,7 @@ enum NotePageHistory {
             didChange()
         }
         let restore: () -> Void = { [weak notebook] in
-            guard let notebook else { return }
+            guard let notebook, notebook.encryptedContent == nil else { return }
             // Ascending order, so each page lands where it used to be even
             // when several neighbours come back together.
             for (slot, snapshot) in zip(slots, box.snapshots) {
