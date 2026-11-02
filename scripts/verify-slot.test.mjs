@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -31,7 +31,9 @@ function createTempRepo() {
   runGit(dir, ['config', 'user.email', 'test@example.com']);
   writeFileSync(path.join(dir, 'fileA.txt'), 'base-A\n');
   writeFileSync(path.join(dir, 'fileB.txt'), 'base-B\n');
-  runGit(dir, ['add', 'fileA.txt', 'fileB.txt']);
+  mkdirSync(path.join(dir, 'studiquo'));
+  writeFileSync(path.join(dir, 'studiquo', 'Localizable.xcstrings'), 'base-catalog\n', {flag: 'w'});
+  runGit(dir, ['add', 'fileA.txt', 'fileB.txt', 'studiquo/Localizable.xcstrings']);
   runGit(dir, ['commit', '-m', 'initial main']);
 
   // Create branch-a modifying fileA.txt
@@ -169,4 +171,20 @@ test('dirty working tree blocks both acquire and release', (t) => {
   assert.notEqual(dirtyRel.status, 0);
   assert.match(dirtyRel.stderr, /未コミットの変更があるため戻しません/);
   assert.equal(existsSync(path.join(dir, '.git', 'studiquo-verify.lock')), true);
+});
+
+test('release discards only the catalog synchronization produced during verification', (t) => {
+  const dir = createTempRepo();
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+
+  assert.equal(runVerifySlot(dir, ['acquire', 'claude/branch-a']).status, 0);
+  const catalog = path.join(dir, 'studiquo', 'Localizable.xcstrings');
+  writeFileSync(catalog, 'xcode-generated-sync\n');
+
+  const rel = runVerifySlot(dir, ['release']);
+  assert.equal(rel.status, 0, rel.stderr);
+  assert.match(rel.stdout, /自動同期された studiquo\/Localizable\.xcstrings を戻しました/);
+  assert.equal(readFileSync(catalog, 'utf8'), 'base-catalog\n');
+  assert.equal(runGit(dir, ['status', '--porcelain']), '');
+  assert.equal(runGit(dir, ['symbolic-ref', '--short', 'HEAD']), 'main');
 });
