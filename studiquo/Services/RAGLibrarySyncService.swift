@@ -6,6 +6,16 @@ import Observation
 /// Foreground-only, opt-in owned PDF synchronization. All authorization is checked again by the Worker.
 @Observable @MainActor
 final class RAGLibrarySyncService {
+    enum GrantError: LocalizedError {
+        case localPersistence
+
+        var errorDescription: String? {
+            switch self {
+            case .localPersistence:
+                return L("この端末の資料情報を保存できなかったため、自動登録を開始しませんでした。資料を閉じてからもう一度お試しください。")
+            }
+        }
+    }
     static let shared = RAGLibrarySyncService()
     static let changeNotification = Notification.Name("StudiquoRAGLibrarySyncChanged")
     typealias Scope = RAGLibrarySyncState.Scope
@@ -87,16 +97,9 @@ final class RAGLibrarySyncService {
         if state.pendingRevoke { await drainRevoke() }
         guard !state.pendingRevoke, owner == partition(), operation == grantOperation else { throw RAGIndexingService.IndexError.disabled }
         try await flushInvalidations()
-        for notebook in notebooks {
-            notebook.ensureRAGIdentity()
-            var folder = notebook.folder, visited: Set<String> = []
-            while let current = folder {
-                current.ensureRAGIdentity()
-                guard visited.insert(current.ragID).inserted else { break }
-                folder = current.parent
-            }
-        }
-        try context.save()
+        prepareIdentities(for: notebooks, scope: scope)
+        do { try context.save() }
+        catch { throw GrantError.localPersistence }
         let current = try await client.consent()
         guard owner == partition(), operation == grantOperation, current.available == true else { throw RAGIndexingService.IndexError.disabled }
         // Persist a pending revoke first: an interrupted grant is recovered by disabling remote consent.
@@ -111,6 +114,21 @@ final class RAGLibrarySyncService {
         state.entries = [:]
         guard save() else { throw RAGIndexingService.IndexError.disabled }
         RAGConsent.grant(); available = true; notify()
+    }
+
+    /// Only the PDFs included in the new grant need stable identities. Touching
+    /// every library record here made an unrelated legacy record able to block
+    /// a user's explicit registration request before any network call.
+    func prepareIdentities(for notebooks: [Notebook], scope: Scope) {
+        for notebook in notebooks where Self.eligible(notebook) && matches(scope, notebook) {
+            notebook.ensureRAGIdentity()
+            var folder = notebook.folder, visited: Set<String> = []
+            while let current = folder {
+                current.ensureRAGIdentity()
+                guard visited.insert(current.ragID).inserted else { break }
+                folder = current.parent
+            }
+        }
     }
     func revoke() async {
         load(); retryGeneration += 1; retryTask?.cancel(); retryTask = nil; operation += 1; state.enabled = false; state.pendingRevoke = true
