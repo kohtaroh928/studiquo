@@ -4021,12 +4021,9 @@ struct ContentView: View {
     }
 
     private func openFriendAttachment(_ attachment: FriendMessageAttachment) {
-        if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
-            let url = URL(filePath: sourcePath)
-            if FileManager.default.fileExists(atPath: url.path) {
-                previewURL = IdentifiableURL(url: url)
-                return
-            }
+        if let url = FriendChatService.safeLocalAttachmentURL(sourcePath: attachment.sourcePath) {
+            previewURL = IdentifiableURL(url: url)
+            return
         }
         guard let sourceKind = attachment.resolvedSourceKind,
               let sourceID = attachment.resolvedSourceID else { return }
@@ -4053,7 +4050,16 @@ struct ContentView: View {
     private func downloadAndPreviewFriendAttachment(sourceKind: String, sourceID: String, roomID: String, title: String) {
         isDownloadingFriendAttachment = true
         Task {
-            guard let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
+            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard let destination = FriendChatService.safeCachedAttachmentDestination(
+                directory: directory,
+                sourceKind: sourceKind,
+                sourceID: sourceID,
+                title: title
+            ),
+            let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
                 await MainActor.run {
                     isDownloadingFriendAttachment = false
                     friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
@@ -4067,19 +4073,8 @@ struct ContentView: View {
                 }
                 return
             }
-            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let ext: String
-            if sourceKind == "photo" {
-                ext = "jpg"
-            } else {
-                let titleExtension = (title as NSString).pathExtension
-                ext = titleExtension.isEmpty ? (sourceKind == "pdf" ? "pdf" : "dat") : titleExtension
-            }
-            let destination = directory.appending(path: "\(sourceID).\(ext)")
             if !FileManager.default.fileExists(atPath: destination.path) {
-                guard (try? data.write(to: destination, options: [.atomic])) != nil else {
+                guard (try? data.write(to: destination, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else {
                     await MainActor.run {
                         isDownloadingFriendAttachment = false
                         friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
@@ -4096,7 +4091,7 @@ struct ContentView: View {
 
     private func friendMessageAttachmentOptions() -> [FriendMessageAttachment] {
         var options: [FriendMessageAttachment] = []
-        options.append(contentsOf: allNotebooks.filter { !$0.isTrashed }.map {
+        options.append(contentsOf: allNotebooks.filter { !$0.isTrashed && !$0.isLocked && !$0.hasLockedPDFToUnlock && !$0.hasEncryptedPages }.map {
             FriendMessageAttachment(
                 id: "notebook-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
@@ -4154,7 +4149,7 @@ struct ContentView: View {
             .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appending(path: "\(UUID().uuidString)-\(FriendMessageAttachment.boundedFilename(attachment.title)).pdf")
-        guard (try? pdfData.write(to: destination, options: [.atomic])) != nil else { return attachment }
+        guard (try? pdfData.write(to: destination, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else { return attachment }
 
         var remoteID: String?
         var remoteRoomID: String?
@@ -6027,6 +6022,7 @@ struct ContentView: View {
             Button {
                 backupURL = NotebookBackupService.export(notebook).map(IdentifiableURL.init(url:))
             } label: { Label("バックアップを書き出す", systemImage: "externaldrive") }
+            .disabled(notebook.isLocked || notebook.hasLockedPDFToUnlock || notebook.hasEncryptedPages)
             unlockPDFPasswordButton(for: notebook)
             Menu {
                 Button { assign(notebook, toLegacyPath: "") } label: { Label("フォルダから外す", systemImage: "tray") }
@@ -6038,6 +6034,7 @@ struct ContentView: View {
                 }
             } label: { Label("フォルダへ移動", systemImage: "folder") }
             Button { duplicate(notebook) } label: { Label("複製", systemImage: "plus.square.on.square") }
+            .disabled(notebook.isLocked || notebook.hasLockedPDFToUnlock || notebook.hasEncryptedPages)
             Divider()
             Button(role: .destructive) { moveToTrash(notebook) } label: { Label("ゴミ箱に移動", systemImage: "trash") }
         }
@@ -6260,13 +6257,16 @@ struct ContentView: View {
         Task { @MainActor in
             let summary = await SharedImportRunner.run(items: items, coordinator: sharedImport) { item in
                 pdfPrepareError = nil
+                docxImportFailed = false
                 await importFile(from: item.url)
                 await waitForPDFPromptsToSettle()
-                guard pdfPrepareError != nil else { return .imported }
+                let hadError = pdfPrepareError != nil || docxImportFailed
                 // Clear it at once: the end-of-import notice reports every
                 // skipped file together instead of one alert per file.
                 pdfPrepareError = nil
-                return .failed
+                docxImportFailed = false
+                guard !hadError else { return .failed }
+                return .imported
             }
             try? modelContext.save()
             importDestinationPath = nil
@@ -6435,7 +6435,7 @@ struct ContentView: View {
         let snapshot = MCPSnapshot(
             version: 1,
             exportedAt: .now,
-            notebooks: allNotebooks.filter { !$0.isTrashed }.map { notebook in
+            notebooks: allNotebooks.filter { !$0.isTrashed && !$0.isLocked && !$0.hasLockedPDFToUnlock && !$0.hasEncryptedPages }.map { notebook in
                 MCPNotebook(
                     id: String(describing: notebook.persistentModelID),
                     title: notebook.title,
@@ -6448,7 +6448,7 @@ struct ContentView: View {
                     }
                 )
             },
-            flashcardDecks: flashcardDecks.map { deck in
+            flashcardDecks: flashcardDecks.filter { !$0.isTrashed }.map { deck in
                 MCPDeck(
                     id: String(describing: deck.persistentModelID),
                     title: deck.title,
@@ -6488,16 +6488,26 @@ struct ContentView: View {
         return try? encoder.encode(snapshot)
     }
 
+    private static let maxMCPActionsPerBatch = 64
+    private static let maxMCPCardsPerDeck = 500
+    private static let maxMCPPagesPerNotebook = 200
+    private static let maxMCPTitleLength = 256
+    private static let maxMCPShortTextLength = 4_000
+    private static let maxMCPBodyTextLength = 100_000
+
     @discardableResult
     private func applyMCPActions(_ actions: [MCPPendingAction], openAfterImport: Bool = true) -> Bool {
-        for action in actions {
+        for action in actions.prefix(Self.maxMCPActionsPerBatch) {
             switch action.type {
             case "create_flashcards":
-                guard let title = action.deckTitle, let cards = action.cards, !cards.isEmpty else { continue }
+                guard let rawTitle = action.deckTitle, let cards = action.cards, !cards.isEmpty else { continue }
+                let title = String(rawTitle.prefix(Self.maxMCPTitleLength))
                 let deck = FlashcardDeck(title: title)
                 assignMCPDestination(deck, path: action.folderPath)
-                for (index, value) in cards.enumerated() {
-                    let card = Flashcard(question: value.question, answer: value.answer, order: index)
+                for (index, value) in cards.prefix(Self.maxMCPCardsPerDeck).enumerated() {
+                    let question = String(value.question.prefix(Self.maxMCPShortTextLength))
+                    let answer = String(value.answer.prefix(Self.maxMCPShortTextLength))
+                    let card = Flashcard(question: question, answer: answer, order: index)
                     card.deck = deck
                     deck.addCard(card)
                 }
@@ -6507,24 +6517,28 @@ struct ContentView: View {
                     libraryMode = .studyCards
                 }
             case "create_document":
-                guard let title = action.title else { continue }
+                guard let rawTitle = action.title else { continue }
+                let title = String(rawTitle.prefix(Self.maxMCPTitleLength))
                 let document = TextDocument(title: title)
                 assignMCPDestination(document, path: action.folderPath)
-                let body = DocumentBody.attributedString(fromMarkup: action.body ?? "")
+                let rawBody = String((action.body ?? "").prefix(Self.maxMCPBodyTextLength))
+                let body = DocumentBody.attributedString(fromMarkup: rawBody)
                 document.bodyData = DocumentBody.encode(body)
                 document.plainText = body.string
                 modelContext.insert(document)
                 if openAfterImport { openTextDocument(document) }
 
             case "create_notebook":
-                guard let title = action.title, let pages = action.pages, !pages.isEmpty else { continue }
+                guard let rawTitle = action.title, let pages = action.pages, !pages.isEmpty else { continue }
+                let title = String(rawTitle.prefix(Self.maxMCPTitleLength))
                 let notebook = Notebook(title: title)
                 assignMCPDestination(notebook, path: action.folderPath)
-                for (index, source) in pages.enumerated() {
+                for (index, source) in pages.prefix(Self.maxMCPPagesPerNotebook).enumerated() {
                     let page = NotePage(order: index)
-                    page.title = source.title
-                    page.recognizedText = source.text
-                    let text = PageElement(kind: .text, text: source.text, centerX: 0.5,
+                    page.title = String((source.title ?? "").prefix(Self.maxMCPTitleLength))
+                    let pageText = String(source.text.prefix(Self.maxMCPBodyTextLength))
+                    page.recognizedText = pageText
+                    let text = PageElement(kind: .text, text: pageText, centerX: 0.5,
                                            centerY: 0.5, width: 0.88, height: 0.8)
                     text.page = page
                     page.addElement(text)
@@ -6536,16 +6550,17 @@ struct ContentView: View {
                 if openAfterImport { openNotebookTab(notebook) }
 
             case "add_calendar_event":
-                guard let title = action.title,
+                guard let rawTitle = action.title,
                       let startDate = action.startDate,
                       let endDate = action.endDate else { continue }
+                let title = String(rawTitle.prefix(Self.maxMCPTitleLength))
                 let kind = CalendarEventKind(rawValue: action.kind ?? "other") ?? .other
                 let event = CalendarEvent(
                     title: title,
                     startDate: startDate,
                     endDate: max(endDate, startDate),
                     kind: kind,
-                    notes: action.notes ?? ""
+                    notes: String((action.notes ?? "").prefix(Self.maxMCPShortTextLength))
                 )
                 event.externalSource = "mcp"
                 event.externalSourceName = "AI・MCP"
@@ -6641,6 +6656,7 @@ struct ContentView: View {
 
     @MainActor
     private func disconnectMCP(_ connection: MCPConnection) async {
+        guard FriendChatService.isValidPathSegment(connection.id) else { return }
         do {
             _ = try await mcpRequest(path: "api/mcp/connections/\(connection.id)", method: "DELETE")
             mcpConnections.removeAll { $0.id == connection.id }
@@ -6659,7 +6675,8 @@ struct ContentView: View {
             mcpInboxCount = items.count
             mcpInboxError = ""
             var imported = Set(mcpImportReceipts.map(\.id))
-            for item in items {
+            for item in items.prefix(Self.maxMCPActionsPerBatch) {
+                guard FriendChatService.isValidPathSegment(item.id) else { continue }
                 if !imported.contains(item.id) {
                     let title = item.payload.deckTitle ?? item.payload.title ?? L("新しい資料")
                     modelContext.insert(MCPImportReceipt(id: item.id, title: title,
@@ -6889,6 +6906,7 @@ struct ContentView: View {
     }
 
     private func duplicate(_ source: Notebook) {
+        guard !source.isLocked, !source.hasLockedPDFToUnlock, !source.hasEncryptedPages else { return }
         let copy = Notebook(title: "\(source.title) のコピー")
         copy.isFavorite = source.isFavorite
         for original in source.sortedPages {

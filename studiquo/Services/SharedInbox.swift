@@ -91,13 +91,23 @@ struct SharedInbox {
         return Batch(folder: folder)
     }
 
-    /// Copies one file into `batch`; nil if it is a folder or cannot be read.
+    /// Upper bound on any single file copied into the inbox (500 MB, matching
+    /// `ImportLimits.maxPDFFileBytes`). Kept self-contained because this file is
+    /// also compiled into `studiquoShare`.
+    static let maxFileBytes: Int64 = 500_000_000
+
+    /// Copies one file into `batch`; nil if it is a folder, symlink, oversized, or cannot be read.
     func add(_ source: URL, to batch: Batch) -> Item? {
         let didAccess = source.startAccessingSecurityScopedResource()
         defer { if didAccess { source.stopAccessingSecurityScopedResource() } }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
             return nil
+        }
+        if let values = try? source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]) {
+            if values.isSymbolicLink == true { return nil }
+            if values.isRegularFile == false { return nil }
+            if let fileSize = values.fileSize, Int64(fileSize) > Self.maxFileBytes { return nil }
         }
         let destination = uniqueDestination(for: source.lastPathComponent, in: batch.folder)
         do {

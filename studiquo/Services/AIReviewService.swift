@@ -45,9 +45,11 @@ enum AIReviewService {
         guard isEnabled, AIDataDisclosure.hasBeenAcknowledged else { return }
         let question = questionText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, AI.provider.isConfigured else { return }
+        let ownerPartition = RAGLibrarySyncService.defaultPartition()
 
         guard let result = try? await AI.provider.researchReview(question: question, context: ""),
               isEnabled, AIDataDisclosure.hasBeenAcknowledged,
+              RAGLibrarySyncService.defaultPartition() == ownerPartition,
               result.isStudyRelevant,
               !result.explanationMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }

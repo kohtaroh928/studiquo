@@ -20,6 +20,14 @@ enum AccountFileEraser {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         ClaudeChatService.removeAPIKey()
+        UniversityCalendar.removeURL()
+        GoogleCalendar.removeURL()
+        ExternalFileBookmarkStore.shared.clearAll()
+        Task { @MainActor in
+            NoteActionHistory.shared.clearAll()
+            DrawingHistoryStore.shared.clearAll()
+        }
+        Task { await NoteImageCache.shared.removeAll() }
     }
 
     /// Explicit sandbox root lets tests exercise cleanup without using real
@@ -44,6 +52,7 @@ enum AccountFileEraser {
             "Library/Application Support/studiquo/AutoBackups",
             "Library/Application Support/SharedInbox",
             "Library/Application Support/studiquo/ExternalFileBookmarks.json",
+            "Library/Application Support/studiquo/LibraryLedger.json",
         ] {
             try eraseDirectory(sandbox.appendingPathComponent(path), manager: manager)
         }
