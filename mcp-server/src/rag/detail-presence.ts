@@ -111,6 +111,11 @@ export function termsMissingFrom(query: unknown, texts: unknown[]) {
   return [...katakana, ...latin];
 }
 
+// How many distinctive katakana and Latin-letter terms the question names (found or not).
+export function distinctiveTermCount(query: unknown) {
+  return distinctiveTerms(query).length + distinctiveLatinTerms(query).length;
+}
+
 // The question with the given words removed, for judging how much of the rest the excerpts cover.
 export function withoutTerms(query: unknown, terms: string[]) {
   return terms.reduce((q, t) => q.split(fold(t)).join(' ').split(t).join(' '), fold(query));

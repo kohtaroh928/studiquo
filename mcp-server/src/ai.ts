@@ -434,7 +434,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
             throw new CreditLimitError(json({ error: "参照資料の利用状態が変わりました。もう一度お試しください。", code: "rag_authorization_changed" }, 503));
           }
           referencesSent = rag.context;
-          const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle, rag.reason);
           // Off by default: moving the excerpts changes what the model sees, so
           // it is compared against the current layout (docs/RAG_PROMPT_CONTRACT.md §7) first.
           if (env.RAG_CONTEXT_AS_INPUT === "true" && rag.context) return { instructions: baseSystem + policy, reference: rag.context };
