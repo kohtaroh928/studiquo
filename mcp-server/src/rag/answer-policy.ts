@@ -78,7 +78,7 @@ function referencePolicy(status: any, answerStyle: any) {
 // Only answers built from retrieved references get the coverage block; every other status stays as before.
 // Prototype: the search ran and found nothing related (reason no_match), so the chat falls back to ordinary
 // answering. Without a notice, a general-knowledge answer reads as an answer from the student's materials.
-const NO_MATCH_NOTICE = "\n学生が登録した資料を検索しましたが、質問に関係する記述は見つかりませんでした。資料に書かれている内容であるかのように答えないでください。まず、登録された資料には該当する記述が見つからなかったことを一文で伝えてください。そのうえで一般的な知識で答える場合は、資料にはない一般的な知識であることを明示し、具体的な固有名詞や数値は確実なものだけに限ってください。";
+const NO_MATCH_NOTICE = "\n学生が登録した資料を検索しましたが、質問に関係する記述は見つかりませんでした。資料に書かれている内容であるかのように答えないでください。まず、登録された資料には該当する記述が見つからなかったことを一文で伝えてください。資料にない企業名・団体名・製品名・人名・数値・年・目標値は、一般的な知識であっても挙げないでください。代わりに、資料に書かれていないため具体的には答えられないことと、資料内の関連する話題があればその範囲だけを伝えてください。";
 
 export function ragAnswerPolicy(status: any, answerStyle: any, reason?: string) {
  if (status === 'fallback' && reason === 'no_match') return NO_MATCH_NOTICE;
