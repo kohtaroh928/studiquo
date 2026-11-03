@@ -5198,16 +5198,17 @@ struct ContentView: View {
     /// from" cue.
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
         let items = columnItems(parentPath: parentPath)
-        return ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
+        return GeometryReader { geometry in
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
                 if items.isEmpty {
-                    Text("このフォルダは空です")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
+                    ContentUnavailableView(
+                        "このフォルダは空です",
+                        systemImage: "folder",
+                        description: Text("ノート・暗記帳・文書を追加すると、ここに表示されます。")
+                    )
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                         .padding(.horizontal, 16)
-                        .padding(.top, 24)
                 }
                 ForEach(items) { item in
                     switch item {
@@ -5244,6 +5245,7 @@ struct ContentView: View {
                     } isTargeted: { isTargeted in
                         setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
                     }
+                }
             }
         }
     }
