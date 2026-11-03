@@ -118,9 +118,9 @@ enum RAGAnswerStyle: String, CaseIterable {
     case normal, sourceOnly = "source_only", explain
     var title: String {
         switch self {
-        case .normal: return L("通常回答")
-        case .sourceOnly: return L("資料のみ")
-        case .explain: return L("補足あり")
+        case .normal: return L("Chat")
+        case .sourceOnly: return L("Strict")
+        case .explain: return L("Explain")
         }
     }
     var summary: String {
@@ -129,6 +129,11 @@ enum RAGAnswerStyle: String, CaseIterable {
         case .sourceOnly: return L("資料に書かれたことだけで答えます。該当がなければ、その旨を伝えます。")
         case .explain: return L("資料に基づいて答え、背景の補足や、資料に該当がないときの一般知識も使います。")
         }
+    }
+    /// The button steps through the styles in this order, wrapping around.
+    var next: Self {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
     }
     static let storageKey = LaunchStoreEnvironment.namespaced("ragAnswerStyle")
     static var current: Self {

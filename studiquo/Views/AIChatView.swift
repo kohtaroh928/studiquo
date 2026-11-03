@@ -443,12 +443,8 @@ struct AIChatPane: View {
                             .accessibilityIdentifier("pane-replace-ai")
                         }
                         if let onOpenRAG {
-                            Menu {
-                                Picker(L("回答スタイル"), selection: $ragAnswerStyle) {
-                                    ForEach(RAGAnswerStyle.allCases, id: \.rawValue) { style in
-                                        Text("\(style.title) — \(style.summary)").tag(style.rawValue)
-                                    }
-                                }
+                            Button {
+                                ragAnswerStyle = currentRAGStyle.next.rawValue
                             } label: {
                                 Text(currentRAGStyle.title)
                                     .font(.caption.weight(.semibold))
@@ -457,8 +453,10 @@ struct AIChatPane: View {
                                     .background(Capsule().fill(Color.secondary.opacity(0.15)))
                                     .foregroundStyle(currentRAGStyle == .normal ? Color.secondary : Theme.Palette.accent)
                             }
+                            .buttonStyle(.plain)
                             .accessibilityLabel(L("回答スタイル"))
                             .accessibilityValue(currentRAGStyle.title)
+                            .accessibilityHint(currentRAGStyle.summary)
                             .accessibilityIdentifier("rag-answer-style-toggle")
                             Button(action: onOpenRAG) {
                                 Image(systemName: "doc.text.magnifyingglass")
