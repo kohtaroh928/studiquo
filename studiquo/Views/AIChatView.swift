@@ -92,7 +92,7 @@ struct AIChatPanel: View {
             onPaneDrop: onPaneDrop,
             onReplacePaneMaterial: onReplacePaneMaterial,
             onOpenRAG: { showsRAG = true },
-            isRAGActive: store.ragScope != nil
+            isRAGActive: store.ragScope != nil && RAGAnswerStyle.current != .normal
         )
         .sheet(isPresented: $showsRAG) {
             NavigationStack {
@@ -289,6 +289,7 @@ struct AIChatPane: View {
     /// Opens the RAG controls; `nil` hides the button.
     let onOpenRAG: (() -> Void)?
     @AppStorage(RAGAnswerStyle.storageKey) private var ragAnswerStyle = RAGAnswerStyle.sourceOnly.rawValue
+    private var currentRAGStyle: RAGAnswerStyle { RAGAnswerStyle(rawValue: ragAnswerStyle) ?? .sourceOnly }
     let isRAGActive: Bool
 
     init(
@@ -442,21 +443,22 @@ struct AIChatPane: View {
                             .accessibilityIdentifier("pane-replace-ai")
                         }
                         if let onOpenRAG {
-                            Button {
-                                ragAnswerStyle = ragAnswerStyle == RAGAnswerStyle.explain.rawValue
-                                    ? RAGAnswerStyle.sourceOnly.rawValue : RAGAnswerStyle.explain.rawValue
+                            Menu {
+                                Picker(L("回答スタイル"), selection: $ragAnswerStyle) {
+                                    ForEach(RAGAnswerStyle.allCases, id: \.rawValue) { style in
+                                        Text("\(style.title) — \(style.summary)").tag(style.rawValue)
+                                    }
+                                }
                             } label: {
-                                Text(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? L("補足あり") : L("資料のみ"))
+                                Text(currentRAGStyle.title)
                                     .font(.caption.weight(.semibold))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 4)
                                     .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                                    .foregroundStyle(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? Theme.Palette.accent : Color.secondary)
+                                    .foregroundStyle(currentRAGStyle == .normal ? Color.secondary : Theme.Palette.accent)
                             }
-                            .buttonStyle(.plain)
                             .accessibilityLabel(L("回答スタイル"))
-                            .accessibilityValue(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? L("補足あり") : L("資料のみ"))
-                            .accessibilityHint(L("資料のみ: 資料に書かれたことだけで答えます。補足あり: 資料に該当がないときや背景の説明に、一般知識も使います。"))
+                            .accessibilityValue(currentRAGStyle.title)
                             .accessibilityIdentifier("rag-answer-style-toggle")
                             Button(action: onOpenRAG) {
                                 Image(systemName: "doc.text.magnifyingglass")
