@@ -141,6 +141,12 @@ final class RAGCitationPopupTests: XCTestCase {
         XCTAssertNil(RAGCitationNavigation.resolve(validCitation, notebooks: [notebook]))
         notebook.lockedPDFData = nil
         XCTAssertNotNil(RAGCitationNavigation.resolve(validCitation, notebooks: [notebook]))
+
+        // Sealed (encrypted) notebook: the citation sheet has no unlock gate.
+        notebook.encryptedContent = Data("ciphertext".utf8)
+        XCTAssertNil(RAGCitationNavigation.resolve(validCitation, notebooks: [notebook]))
+        notebook.encryptedContent = nil
+        XCTAssertNotNil(RAGCitationNavigation.resolve(validCitation, notebooks: [notebook]))
     }
 
     func testRAGCitationLinksRendersViewHierarchyForEmptyAndPopulatedCitations() throws {
