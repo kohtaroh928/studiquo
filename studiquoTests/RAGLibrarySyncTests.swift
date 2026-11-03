@@ -430,6 +430,36 @@ final class RAGLibrarySyncTests: XCTestCase {
         service.setForeground(false)
     }
 
+    func testManualGrantClearsPreviousControlRetryAndContactsConsentService() async throws {
+        let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        var saved = RAGLibrarySyncState()
+        saved.controlRetryAfter = Date(timeIntervalSince1970: 160)
+        saved.controlRetryAttempts = 2
+        defaults.set(try JSONEncoder().encode(saved), forKey: "ragManaged-owner")
+        var requests = 0, epoch = 0
+        let client = RAGControlClient(transport: { request in
+            requests += 1
+            if request.httpMethod != "GET" { epoch += 1 }
+            let reply: [String: Any] = ["enabled": epoch > 0, "consentEpoch": epoch, "available": true]
+            return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        })
+        let service = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" }, now: { Date(timeIntervalSince1970: 100) })
+
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [])
+
+        XCTAssertEqual(requests, 2)
+        XCTAssertTrue(service.enabled)
+        let updated = try JSONDecoder().decode(RAGLibrarySyncState.self, from: try XCTUnwrap(defaults.data(forKey: "ragManaged-owner")))
+        XCTAssertNil(updated.controlRetryAfter)
+        XCTAssertEqual(updated.controlRetryAttempts, 0)
+    }
+
     func testBackgroundCancelsScheduledControlRetry() async throws {
         let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
