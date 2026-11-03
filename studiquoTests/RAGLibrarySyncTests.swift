@@ -69,6 +69,25 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertEqual(document, notebook.ragDocumentID)
         XCTAssertNotEqual(document, pdf().ragDocumentID)
     }
+
+    func testGrantPreparationLeavesExcludedAndOutOfScopeNotebooksUntouched() {
+        let included = pdf()
+        included.ragID = ""; included.ragDocumentID = ""
+        let locked = pdf()
+        locked.ragID = ""; locked.ragDocumentID = ""; locked.isLocked = true
+        let trashed = pdf()
+        trashed.ragID = ""; trashed.ragDocumentID = ""; trashed.isTrashed = true
+        let service = RAGLibrarySyncService(defaults: UserDefaults(suiteName: UUID().uuidString)!, partition: { "owner" })
+
+        service.prepareIdentities(for: [included, locked, trashed], scope: .allPDFs)
+
+        XCTAssertFalse(included.ragID.isEmpty)
+        XCTAssertFalse(included.ragDocumentID.isEmpty)
+        XCTAssertTrue(locked.ragID.isEmpty)
+        XCTAssertTrue(locked.ragDocumentID.isEmpty)
+        XCTAssertTrue(trashed.ragID.isEmpty)
+        XCTAssertTrue(trashed.ragDocumentID.isEmpty)
+    }
     func testRetryMetadataContainsNoContentOrTitle() throws {
         var state = RAGLibrarySyncState()
         state.entries["document"] = .init(fingerprint: String(repeating: "a", count: 64))
