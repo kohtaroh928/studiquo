@@ -32,6 +32,12 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
+## 2026-11-03 手動の自動登録許可が古い再試行待機で止まる問題を修正
+
+実機で「対象PDFの自動登録を許可」を押したとき、正しい staging Worker のRAG同意APIへの到達が観測されず、画面は一般的な通信エラーを出していた。確認枠にはPR #111（`48d319e`）のSwiftData保存失敗の修正が入っており、今回はその例外ではない。`grant` が送信前に `flushInvalidations()` を呼び、過去の背景同期で保存された `controlRetryAfter` が未来ならローカル429を投げることを確認した。
+
+`codex/rag-manual-grant-retry` で、明示的な手動許可の直前に限り、このローカルの制御再試行待機を消して同意APIへ再試行するよう変更した。サーバーのレート制限自体は回避しない。期限が残った状態から、GET/POSTの同意APIに到達し、待機情報が消える回帰テストを追加した。`xcodegen generate` 後、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は終了コード0で完了。実機で再度エラーが表示されたが、調査で確認枠のHEADが17:51に修正コミット`28aac22`から修正前の`main`（`9a7465f`）へ切り替わっており、Xcodeもそのフォルダを実行していたことを確認した。17:56に確認枠を返却・再取得し、現在はXcodeの同一パスとHEADが`28aac22`で一致している。Worker/D1/Vectorize/本番設定の変更なし。次はこの状態の `studiquo-staging` を実機Runして同じボタンを押し、必要ならWorker tailで同意要求を確認する。GitHub Projectへの今回の記録は未実施。
+
 ## 2026-11-02 staging 実経路独立評価を開始
 
 ユーザーが実WorkerのD1/Vectorize、PDF取込み、iPad、最終回答までを通した独立評価を依頼し、staging用iPadが利用可能であることを確認した。`origin/main`（`c3ce941`）から専用worktree `codex/rag-e2e-evaluation` を作成。現行staging版112（`ad285b04-55d2-489a-8ad5-990a33deddb4`）を読み取り、stagingのD1 `studiquo-admin-staging` とVectorize `studiquo-rag-v1-staging`、staging App ID/URLを確認。本番IDは配備dry-runに出ず、dry-runは成功した（専用worktreeでは`npm ci`が必要だった。依存監査は既知のmoderate 2件・high 1件を表示したが、今回変更していない）。
