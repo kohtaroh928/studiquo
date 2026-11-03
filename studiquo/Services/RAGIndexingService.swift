@@ -111,10 +111,25 @@ enum RAGRegistrationState: String, Decodable {
     }
 }
 
-/// How an answer treats the student's documents. Kept per device and sent with every
-/// search; the server treats anything but "explain" as source-only.
-enum RAGAnswerStyle: String {
-    case sourceOnly = "source_only", explain
+/// How an answer treats the student's documents. Kept per device. `normal` never searches
+/// (an ordinary AI answer); the other two are sent with every search, and the server treats
+/// anything but "explain" as source-only.
+enum RAGAnswerStyle: String, CaseIterable {
+    case normal, sourceOnly = "source_only", explain
+    var title: String {
+        switch self {
+        case .normal: return L("通常回答")
+        case .sourceOnly: return L("資料のみ")
+        case .explain: return L("補足あり")
+        }
+    }
+    var summary: String {
+        switch self {
+        case .normal: return L("資料を検索せず、ふつうのAI回答をします。")
+        case .sourceOnly: return L("資料に書かれたことだけで答えます。該当がなければ、その旨を伝えます。")
+        case .explain: return L("資料に基づいて答え、背景の補足や、資料に該当がないときの一般知識も使います。")
+        }
+    }
     static let storageKey = LaunchStoreEnvironment.namespaced("ragAnswerStyle")
     static var current: Self {
         UserDefaults.standard.string(forKey: storageKey).flatMap(Self.init(rawValue:)) ?? .sourceOnly

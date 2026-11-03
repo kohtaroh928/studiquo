@@ -281,7 +281,7 @@ final class WorkerAIProvider: AIProvider {
             "requiresImage": expectsImages,
             "model": AIModelCatalog.defaultModel.rawValue,
         ]
-        if let ragScope, RAGConsent.isGranted {
+        if let ragScope, RAGConsent.isGranted, RAGAnswerStyle.current != .normal {
             payload["rag"] = ["scope": ragScope.payload, "answerStyle": RAGAnswerStyle.current.rawValue]
         }
         let ragRequested = payload["rag"] != nil
