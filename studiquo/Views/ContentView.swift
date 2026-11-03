@@ -5204,8 +5204,7 @@ struct ContentView: View {
                 if items.isEmpty {
                     ContentUnavailableView(
                         "このフォルダは空です",
-                        systemImage: "folder",
-                        description: Text("ノート・暗記帳・文書を追加すると、ここに表示されます。")
+                        systemImage: "folder"
                     )
                         .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                         .padding(.horizontal, 16)
