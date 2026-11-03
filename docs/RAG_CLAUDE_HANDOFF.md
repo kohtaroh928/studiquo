@@ -36,7 +36,9 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 実機で「対象PDFの自動登録を許可」を押したとき、正しい staging Worker のRAG同意APIへの到達が観測されず、画面は一般的な通信エラーを出していた。確認枠にはPR #111（`48d319e`）のSwiftData保存失敗の修正が入っており、今回はその例外ではない。`grant` が送信前に `flushInvalidations()` を呼び、過去の背景同期で保存された `controlRetryAfter` が未来ならローカル429を投げることを確認した。
 
-`codex/rag-manual-grant-retry` で、明示的な手動許可の直前に限り、このローカルの制御再試行待機を消して同意APIへ再試行するよう変更した。サーバーのレート制限自体は回避しない。期限が残った状態から、GET/POSTの同意APIに到達し、待機情報が消える回帰テストを追加した。`xcodegen generate` 後、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は終了コード0で完了。実機で再度エラーが表示されたが、調査で確認枠のHEADが17:51に修正コミット`28aac22`から修正前の`main`（`9a7465f`）へ切り替わっており、Xcodeもそのフォルダを実行していたことを確認した。17:56に確認枠を返却・再取得し、現在はXcodeの同一パスとHEADが`28aac22`で一致している。Worker/D1/Vectorize/本番設定の変更なし。次はこの状態の `studiquo-staging` を実機Runして同じボタンを押し、必要ならWorker tailで同意要求を確認する。GitHub Projectへの今回の記録は未実施。
+`codex/rag-manual-grant-retry` で、明示的な手動許可の直前に限り、このローカルの制御再試行待機を消して同意APIへ再試行するよう変更した。サーバーのレート制限自体は回避しない。期限が残った状態から、GET/POSTの同意APIに到達し、待機情報が消える回帰テストを追加した。`xcodegen generate` 後、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は終了コード0で完了。実機で再度エラーが表示されたが、調査で確認枠のHEADが17:51に修正コミット`28aac22`から修正前の`main`（`9a7465f`）へ切り替わっており、Xcodeもそのフォルダを実行していたことを確認した。17:56に確認枠を返却・再取得し、現在はXcodeの同一パスとHEADが`28aac22`で一致している。
+
+追加調査で、ステージングWorkerは2026-11-03 20:19の版114（`4c27225a`）に切り替わっており、`RAG_ENABLED`、`RAG_AUTO_INDEX_ENABLED`、`RAG_PDF_PROCESSING_ENABLED`、`RAG_PDF_CLEANUP_ENABLED`、`AI_PROVIDER_APPROVED` がすべて `false` だった。これが「対象PDFの自動登録」ボタンが無効になった直接原因。ユーザー依頼の実資料評価を継続するため、`--env staging --keep-vars` と同じ5フラグを明示した版115（`35aa4afd-055c-4c35-9641-5f45f3ff9592`）を配備し、5フラグがすべて `true` であることを読み取り確認した。本番、D1、Vectorizeの内容は変更していない。次はアプリを再起動または当該設定画面を開き直して利用可能性を再取得し、同意要求を実機で確認する。GitHub Projectへの今回の記録は未実施。
 
 ## 2026-11-02 staging 実経路独立評価を開始
 
