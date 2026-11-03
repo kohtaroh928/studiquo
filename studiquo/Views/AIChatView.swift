@@ -288,6 +288,7 @@ struct AIChatPane: View {
     let onReplacePaneMaterial: (() -> Void)?
     /// Opens the RAG controls; `nil` hides the button.
     let onOpenRAG: (() -> Void)?
+    @AppStorage(RAGAnswerStyle.storageKey) private var ragAnswerStyle = RAGAnswerStyle.sourceOnly.rawValue
     let isRAGActive: Bool
 
     init(
@@ -441,6 +442,22 @@ struct AIChatPane: View {
                             .accessibilityIdentifier("pane-replace-ai")
                         }
                         if let onOpenRAG {
+                            Button {
+                                ragAnswerStyle = ragAnswerStyle == RAGAnswerStyle.explain.rawValue
+                                    ? RAGAnswerStyle.sourceOnly.rawValue : RAGAnswerStyle.explain.rawValue
+                            } label: {
+                                Text(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? L("補足あり") : L("資料のみ"))
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                    .foregroundStyle(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? Theme.Palette.accent : Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("回答スタイル"))
+                            .accessibilityValue(ragAnswerStyle == RAGAnswerStyle.explain.rawValue ? L("補足あり") : L("資料のみ"))
+                            .accessibilityHint(L("資料のみ: 資料に書かれたことだけで答えます。補足あり: 資料に該当がないときや背景の説明に、一般知識も使います。"))
+                            .accessibilityIdentifier("rag-answer-style-toggle")
                             Button(action: onOpenRAG) {
                                 Image(systemName: "doc.text.magnifyingglass")
                                     .font(.system(size: 16, weight: .semibold))

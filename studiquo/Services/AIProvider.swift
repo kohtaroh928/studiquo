@@ -282,7 +282,7 @@ final class WorkerAIProvider: AIProvider {
             "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let ragScope, RAGConsent.isGranted {
-            payload["rag"] = ["scope": ragScope.payload]
+            payload["rag"] = ["scope": ragScope.payload, "answerStyle": RAGAnswerStyle.current.rawValue]
         }
         let ragRequested = payload["rag"] != nil
         var request = try request(path: "api/ai/chat", body: payload)
