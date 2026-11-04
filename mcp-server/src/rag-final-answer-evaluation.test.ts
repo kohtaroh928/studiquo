@@ -21,6 +21,10 @@ test('24 golden cases exercise exact production request and expected retrieval s
    assert.equal(request.max_output_tokens,8192);
    return responses('mock回答です。');
   }});
+  if(c.expectedStatus==='fallback') {
+   // Search found nothing or could not run: the model is not called (source-only default).
+   assert.equal(request,undefined,c.id);assert.ok(['not_found','unavailable'].includes(hit.status),c.id);assert.deepEqual(hit.citations,[],c.id);continue;
+  }
   assert.equal(hit.status,c.expectedStatus??null,c.id);
   assert.deepEqual(hit.citations.map(x=>x.pageNumber).sort((a,b)=>a-b),c.expectedPages,c.id);
   assert.equal(hit.citationDatabaseValid,true,c.id);
@@ -121,6 +125,7 @@ test('fixed holdout retains retrieval and structured citation correctness with n
  assert.throws(()=>selectCases(undefined,{cases:[]}),/unknown_evaluation_fixture/);
  for(const c of holdoutFixture.cases) {
   const result=await evaluateCase(c,{openaiFetch:async()=>responses('合成回答')});
+  if(c.expectedStatus==='fallback') {assert.ok(['not_found','unavailable'].includes(result.status),c.id);continue;}
   assert.equal(result.status,c.expectedStatus,c.id);
   assert.deepEqual(result.citations.map(x=>x.pageNumber).sort((a,b)=>a-b),c.expectedPages,c.id);
   assert.equal(result.citationDatabaseValid,true,c.id);
@@ -134,13 +139,14 @@ test('holdout answer checks accept new model and price and reject baseline value
  assert.equal(checkAnswer(c,{...base,answer:'型番はLM-204、価格は7200円です。'}).checks.requiredFacts,false);
 });
 
-test('zero relevant hits preserve the exact ordinary OpenAI request', async () => {
+test('zero relevant hits stop with a not-found message instead of an ordinary answer', async () => {
  const c=holdoutFixture.cases.find(x=>x.id==='holdout-no-hits');
  const requests=[];
  const transport=async(_url,options)=>{requests.push(JSON.parse(options.body));return responses('180度です。');};
  const zero=await evaluateCase(c,{openaiFetch:transport});
- const ordinary=await evaluateCase({...c,mode:'disabled'},{openaiFetch:transport});
- assert.equal(zero.status,'fallback');assert.equal(ordinary.status,null);
- assert.deepEqual(requests[0],requests[1]);
+ assert.equal(zero.status,'not_found');
+ assert.equal(requests.length,0,'the model was not called');
  assert.deepEqual(zero.citations,[]);
+ const ordinary=await evaluateCase({...c,mode:'disabled'},{openaiFetch:transport});
+ assert.equal(ordinary.status,null);assert.equal(requests.length,1);
 });

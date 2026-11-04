@@ -20,6 +20,7 @@ import { retrieve } from "./rag/index.ts";
 import { revalidateRetrieval } from "./rag/authorization.ts";
 import { ragAnswerPolicy } from "./rag/answer-policy.ts";
 import { normalizeRetrieval } from "./rag/contract.ts";
+import { ragStop, type RagStop } from "./rag/stop-policy.ts";
 import { filterReply } from "./rag/output-filter.ts";
 import { groundingCheck } from "./rag/grounding-check.ts";
 import type { SessionRecord } from "./records.ts";
@@ -370,6 +371,9 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   // empty `rag` (a timeout, a deleted source) after the excerpts have already gone out,
   // and the reply built from them must still have its links removed.
   let referencesSent = "";
+  let ragStopped: RagStop | null = null;
+  // Explain style with no matching passage: an ordinary answer that says it is not from the documents.
+  let ragGeneral = false;
   // Explicit renewed consent authorizes retrieval for OpenAI.
   if (provider === "openai" && env.RAG_ENABLED === "true" && payload?.rag && session &&
       request.headers.get("X-Studiquo-RAG-Consent") === "rag-openai-v1") {
@@ -378,9 +382,13 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
     try {
       rag = normalizeRetrieval(await retrieve(env, session, payload));
     } catch {
-      // Fail open only to ordinary chat; never expose provider errors or text.
-      rag = { context: "", citations: [], status: "fallback" };
+      // Never expose provider errors or text. The search itself failed, so the reply is
+      // stopped below rather than written from general knowledge.
+      rag = { context: "", citations: [], status: "fallback", reason: "error" };
     }
+    const decision = ragStop(rag, payload.rag.answerStyle);
+    ragGeneral = decision.general;
+    ragStopped = decision.stop;
     console.log(JSON.stringify({
       event: "rag_retrieval",
       used: rag.citations.length > 0,
@@ -398,6 +406,13 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }
+
+  if (ragStopped) {
+    // Nothing is sent to the model, so the student keeps the credits.
+    await gate.refund();
+    return ragStopResponse(ragStopped);
+  }
+  if (ragGeneral) rag.status = "general";
 
   let upstream: Response;
   let extractText;
@@ -684,6 +699,15 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
       "x-content-type-options": "nosniff",
       ...extraHeaders,
     },
+  });
+}
+
+// The fixed reply for a stopped RAG chat, in the same event shape as a streamed answer so an
+// app that predates the status still shows the text.
+function ragStopResponse(stop: RagStop) {
+  const body = `data: ${JSON.stringify({ ragStatus: stop.status })}\n\ndata: ${JSON.stringify({ text: stop.message })}\n\n`;
+  return new Response(body, {
+    headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-content-type-options": "nosniff" },
   });
 }
 
