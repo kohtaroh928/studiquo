@@ -7,3 +7,5 @@
 ^docs/RAG_[A-Z0-9_]+_RESULTS\.json$
 # 架空のURL(user:pass@wikipedia.org)を拒否することを確かめるテスト。実在の資格情報ではない。
 ^studiquoTests/RichTextParserTests\.swift$
+# URLの認証情報を拒否する安全性テスト。user:pass@example.com はダミーであり、実在の資格情報ではない。
+^studiquoTests/IOSSecurityAuditFixesTests\.swift$
