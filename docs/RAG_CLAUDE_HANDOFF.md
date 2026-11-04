@@ -1,3 +1,11 @@
+## 2026-11-04 Codex API認可マトリクス（ローカル検証のみ）
+
+最終更新: 2026-11-04。今回: ユーザー依頼「全API認可の網羅テスト」を、`origin/main` の `31599e6` 基点の専用worktree `.worktrees/authz-matrix` / `codex/authz-matrix` で実施。RAGは既知の他アカウントdocument/source IDに対する状態・status・readiness・state変更・2形式の削除を実Worker/ローカルD1で検証した。所有者の成功対照と、他アカウントへ作用しないことを確認。RAG・認証の本体実装、feature flag、DB migrationは変更していない。過去の実API/実機評価を今回再実行したとは扱わない。
+
+現在地: `security/authz/` に133個のメソッド×経路台帳と675テストを追加。全675成功、既存サーバーテスト全体終了コード0、Worker/test/security型検査成功。独立レビューの所見は対応後、追加指摘なし（レビュー担当による独立再実行なし）。詳細と制約は `docs/SECURITY_AUTHORIZATION_MATRIX.md`。全保護経路の拒否検証と、すべての業務フロー完走は別であり、署名必須/App Attest/実AI/Vectorize/実PDF処理/Cloudflare edge/実機の証明ではない。
+
+次の一手: ローカルブランチのテスト差分を確認し、依頼があればPR・統合へ進む。今回push/merge/deploy、staging/本番データ操作、有料評価、自動スケジュール再開なし。テストは一時runtimeをdisposeし、常駐processなし。GitHub Projectは既存「認可の網羅テスト」に結果・制約・次の一手を追記し、担当Codex・統合前の「あなた待ち」へ更新済み。既存のRAG評価・実機待ちはこの検証で完了扱いにしない。Projectの資料の更新: なし（テスト追加のみ）。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
