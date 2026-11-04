@@ -54,7 +54,8 @@ test('insufficient evidence retains its narrow response rather than inviting sub
  assert.doesNotMatch(system, /untrustedReferences/);
 });
 
-for (const mode of ['no_hits', 'outage', 'no_consent']) {
+// no_hits / outage that stop the reply are covered in rag-answer-style.test.ts.
+for (const mode of ['no_consent']) {
  test(`${mode} preserves the exact disabled request without presentation rules`, async () => {
   // An empty vector branch or embedding outage can still use keyword hits.
   // Use a genuinely unrelated query to exercise ordinary-chat fallback.
