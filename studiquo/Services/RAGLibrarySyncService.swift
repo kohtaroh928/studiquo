@@ -96,6 +96,11 @@ final class RAGLibrarySyncService {
         operation += 1; let grantOperation = operation
         if state.pendingRevoke { await drainRevoke() }
         guard !state.pendingRevoke, owner == partition(), operation == grantOperation else { throw RAGIndexingService.IndexError.disabled }
+        // A person explicitly granting permission must not be held behind a
+        // retry deadline created by an earlier background reconciliation.
+        // The next request is still subject to the server's rate limit.
+        state.controlRetryAfter = nil; state.controlRetryAttempts = 0
+        guard save() else { throw RAGIndexingService.IndexError.disabled }
         try await flushInvalidations()
         prepareIdentities(for: notebooks, scope: scope)
         do { try context.save() }
