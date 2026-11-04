@@ -31,6 +31,7 @@ async function capturePair(c, styles = [undefined, 'source_only']) {
    totalPages: c.pages.length, pages: c.pages.map((text, i) => ({pageNumber: i + 1, text}))}));
   if (c.mode === 'disabled') env.RAG_ENABLED = 'false';
   if (c.mode === 'no_hits') env.RAG_VECTORIZE.query = async () => ({matches: []});
+  if (c.mode === 'search_failed') env.RATE_LIMIT_RAG_SEARCH = {limit: async () => ({success: false})};
   if (c.mode === 'outage') env.AI.run = async () => {throw new Error('synthetic_outage');};
   for (const style of styles) {
    let request;
@@ -123,7 +124,8 @@ test('missing or explicit source_only has the same entire production OpenAI requ
  assert.deepEqual(explicit.result.citations, legacy.result.citations);
 });
 
-for (const mode of ['disabled', 'no_consent', 'no_hits', 'outage']) {
+// Search is not requested at all (flag off, no consent): ordinary chat, whatever the style.
+for (const mode of ['disabled', 'no_consent']) {
  test(`explain preserves ordinary chat under ${mode}`, async () => {
   const c = fixture.cases.find(c => c.id === 'fallback-outage');
   const [legacy, explain] = await capturePair({...c, mode}, [undefined, 'explain']);
@@ -131,6 +133,26 @@ for (const mode of ['disabled', 'no_consent', 'no_hits', 'outage']) {
   assert.deepEqual(explain.result.citations, []);
  });
 }
+
+// Search found nothing (no_hits) / could not run (search_failed): the model is not called, in either style where it must not be.
+for (const [mode, style, status] of [['no_hits', undefined, 'not_found'], ['no_hits', 'source_only', 'not_found'],
+  ['search_failed', undefined, 'unavailable'], ['search_failed', 'source_only', 'unavailable'], ['search_failed', 'explain', 'unavailable']]) {
+ test(`${mode} with ${style ?? 'default'} style stops without calling the model (${status})`, async () => {
+  const c = fixture.cases.find(c => c.id === 'fallback-outage');
+  const [row] = await capturePair({...c, mode}, [style]);
+  assert.equal(row.request, undefined, 'nothing was sent to the model');
+  assert.equal(row.result.status, status);
+  assert.deepEqual(row.result.citations, []);
+ });
+}
+
+test('explain with no matching passage answers, flagged as general knowledge', async () => {
+ const c = fixture.cases.find(c => c.id === 'fallback-outage');
+ const [row] = await capturePair({...c, mode: 'no_hits'}, ['explain']);
+ assert.equal(row.result.status, 'general');
+ assert.match(row.request.instructions, /一般知識による回答/);
+ assert.deepEqual(row.result.citations, []);
+});
 
 for (const id of ['grounded-number', 'partial-one-subject']) {
  test(`${id} allows labeled background without changing retrieved text or citations`, async () => {

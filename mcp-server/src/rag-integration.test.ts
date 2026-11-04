@@ -128,7 +128,7 @@ test("RAG disabled preserves exact ordinary OpenAI request and SSE despite new c
     globalThis.fetch = original;
   }
 });
-test("RAG enabled outage or missing consent falls back to ordinary chat without leaking error text", async () => {
+test("RAG enabled: a failed search stops the reply without leaking error text; missing consent is ordinary chat", async () => {
   const original = globalThis.fetch;
   let count = 0;
   globalThis.fetch = async () => {
@@ -167,10 +167,13 @@ test("RAG enabled outage or missing consent falls back to ordinary chat without 
         headers,
       );
       assert.equal(result.response.status, 200);
-      assert.match(result.text, /ordinary answer/);
       assert.doesNotMatch(result.text, /private|citations/);
+      if (headers["X-Studiquo-RAG-Consent"]) {
+        assert.match(result.text, /"ragStatus":"unavailable"/);
+        assert.doesNotMatch(result.text, /ordinary answer/);
+      } else assert.match(result.text, /ordinary answer/);
     }
-    assert.equal(count, 2);
+    assert.equal(count, 1, "only the request without consent reached the model");
   } finally {
     globalThis.fetch = original;
   }
@@ -400,13 +403,15 @@ test('RAG SSE evidence states and OpenAI instructions reflect supported, partial
     for (const [question,status,pattern] of [
       ['光合成とは？','grounded',/claims they actually support/],
       ['光合成と量子色力学の違い','partial',/full comparison cannot be grounded/],
-      ['暗号通貨の株価','fallback',/Studiquo/],
+      ['暗号通貨の株価','not_found',null],
       ['これのしくみを説明して','clarification',/Ask the user which topic/],
     ]) {
+      const promptsBefore=prompts.length;
       const result=await chat(environment,{messages:[{role:'user',text:question}],rag:{scope:{type:'library'}}},{'X-Studiquo-RAG-Consent':'rag-openai-v1'});
       assert.ok(result.text.includes(JSON.stringify({ragStatus:status})),status);
-      assert.match(JSON.stringify(prompts.at(-1).instructions),pattern);
-      if(['insufficient','clarification','fallback'].includes(status))assert.doesNotMatch(result.text,/"citations"/);
+      if(pattern)assert.match(JSON.stringify(prompts.at(-1).instructions),pattern);
+      else assert.equal(prompts.length,promptsBefore,'no model call when nothing matches');
+      if(['insufficient','clarification','not_found'].includes(status))assert.doesNotMatch(result.text,/"citations"/);
     }
   } finally {globalThis.fetch=original;}
 });
@@ -608,9 +613,15 @@ test("while a held reply is being written, a comment line keeps the connection a
     },
   }));
   try {
+    // Time is advanced only once the reply has registered its keepalive timer. A fixed number of
+    // event-loop turns is not enough on a slow machine: the tick then fires before the timer exists.
+    const realSetInterval = globalThis.setInterval;
+    let registered = false;
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => { registered = true; return realSetInterval(...args); }) as typeof setInterval;
     const pending = chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
     const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((resolve) => setImmediate(resolve)); };
-    await settle(); // the request reaches the point where it waits for the model
+    for (let i = 0; i < 200 && !registered; i++) await settle(); // the request reaches the point where it waits for the model
+    assert.ok(registered, "the keepalive timer was never set");
     mock.timers.tick(15000);
     await settle();
     release();

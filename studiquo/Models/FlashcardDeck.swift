@@ -15,6 +15,7 @@ final class FlashcardDeck {
     /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
     var folder: Folder?
+    var sortIndex: Int = 0
     var reversesQuestionAndAnswer: Bool = false
     var orderModeRawValue: String = FlashcardOrderMode.creation.rawValue
     /// How many times the deck has been studied end to end.

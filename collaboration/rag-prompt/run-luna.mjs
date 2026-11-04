@@ -6,7 +6,7 @@ import {readFileSync, mkdirSync, writeFileSync, renameSync, openSync, writeSync,
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {preparePacket} from './workspace.mjs';
+import {preparePacket} from './workspace.ts';
 
 const root = fileURLToPath(new URL('./', import.meta.url));
 const API_URL = 'https://api.openai.com/v1/responses';
@@ -16,10 +16,10 @@ const hash = value => createHash('sha256').update(typeof value === 'string' ? va
 const NAME = /^[a-z][a-z0-9-]{0,63}$/;
 
 // One request per (variant, case, style). The baseline body is shared by every candidate packet.
-export function buildPlan(candidateNames, load = name => JSON.parse(readFileSync(path.join(root, 'candidates', name + '.json'), 'utf8'))) {
+export function buildPlan(candidateNames, load = name => JSON.parse(readFileSync(path.join(root, 'candidates', name + '.json'), 'utf8')), caseSet = 'fixed6') {
   const requests = new Map();
   for (const name of candidateNames) {
-    const packet = preparePacket(load(name));
+    const packet = preparePacket(load(name), caseSet);
     for (const pair of packet.pairs) {
       const base = ['baseline', pair.caseKey, pair.style].join('|');
       if (requests.has(base) && requests.get(base).bodyHash !== pair.baselineHash) throw Error('baseline_mismatch');
@@ -70,10 +70,10 @@ function writePrivate(file, value) {
   renameSync(file + '.tmp', file);
 }
 
-export async function run({runName, candidates, maxCalls, budgetUSD, apiKey, fetchImpl = fetch, resume = false, outputRoot = path.join(root, '.local')}) {
+export async function run({runName, candidates, maxCalls, budgetUSD, apiKey, fetchImpl = fetch, resume = false, outputRoot = path.join(root, '.local'), caseSet = 'fixed6'}) {
   if (!NAME.test(runName) || !candidates.length || !candidates.every(c => NAME.test(c))) throw Error('invalid_names');
   if (!Number.isInteger(maxCalls) || maxCalls < 1 || !(budgetUSD > 0)) throw Error('invalid_limits');
-  const plan = buildPlan(candidates);
+  const plan = buildPlan(candidates, undefined, caseSet);
   const dir = path.join(outputRoot, runName), journal = path.join(dir, 'journal.ndjson');
   const answersFile = path.join(dir, 'answers.json'), metricsFile = path.join(dir, 'metrics.json');
   if (!apiKey) throw Error('missing_key');
@@ -92,7 +92,7 @@ export async function run({runName, candidates, maxCalls, budgetUSD, apiKey, fet
   } else {
     mkdirSync(outputRoot, {recursive: true, mode: 0o700});
     mkdirSync(dir, {mode: 0o700});
-    writeFileSync(path.join(dir, 'plan.json'), JSON.stringify({version: 1, planHash: plan.planHash, maxCalls, budgetUSD, candidates,
+    writeFileSync(path.join(dir, 'plan.json'), JSON.stringify({version: 1, planHash: plan.planHash, maxCalls, budgetUSD, candidates, caseSet,
       requests: plan.requests.map(r => ({id: r.id, bodyHash: r.bodyHash}))}, null, 2) + '\n', {flag: 'wx', mode: 0o600});
   }
   const answers = existsSync(answersFile) ? JSON.parse(readFileSync(answersFile, 'utf8')) : {version: 1, planHash: plan.planHash, variants: {}};
@@ -129,6 +129,7 @@ function parseArgs(args) {
     if (rest[i] === '--resume') opts.resume = true;
     else if (rest[i] === '--max-calls') opts.maxCalls = Number(rest[++i]);
     else if (rest[i] === '--budget-usd') opts.budgetUSD = Number(rest[++i]);
+    else if (rest[i] === '--cases') opts.caseSet = rest[++i];
     else throw Error('usage');
   }
   return {runName, candidates: (list ?? '').split(',').filter(Boolean), ...opts};

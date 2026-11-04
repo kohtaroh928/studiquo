@@ -1,0 +1,632 @@
+{
+  "version": 1,
+  "id": "extra8-atomic-v1",
+  "baselineId": "20261014-policy-v1",
+  "note": "追加の合成ケース8件の根拠だけから作った採点項目(下書き)。生成側へ渡さない。自動判定は表記ゆれに弱い予備判定で、not_detectedとreviewは人が回答を読んで確定する。",
+  "categories": {
+    "omission": "回答漏れ: 質問が求めた項目と、判断に不可欠な条件",
+    "grounding": "根拠: 資料にない値・優劣・差分を作らない、別対象を混ぜない、出典表記を本文に出さない",
+    "supplement": "補足説明: source_onlyは資料外の補足を足さない。explainは補足を表示で区別し、資料より後に置く",
+    "presentation": "表示: 結論の位置、不要なまとめ"
+  },
+  "common": [
+    {
+      "id": "x-no-citation",
+      "category": "grounding",
+      "styles": [
+        "source_only",
+        "explain"
+      ],
+      "forbid": [
+        "e50-",
+        "boundary-",
+        "chunk",
+        "出典[:：]",
+        "\\[\\d+\\]",
+        "p\\.\\s*1",
+        "合成教材",
+        "extra-",
+        "e[1-8]-"
+      ],
+      "severity": "major",
+      "text": "出典ID・資料名・ページ番号を本文に書かない"
+    },
+    {
+      "id": "x-source-only-no-supplement",
+      "category": "supplement",
+      "styles": [
+        "source_only"
+      ],
+      "flag": [
+        "補足",
+        "一般的に",
+        "一般に",
+        "通常は",
+        "背景として",
+        "たとえば"
+      ],
+      "severity": "major",
+      "text": "source_onlyでは資料外の定義・背景・たとえを足さない（出現時は人が確認）"
+    },
+    {
+      "id": "x-explain-label-first",
+      "category": "supplement",
+      "styles": [
+        "explain"
+      ],
+      "labelBeforeCue": {
+        "label": [
+          "補足",
+          "背景"
+        ],
+        "cue": [
+          "一般的に",
+          "一般に",
+          "通常は",
+          "ふつう",
+          "多くの場合",
+          "たとえば"
+        ]
+      },
+      "severity": "major",
+      "text": "explainで一般知識を使うなら、最初の一般説明より前に補足の表示を置く"
+    },
+    {
+      "id": "x-no-summary",
+      "category": "presentation",
+      "styles": [
+        "source_only",
+        "explain"
+      ],
+      "forbid": [
+        "(^|\\n)[#*\\s]*(まとめ|結論)[:：]?\\s*(\\n|$)"
+      ],
+      "severity": "minor",
+      "text": "末尾に同じ内容のまとめを足さない"
+    }
+  ],
+  "cases": {
+    "extra:e1-library-loan": {
+      "question": "合成市立図書館で2027年5月に登録した人の貸出期間は?",
+      "items": [
+        {
+          "id": "e1-period",
+          "category": "omission",
+          "all": [
+            "21日"
+          ],
+          "severity": "critical",
+          "text": "2027年5月登録の貸出期間は21日間と答える"
+        },
+        {
+          "id": "e1-rule",
+          "category": "grounding",
+          "any": [
+            "4月1日以降",
+            "2027年4月1日"
+          ],
+          "severity": "major",
+          "text": "新規定が2027年4月1日以降の新規登録に適用されることを根拠として示す"
+        },
+        {
+          "id": "e1-basis",
+          "category": "omission",
+          "any": [
+            "登録日[^。]{0,8}(判定|基準|決ま|決め|による|で適用)",
+            "(判定|基準)[^。]{0,10}登録日",
+            "貸出日ではな"
+          ],
+          "severity": "major",
+          "text": "貸出日ではなく登録日で判定する条件を残す"
+        },
+        {
+          "id": "e1-no-old",
+          "category": "grounding",
+          "forbid": [
+            "5月[^。]{0,25}14日(間)?(です|となります|になります)",
+            "貸出期間は14日間(です|となります|になります)"
+          ],
+          "flag": [
+            "14日"
+          ],
+          "severity": "critical",
+          "text": "旧規定の14日間をこの人の答えにしない(旧規定への言及は人が確認)"
+        },
+        {
+          "id": "e1-no-invented",
+          "category": "grounding",
+          "forbid": [
+            "\\d+冊",
+            "延長[^。]{0,8}(でき|可能)"
+          ],
+          "severity": "major",
+          "text": "資料にない貸出冊数・延長などを作らない"
+        }
+      ]
+    },
+    "extra:e2-book-price": {
+      "question": "合成参考書Aと合成参考書Bは、どちらが1ページあたり安いですか。",
+      "items": [
+        {
+          "id": "e2-a-values",
+          "category": "omission",
+          "all": [
+            "240ページ",
+            "1800円"
+          ],
+          "severity": "major",
+          "text": "Aは240ページ・1800円"
+        },
+        {
+          "id": "e2-b-pages",
+          "category": "omission",
+          "all": [
+            "300ページ"
+          ],
+          "severity": "major",
+          "text": "Bは300ページ"
+        },
+        {
+          "id": "e2-b-price-unknown",
+          "category": "omission",
+          "any": [
+            "B[^。]{0,25}(価格|値段)[^。]{0,25}(記載|確認|不明|わかりません|分かりません|わからない|分からない|わからず|分からず|ない|ありません|載って)",
+            "(価格|値段)[^。]{0,20}(記載|確認|不明|載って)[^。]{0,15}B"
+          ],
+          "severity": "critical",
+          "text": "Bの価格は資料で確認できないと述べる"
+        },
+        {
+          "id": "e2-cannot",
+          "category": "omission",
+          "any": [
+            "(比較|判断|計算|算出|確定|決め|言え|結論)[^。]{0,8}(でき|られ|出せ|いえ)(ない|ません|ず)",
+            "(比較|判断|計算|算出)は?(不可能|困難)"
+          ],
+          "severity": "critical",
+          "text": "1ページあたりの安さは比較・判断できないと答える"
+        },
+        {
+          "id": "e2-no-invented-price",
+          "category": "grounding",
+          "forbid": [
+            "B[^。]{0,12}(価格|値段)[^。]{0,6}(は|が)?\\d+円",
+            "B[^。]{0,20}\\d+(\\.\\d+)?円/(ページ|頁)"
+          ],
+          "severity": "critical",
+          "text": "Bの価格や1ページあたりの値を作らない"
+        },
+        {
+          "id": "e2-no-winner",
+          "category": "grounding",
+          "forbid": [
+            "(A|B)(の方|のほう)が[^。]{0,15}(安い|割安|お得)(です|でしょう|になります|となります|ようです)"
+          ],
+          "severity": "critical",
+          "text": "どちらかを安いと断定しない"
+        }
+      ]
+    },
+    "extra:e3-pool-temp": {
+      "question": "合成プールSと合成プールTは、どちらの水温が高いですか。入場料も教えてください。",
+      "items": [
+        {
+          "id": "e3-values",
+          "category": "omission",
+          "all": [
+            "27(度|°C)",
+            "29(度|°C)"
+          ],
+          "severity": "critical",
+          "text": "S 27度・T 29度"
+        },
+        {
+          "id": "e3-conditions",
+          "category": "omission",
+          "all": [
+            "朝",
+            "夕方"
+          ],
+          "severity": "critical",
+          "text": "Sは朝、Tは夕方の測定"
+        },
+        {
+          "id": "e3-cannot",
+          "category": "omission",
+          "any": [
+            "(比較|判断|計算|算出|確定|決め|言え|結論)[^。]{0,8}(でき|られ|出せ|いえ)(ない|ません|ず)",
+            "(比較|判断|計算|算出)は?(不可能|困難)"
+          ],
+          "severity": "critical",
+          "text": "測定条件が違うため水温の高低は比較できないと答える"
+        },
+        {
+          "id": "e3-fee-same",
+          "category": "omission",
+          "any": [
+            "どちらも400円",
+            "同じ400円",
+            "ともに400円",
+            "いずれも400円",
+            "両方(とも)?400円",
+            "(S|T)も(S|T)も400円",
+            "400円[^。]{0,10}(同じ|同額|共通)",
+            "(入場料|料金)[^。]{0,15}(同じ|同額|共通|差はな|差がな)",
+            "(入場料|料金)[^。]{0,15}(どちらも|ともに|いずれも|両方)[^。]{0,6}400円"
+          ],
+          "severity": "major",
+          "text": "入場料は両方400円で同じ"
+        },
+        {
+          "id": "e3-conclusion-first",
+          "category": "presentation",
+          "before": {
+            "first": "e3-cannot",
+            "then": [
+              "27(度|°C)",
+              "29(度|°C)"
+            ]
+          },
+          "severity": "minor",
+          "text": "比較できない結論を、水温の値の列挙より先に示す"
+        },
+        {
+          "id": "e3-no-winner",
+          "category": "grounding",
+          "forbid": [
+            "(2度|2°C)(高|温か|暖か)",
+            "(S|T)(の方|のほう)が[^。]{0,15}(温かい|暖かい|水温が高い|高い)(です|でしょう|と言えます|ようです|と考えられます)"
+          ],
+          "flag": [
+            "差は(2度|2°C)",
+            "(2度|2°C)の差"
+          ],
+          "severity": "critical",
+          "text": "水温の高低・差を確定しない(差への言及は人が確認)"
+        }
+      ]
+    },
+    "extra:e4-bike-metric": {
+      "question": "合成シェアサイクルを15分借りるといくらですか。「1分あたり料金」の数字は何を表しますか。",
+      "items": [
+        {
+          "id": "e4-unit-value",
+          "category": "omission",
+          "any": [
+            "12円/分",
+            "12円/min",
+            "1分(あたり|につき)?(の)?(料金)?(は|が)?12円",
+            "12円毎分",
+            "分あたり12円"
+          ],
+          "severity": "critical",
+          "text": "1分あたり12円を単位付きで答える"
+        },
+        {
+          "id": "e4-15min",
+          "category": "omission",
+          "all": [
+            "180円"
+          ],
+          "severity": "critical",
+          "text": "15分で180円(時間にかかる分)"
+        },
+        {
+          "id": "e4-excludes-base",
+          "category": "omission",
+          "any": [
+            "基本料金[^。]{0,15}(含まない|含まれない|含まれていない|含まれません|含みません|含んでいない|含まず|別|別途)"
+          ],
+          "severity": "critical",
+          "text": "基本料金を含まない・別にかかると答える"
+        },
+        {
+          "id": "e4-base-unknown",
+          "category": "omission",
+          "any": [
+            "(基本料金|金額|額)[^。]{0,30}(記載がない|記載がなく|記載されていない|記載はない|記載されておらず|記載がありません|記載されていません|確認できない|確認できません|不明|わかりません|分かりません|わからない|分からない|載っていない|載っていません|資料にありません|資料にない|未定)",
+            "(合計|総額|総支払|全体)[^。]{0,30}(確定|算出|計算|分かり|わかり|判断|断定)[^。]{0,8}(でき|ません|ない)"
+          ],
+          "severity": "major",
+          "text": "基本料金の金額は資料にない(総額は確定できない)と述べる"
+        },
+        {
+          "id": "e4-meaning",
+          "category": "omission",
+          "any": [
+            "従量",
+            "(借りた|借りる|利用|使用)[^。]{0,4}時間[^。]{0,12}(応じ|比例|あたり|ごと|分)",
+            "時間(に|が)?[^。]{0,4}応じ",
+            "1分(ごと|ずつ)"
+          ],
+          "severity": "major",
+          "text": "借りた時間に応じてかかる金額(従量分)という意味を述べる"
+        },
+        {
+          "id": "e4-no-invented-base",
+          "category": "grounding",
+          "forbid": [
+            "基本料金[^。]{0,8}(は|が|として)?\\d+円"
+          ],
+          "severity": "critical",
+          "text": "基本料金の金額を作らない"
+        }
+      ]
+    },
+    "extra:e5-member-discount": {
+      "question": "合成スポーツクラブで、大人3人が利用期間6か月で入会するときの割引率は?",
+      "items": [
+        {
+          "id": "e5-total",
+          "category": "omission",
+          "any": [
+            "(?<!\\d)13(%|パーセント)"
+          ],
+          "severity": "critical",
+          "text": "合計の割引率13%を答える"
+        },
+        {
+          "id": "e5-adult",
+          "category": "omission",
+          "any": [
+            "(大人|基本)[^。]{0,10}(?<!\\d)5(%|パーセント)"
+          ],
+          "severity": "major",
+          "text": "大人の基本割引5%"
+        },
+        {
+          "id": "e5-people",
+          "category": "omission",
+          "any": [
+            "(3人|人数)[^。]{0,15}(?<!\\d)5(%|パーセント)"
+          ],
+          "severity": "major",
+          "text": "3人の人数割引5%(3〜5人の区分)"
+        },
+        {
+          "id": "e5-period",
+          "category": "omission",
+          "any": [
+            "(6(か|ヵ|ヶ|カ)月|期間)[^。]{0,15}(?<!\\d)3(%|パーセント)"
+          ],
+          "severity": "major",
+          "text": "6か月の期間割引3%(4〜6か月の区分)"
+        },
+        {
+          "id": "e5-sum",
+          "category": "presentation",
+          "any": [
+            "(合計|合算|加算|足し|足す|合わせ)",
+            "5%\\+5%\\+3%",
+            "5\\+5\\+3"
+          ],
+          "severity": "minor",
+          "text": "基本・人数・期間を合計する計算を示す"
+        },
+        {
+          "id": "e5-no-wrong-total",
+          "category": "grounding",
+          "forbid": [
+            "(割引率|割引|合計|適用)[^。]{0,8}(は|が|で)?(?<!\\d)(8|16|19|21)(%|パーセント)(です|となります|になります|適用)"
+          ],
+          "severity": "critical",
+          "text": "隣の区分などによる誤った合計(8%・16%・19%・21%)を答えにしない"
+        }
+      ]
+    },
+    "extra:e6-club-pages": {
+      "question": "合成吹奏楽部の活動日と部費を教えて。",
+      "items": [
+        {
+          "id": "e6-days",
+          "category": "omission",
+          "all": [
+            "火曜",
+            "木曜"
+          ],
+          "severity": "critical",
+          "text": "活動日は毎週火曜日と木曜日"
+        },
+        {
+          "id": "e6-saturday",
+          "category": "omission",
+          "any": [
+            "土曜[^。]{0,15}月に?2回",
+            "月に?2回[^。]{0,10}土曜"
+          ],
+          "severity": "major",
+          "text": "土曜日は月に2回"
+        },
+        {
+          "id": "e6-fee",
+          "category": "omission",
+          "any": [
+            "月額1500円",
+            "月1500円",
+            "毎月1500円",
+            "1(か|ヵ|ヶ|カ)月1500円",
+            "1500円[^。]{0,6}(月額|毎月|月ごと|1(か|ヵ|ヶ|カ)月|ひと月)",
+            "月額[^。]{0,6}1500円"
+          ],
+          "severity": "critical",
+          "text": "部費は月額1500円"
+        },
+        {
+          "id": "e6-no-mix",
+          "category": "grounding",
+          "forbid": [
+            "部費[^。]{0,8}月に?2回(集|徴収|払|支払)",
+            "合宿[^。]{0,8}月に?2回",
+            "(活動|土曜)[^。]{0,12}年に?2回",
+            "(土曜|活動日)[^。]{0,6}(は|が)?1500円"
+          ],
+          "severity": "critical",
+          "text": "別ページの「月2回」(活動)と「年に2回」(合宿)、活動日と部費を混ぜない"
+        },
+        {
+          "id": "e6-no-invented-amount",
+          "category": "grounding",
+          "forbid": [
+            "(?<!\\d)(?!1500円)\\d+円"
+          ],
+          "severity": "major",
+          "text": "資料にない金額(1500円以外)を作らない"
+        }
+      ]
+    },
+    "extra:e7-cafeteria-none": {
+      "question": "合成食堂の定休日の日替わりメニューは何ですか。",
+      "items": [
+        {
+          "id": "e7-no-info",
+          "category": "omission",
+          "any": [
+            "(日替わり|メニュー)[^。]{0,30}(記載|載って|含まれ|確認|わかりません|分かりません|不明|ありません|ない)",
+            "(記載|載って|確認|わかり|分かり)[^。]{0,15}(日替わり|メニュー)"
+          ],
+          "severity": "critical",
+          "text": "日替わりメニューは資料に記載がないと答える"
+        },
+        {
+          "id": "e7-no-menu",
+          "category": "grounding",
+          "forbid": [
+            "(カレー|ラーメン|うどん|そば|カツ|唐揚|からあげ|ハンバーグ|パスタ|サラダ|焼き魚|魚|丼|オムライス)"
+          ],
+          "severity": "critical",
+          "text": "メニュー名を作らない"
+        },
+        {
+          "id": "e7-no-speculation",
+          "category": "grounding",
+          "flag": [
+            "おそらく",
+            "たぶん",
+            "多分",
+            "思われ",
+            "考えられ",
+            "かもしれ",
+            "推測",
+            "営業しない[^。]{0,15}(メニュー|提供)[^。]{0,10}(ない|ありません|なし)"
+          ],
+          "severity": "major",
+          "text": "推測で補わない(出現時は人が確認)"
+        },
+        {
+          "id": "e7-closed-days",
+          "category": "omission",
+          "any": [
+            "日曜",
+            "祝日"
+          ],
+          "severity": "minor",
+          "text": "資料にある定休日(日曜日と祝日)に触れる"
+        },
+        {
+          "id": "e7-conclusion-first",
+          "category": "presentation",
+          "before": {
+            "first": "e7-no-info",
+            "then": [
+              "11時",
+              "13時",
+              "14時"
+            ]
+          },
+          "severity": "minor",
+          "text": "記載がないことを、営業時間などの説明より先に示す"
+        }
+      ]
+    },
+    "extra:e8-breakeven-explain": {
+      "question": "合成雑貨店の損益分岐点はいくらですか。その言葉の意味も教えてください。",
+      "items": [
+        {
+          "id": "e8-sales",
+          "category": "omission",
+          "any": [
+            "60万円"
+          ],
+          "severity": "major",
+          "text": "売上60万円"
+        },
+        {
+          "id": "e8-cost",
+          "category": "omission",
+          "any": [
+            "45万円"
+          ],
+          "severity": "major",
+          "text": "費用45万円"
+        },
+        {
+          "id": "e8-bep-unknown",
+          "category": "omission",
+          "any": [
+            "損益分岐点[^。]{0,40}(記載|算出|計算|求め|確認|確定|特定)[^。]{0,12}(できません|できない|られません|られない|ありません|ない|いません|不可能)",
+            "損益分岐点[^。]{0,40}(わかりません|分かりません|わからない|分からない|不明|資料にありません|記載がありません|記載がない)",
+            "(固定費|変動費|内訳)[^。]{0,30}(必要|ありません|記載)"
+          ],
+          "severity": "critical",
+          "text": "損益分岐点の金額は資料(固定費・変動費の内訳がない)からは出せないと答える"
+        },
+        {
+          "id": "e8-no-invented",
+          "category": "grounding",
+          "forbid": [
+            "損益分岐点(は|が|の売上(高)?は)\\d+万円",
+            "(固定費|変動費)(は|が)\\d+万円"
+          ],
+          "severity": "critical",
+          "text": "損益分岐点の金額や固定費・変動費を作らない"
+        },
+        {
+          "id": "e8-definition",
+          "category": "omission",
+          "any": [
+            "(売上|収入)[^。]{0,15}(費用|コスト)[^。]{0,15}(等し|同じ|一致|イコール|ちょうど|釣り合|同額)",
+            "利益[^。]{0,6}(?<!\\d)(0|ゼロ)(?!\\d)",
+            "(赤字|黒字)[^。]{0,10}(分かれ|境|切り替わ)"
+          ],
+          "severity": "major",
+          "text": "損益分岐点の意味(売上と費用が等しく利益が0になる点)を答える",
+          "styles": [
+            "explain"
+          ]
+        },
+        {
+          "id": "e8-label",
+          "category": "supplement",
+          "any": [
+            "補足",
+            "背景"
+          ],
+          "severity": "major",
+          "text": "資料にない言葉の意味に「補足」「背景」の表示を付ける",
+          "styles": [
+            "explain"
+          ]
+        },
+        {
+          "id": "e8-supplement-after",
+          "category": "supplement",
+          "before": {
+            "first": "e8-sales",
+            "then": [
+              "補足",
+              "背景",
+              "一般的に",
+              "一般に",
+              "通常は"
+            ]
+          },
+          "severity": "major",
+          "text": "補足は、資料の事実(売上60万円)より後に置く",
+          "styles": [
+            "explain"
+          ]
+        }
+      ]
+    }
+  }
+}

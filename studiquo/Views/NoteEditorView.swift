@@ -302,9 +302,9 @@ struct NoteEditorView: View {
     /// alternative; the two are never shown together.
     @State private var aiSwapPane: ActivePane?
     /// In a two-pane layout, opening a chat must not silently evict the pane
-    /// the student was using. Keep the choice explicit for both AI and
-    /// friend/group chats.
-    @State private var showsAIChatPanePicker = false
+    /// the student was using. The chosen tool waits until the student taps
+    /// the pane it should replace, just like a tab-bar selection does.
+    @State private var pendingAIChatPaneSwap = false
     @State private var pendingChatPaneTarget: NoteChatTarget?
     /// Last floating-panel frame as fractions of the editor, so the panel
     /// reopens where it was left, also after the editor is closed and reopened.
@@ -331,6 +331,10 @@ struct NoteEditorView: View {
     @State private var isShowingTextAlert = false
     @State private var textToInsert = ""
     @State private var showsImagePicker = false
+    @State private var showsPhotoPreview = false
+    @State private var pickedPhotoData: Data?
+    @State private var wantsPhotoPaste = false
+    @State private var wantsPhotoReselect = false
     @State private var showsBackgroundImagePicker = false
     /// The photo library temporarily covers the pane opposite the note being
     /// edited. The pane's original content stays in state underneath it, so
@@ -568,13 +572,6 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
-        .modifier(PaneChoiceDialogModifier(
-            showsAIChatPicker: $showsAIChatPanePicker,
-            pendingChatTarget: $pendingChatPaneTarget,
-            titleForPane: splitPaneTitle,
-            showAIChat: swapInAIChat(in:),
-            showChat: openChat(_:in:)
-        ))
         .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
@@ -610,12 +607,22 @@ struct NoteEditorView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsImagePicker) {
-            PhotoPasteSheet { data in
+        // Picking and previewing are two separate sheets. They used to be one
+        // sheet whose content swapped from the library to the preview; the
+        // library sizes the sheet as a small card, so the preview's buttons
+        // sat outside it and a tap on 貼り付ける just dismissed the sheet.
+        .sheet(isPresented: $showsImagePicker, onDismiss: presentPhotoPreviewIfPicked) {
+            PhotoPickerSheet { data in
+                pickedPhotoData = data
                 showsImagePicker = false
-                guard let data else { return }
-                Task { await addImageElement(from: data) }
             }
+        }
+        .sheet(isPresented: $showsPhotoPreview, onDismiss: finishPhotoPreview) {
+            PhotoPastePreview(
+                data: pickedPhotoData,
+                onReselect: { wantsPhotoReselect = true; showsPhotoPreview = false },
+                onPaste: { wantsPhotoPaste = true; showsPhotoPreview = false }
+            )
         }
         .sheet(isPresented: $showsBackgroundImagePicker) {
             PhotoPickerSheet { data in
@@ -1335,7 +1342,7 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private func panePickOverlay(for pane: ActivePane) -> some View {
-        if let target = pendingPaneTarget {
+        if pendingPaneTarget != nil || pendingAIChatPaneSwap || pendingChatPaneTarget != nil {
             ZStack {
                 Color.black.opacity(0.5)
                 VStack(spacing: 10) {
@@ -1345,7 +1352,7 @@ struct NoteEditorView: View {
                     Text(splitPaneTitle(pane).replacingOccurrences(of: "に表示", with: "のペイン"))
                         .font(.caption)
                         .opacity(0.8)
-                    Button("キャンセル") { pendingPaneTarget = nil }
+                    Button("キャンセル") { clearPendingPaneSelection() }
                         .buttonStyle(.bordered)
                         .tint(.white)
                         .padding(.top, 6)
@@ -1354,8 +1361,16 @@ struct NoteEditorView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                pendingPaneTarget = nil
-                applyPaneTarget(target, to: pane)
+                if let target = pendingPaneTarget {
+                    pendingPaneTarget = nil
+                    applyPaneTarget(target, to: pane)
+                } else if pendingAIChatPaneSwap {
+                    pendingAIChatPaneSwap = false
+                    swapInAIChat(in: pane)
+                } else if let target = pendingChatPaneTarget {
+                    pendingChatPaneTarget = nil
+                    openChat(target, in: pane)
+                }
                 activePane = pane
             }
             .accessibilityIdentifier("pane-pick-\(pane == .primary ? "primary" : "secondary")")
@@ -1391,7 +1406,13 @@ struct NoteEditorView: View {
     /// button), so no floating copy is drawn over them.
     private func paneEmbedsReplaceButton(_ pane: ActivePane) -> Bool {
         switch paneBodyKind(pane) {
-        case .photoStudy, .material, .web, .flashcard: return true
+        case .photoStudy, .material, .web, .flashcard, .aiSwap:
+            return true
+        case .aiChat:
+            return splitMode != .single
+        case .note:
+            let notebook = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook
+            return pane == .secondary || splitMode != .single || notebook?.containsPDF == true
         default: return false
         }
     }
@@ -1406,17 +1427,15 @@ struct NoteEditorView: View {
         }
     }
 
-    /// Notes with no title bar put the button as far from the right edge as
-    /// the page-list toggle is from the left one. With a title bar it sits
-    /// in the bar, beside the PDF summary button when there is one.
+    /// Notes without a title bar keep their switch button over the canvas.
+    /// Notes with a title bar embed it in that bar instead.
     private func paneReplaceInsets(for pane: ActivePane) -> (top: CGFloat, trailing: CGFloat) {
         switch paneBodyKind(pane) {
-        case .note:
-            let shown = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook
-            let hasTitleBar = pane == .secondary || splitMode != .single || shown?.containsPDF == true
-            guard hasTitleBar else { return (8, 8) }
-            return (3, shown?.containsPDF == true ? 12 + 32 + 6 : 12)
-        case .empty:
+        case .note, .empty:
+            return (8, 8)
+        case .friend:
+            // Friend chat has no visible pane header in the note editor, so
+            // align its floating switch directly with the pane's trailing edge.
             return (8, 8)
         default:
             // Sits in the 38pt title bar, left of the PDF summary (sparkles)
@@ -1582,7 +1601,8 @@ struct NoteEditorView: View {
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
                 onOpenAttachment: { openAIChatAttachment($0, target: pane == .primary ? .secondary : .primary) },
-                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) }
+                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) },
+                onReplacePaneMaterial: { paneReplaceTarget = pane }
             )
         }
         .accessibilityElement(children: .contain)
@@ -1608,7 +1628,8 @@ struct NoteEditorView: View {
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
                     onOpenAttachment: { openAIChatAttachment($0, target: .primary) },
-                    onPaneDrop: { handlePaneDrop($0, target: .primary) }
+                    onPaneDrop: { handlePaneDrop($0, target: .primary) },
+                    onReplacePaneMaterial: splitMode == .single ? nil : { paneReplaceTarget = .primary }
                 )
             } else if let primaryFriend = primaryFriendChat {
                 FriendChatView(
@@ -1709,7 +1730,8 @@ struct NoteEditorView: View {
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
                 onOpenAttachment: { openAIChatAttachment($0, target: .secondary) },
-                onPaneDrop: { handlePaneDrop($0, target: .secondary) }
+                onPaneDrop: { handlePaneDrop($0, target: .secondary) },
+                onReplacePaneMaterial: { paneReplaceTarget = .secondary }
             )
         } else if let secondaryFriend = secondaryFriendChat {
             FriendChatView(
@@ -1763,6 +1785,7 @@ struct NoteEditorView: View {
                                 notebook: secondaryNotebook,
                                 currentPageIndex: $secondaryPageIndex,
                                 showsTitle: true,
+                                headerAccessory: paneHeaderReplaceButton(for: .secondary),
                                 pageListEdge: splitMode == .horizontal ? .trailing : .leading,
                                 onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
                                 onSummarizeCurrentPDFPage: {
@@ -2256,13 +2279,13 @@ struct NoteEditorView: View {
                         Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
                     }
                     Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && activePaneShowsNote) }
-                .disabled(!activePaneShowsNote)
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && canInsertIntoNote) }
+                .disabled(!canInsertIntoNote)
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
-                    .disabled(!activePaneShowsNote)
+                    .disabled(!canInsertIntoNote)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
-                    .disabled(!activePaneShowsNote)
+                    .disabled(!canInsertIntoNote)
                 if Self.showsDarkPageToggle {
                     toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                         .disabled(!activePaneShowsNote)
@@ -2563,6 +2586,8 @@ struct NoteEditorView: View {
         if splitMode != .single,
            primaryChatTarget != target,
            secondaryChatTarget != target {
+            pendingPaneTarget = nil
+            pendingAIChatPaneSwap = false
             pendingChatPaneTarget = target
             return
         }
@@ -2663,11 +2688,12 @@ struct NoteEditorView: View {
             presentTemporaryAIChat()
             return
         }
-        showsAIChatPanePicker = true
+        pendingPaneTarget = nil
+        pendingChatPaneTarget = nil
+        pendingAIChatPaneSwap = true
     }
 
     private func swapInAIChat(in pane: ActivePane) {
-        showsAIChatPanePicker = false
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
@@ -2773,7 +2799,7 @@ struct NoteEditorView: View {
         layout.secondaryMaterial = restorable(layout.secondaryMaterial)
         lastPaneLayout = layout
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         pendingSplitMode = nil
         showsTemporaryAIChat = false
         // One transaction without animation, so the panes swap in a single frame.
@@ -3220,7 +3246,7 @@ struct NoteEditorView: View {
     private func insertAIResponseOnPage(_ text: String) {
         // A page's text box shows plain text: no LaTeX, no Markdown markers.
         let value = MathTextFormatter.plainText(from: text).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
+        guard !value.isEmpty, let page = insertionPage else { return }
         let lineCount = max(1, value.components(separatedBy: .newlines).count)
         let estimatedRows = min(18, max(6, lineCount + value.count / 44))
         let element = PageElement(
@@ -3317,6 +3343,8 @@ struct NoteEditorView: View {
         dismissPhotoStudy(restorePreviousLayout: false)
         // Split: the user chooses the pane by tapping it.
         if splitMode != .single {
+            pendingAIChatPaneSwap = false
+            pendingChatPaneTarget = nil
             pendingPaneTarget = target
             return
         }
@@ -3711,7 +3739,7 @@ struct NoteEditorView: View {
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
-        pendingPaneTarget = nil
+        clearPendingPaneSelection()
         // A closed split shows no pane, so a file opened in place must not stay
         // open behind it.
         discardExternalFile(in: .primary)
@@ -3730,6 +3758,12 @@ struct NoteEditorView: View {
         activePane = .primary
     }
 
+    private func clearPendingPaneSelection() {
+        pendingPaneTarget = nil
+        pendingAIChatPaneSwap = false
+        pendingChatPaneTarget = nil
+    }
+
     private var displayedPrimaryNotebook: Notebook {
         primaryOverrideNotebook ?? notebook
     }
@@ -3739,6 +3773,9 @@ struct NoteEditorView: View {
             notebook: displayedPrimaryNotebook,
             currentPageIndex: $primaryPageIndex,
             showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
+            headerAccessory: splitMode != .single || displayedPrimaryNotebook.containsPDF
+                ? paneHeaderReplaceButton(for: .primary)
+                : nil,
             usesDarkPageDisplay: usesDarkPageDisplay,
             pageListEdge: .leading,
             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
@@ -3847,21 +3884,17 @@ struct NoteEditorView: View {
         }
     }
 
-    private var activeNotebook: Notebook {
-        activePane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    /// The note that page-level tools should operate on. When a chat is the
+    /// selected pane, the other pane remains the usable note target instead
+    /// of making the whole toolbar unavailable.
+    private var noteToolPane: ActivePane? {
+        if paneShowsNote(activePane) { return activePane }
+        let otherPane: ActivePane = activePane == .primary ? .secondary : .primary
+        return paneShowsNote(otherPane) ? otherPane : nil
     }
 
-    /// True when the pane the user last touched is a flashcard deck, which
-    /// has no pages for the page-level tools to act on.
-    private var activePaneShowsFlashcards: Bool {
-        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
-    }
-
-    /// True when the pane the user last touched is a note or PDF. The page
-    /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
-    /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
-    private var activePaneShowsNote: Bool {
-        if activePane == .secondary {
+    private func paneShowsNote(_ pane: ActivePane) -> Bool {
+        if pane == .secondary {
             return splitMode != .single
                 && secondaryNotebook != nil
                 && secondaryFlashcardDeck == nil
@@ -3879,20 +3912,57 @@ struct NoteEditorView: View {
             && aiSwapPane != .primary
     }
 
+    /// The pane the insertion tools (photo, text, shapes...) act on: the only
+    /// note when the other pane is not one, else the one touched last.
+    private var insertionPane: ActivePane? {
+        let target = NoteInsertionPolicy.targetPane(
+            lastActive: activePane == .secondary ? .secondary : .primary,
+            primaryShowsNote: paneShowsNote(.primary),
+            secondaryShowsNote: paneShowsNote(.secondary)
+        )
+        return target.map { $0 == .secondary ? ActivePane.secondary : .primary }
+    }
+
+    private var canInsertIntoNote: Bool { insertionPage != nil }
+
+    private var insertionPage: NotePage? {
+        guard let pane = insertionPane else { return nil }
+        let notebook = pane == .secondary ? secondaryNotebook : displayedPrimaryNotebook
+        let index = pane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let pages = notebook?.sortedPages ?? []
+        return pages.indices.contains(index) ? pages[index] : nil
+    }
+
+    private var activeNotebook: Notebook {
+        noteToolPane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    }
+
+    /// True when the pane the user last touched is a flashcard deck, which
+    /// has no pages for the page-level tools to act on.
+    private var activePaneShowsFlashcards: Bool {
+        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
+    }
+
+    /// Page tools remain usable whenever either pane contains a note. If the
+    /// selected pane is a chat, they use the note in the other pane.
+    private var activePaneShowsNote: Bool {
+        noteToolPane != nil
+    }
+
     private var activePageIndexBinding: Binding<Int> {
-        activePane == .secondary ? $secondaryPageIndex : $primaryPageIndex
+        noteToolPane == .secondary ? $secondaryPageIndex : $primaryPageIndex
     }
 
     private var activePage: NotePage? {
         let pages = activeNotebook.sortedPages
-        let index = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let index = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         return pages.indices.contains(index) ? pages[index] : nil
     }
 
     private func deleteCurrentPage() {
         let target = activeNotebook
         guard target.sortedPages.count > 1, let page = activePage else { return }
-        let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let deletedIndex = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
         recordPageRemoval(page, in: target)
         target.pages?.removeAll { $0.persistentModelID == pageID }
@@ -3903,7 +3973,7 @@ struct NoteEditorView: View {
         target.refreshLibraryMetadata()
         target.updatedAt = .now
         let nextIndex = min(deletedIndex, target.sortedPages.count - 1)
-        if activePane == .secondary { secondaryPageIndex = nextIndex }
+        if noteToolPane == .secondary { secondaryPageIndex = nextIndex }
         else { primaryPageIndex = nextIndex }
         try? modelContext.save()
     }
@@ -4076,22 +4146,14 @@ struct NoteEditorView: View {
     }
 
     private func applyTemplate(_ template: PageTemplate) {
-        let pages = notebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex), pages[primaryPageIndex].backgroundImageData == nil else { return }
-        pages[primaryPageIndex].pageTemplate = template
-        notebook.updatedAt = .now
+        guard let page = currentPrimaryPage, page.backgroundImageData == nil else { return }
+        page.pageTemplate = template
+        activeNotebook.updatedAt = .now
     }
 
     private var currentPrimaryPage: NotePage? {
-        // A deck in the primary pane has no pages; the tools act on the note
-        // in the other pane instead.
-        if primaryFlashcardDeck != nil {
-            let pages = secondaryNotebook?.sortedPages ?? []
-            return pages.indices.contains(secondaryPageIndex) ? pages[secondaryPageIndex] : nil
-        }
-        let pages = displayedPrimaryNotebook.sortedPages
-        guard pages.indices.contains(primaryPageIndex) else { return nil }
-        return pages[primaryPageIndex]
+        guard noteToolPane != nil else { return nil }
+        return activePage
     }
 
     /// Which page undo/redo act on. Only the canvas that was actually drawn
@@ -4153,7 +4215,7 @@ struct NoteEditorView: View {
     }
 
     private func addTextElement() {
-        guard !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         let value = textToInsert.trimmingCharacters(in: .whitespacesAndNewlines)
         let element = PageElement(kind: .text, text: value, width: 0.42, height: 0.12, colorHex: selectedElementColorHex)
         element.layerIndex = nextLayerIndex(on: page)
@@ -4175,12 +4237,29 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
+    }
+
+    private func presentPhotoPreviewIfPicked() {
+        if pickedPhotoData != nil { showsPhotoPreview = true }
+    }
+
+    /// Runs once the preview sheet is fully gone, so a follow-up sheet or the
+    /// insertion never races its dismissal.
+    private func finishPhotoPreview() {
+        let data = pickedPhotoData
+        defer { wantsPhotoPaste = false; wantsPhotoReselect = false }
+        pickedPhotoData = nil
+        if wantsPhotoReselect {
+            showsImagePicker = true
+        } else if wantsPhotoPaste, let data {
+            Task { await addImageElement(from: data) }
+        }
     }
 
     @MainActor
     private func addImageElement(from data: Data) async {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         // Photo-library assets can be tens of megapixels. Persist a bounded
         // representation so every later render, sync, backup and duplicate
         // does not carry the original camera-sized payload.
@@ -4190,7 +4269,11 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
+        NotificationCenter.default.post(
+            name: .studiquoSelectPageElement,
+            object: element.persistentModelID
+        )
     }
 
     @MainActor
@@ -4204,7 +4287,7 @@ struct NoteEditorView: View {
             height: max(100, image.size.height)
         )
         page.notebook?.refreshLibraryMetadata()
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     /// Arms the shape tool for rectangle/ellipse/line: the shape itself
@@ -4212,7 +4295,7 @@ struct NoteEditorView: View {
     /// drags on the canvas with the pencil, sized to that drag. `studyTape`
     /// isn't a drawn shape, so it still gets placed immediately.
     private func addShapeElement(_ kind: PageElementKind) {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         if [.rectangle, .ellipse].contains(kind) {
             isReadOnlyMode = false
             pendingShapeKindRaw = kind.rawValue
@@ -4230,7 +4313,7 @@ struct NoteEditorView: View {
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
         if kind == .studyTape {
             NotificationCenter.default.post(
                 name: .studiquoSelectPageElement,
@@ -4240,14 +4323,14 @@ struct NoteEditorView: View {
     }
 
     private func addPageLink(to pageIndex: Int, title: String) {
-        guard let page = currentPrimaryPage else { return }
+        guard let page = insertionPage else { return }
         let label = title.isEmpty ? "ページ \(pageIndex + 1)へ" : title
         let element = PageElement(kind: .pageLink, text: "\(pageIndex)|\(label)", width: 0.38, height: 0.08, colorHex: "#1565C0")
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
-        notebook.updatedAt = .now
+        page.notebook?.updatedAt = .now
     }
 
     private func nextLayerIndex(on page: NotePage) -> Double {
@@ -4407,8 +4490,22 @@ private struct PhotoPickerSheet: UIViewControllerRepresentable {
                 onPick(nil)
                 return
             }
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                DispatchQueue.main.async { self.onPick(data) }
+            // Ask for the asset's own registered image type (HEIC, JPEG, PNG)
+            // and fall back to a decoded UIImage: the generic public.image
+            // type can come back empty, which used to close the sheet
+            // without inserting anything.
+            let typeIdentifier = provider.registeredTypeIdentifiers.first {
+                UTType($0)?.conforms(to: .image) == true
+            } ?? UTType.image.identifier
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+                if let data, !data.isEmpty {
+                    DispatchQueue.main.async { self.onPick(data) }
+                    return
+                }
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    let fallback = (object as? UIImage).flatMap { $0.jpegData(compressionQuality: 0.92) }
+                    DispatchQueue.main.async { self.onPick(fallback) }
+                }
             }
         }
     }
@@ -4434,37 +4531,38 @@ private struct PaneReplaceButton: View {
     }
 }
 
-/// Photo tool flow: picking a photo only previews it; it reaches the note
-/// when the user taps 貼り付ける. "選び直す" returns to the library.
-private struct PhotoPasteSheet: View {
-    /// Called with the image data to paste, or nil if the user cancelled.
-    let onFinish: (Data?) -> Void
-    @State private var pickedData: Data?
+/// Photo tool flow, second step: picking a photo only previews it; it reaches
+/// the note when the user taps 貼り付ける. "選び直す" returns to the library.
+private struct PhotoPastePreview: View {
+    let data: Data?
+    let onReselect: () -> Void
+    let onPaste: () -> Void
 
     var body: some View {
-        if let pickedData, let image = UIImage(data: pickedData) {
-            NavigationStack {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .navigationTitle("この写真を貼り付けますか?")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("選び直す") { self.pickedData = nil }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("貼り付ける") { onFinish(pickedData) }
-                                .fontWeight(.semibold)
-                                .accessibilityIdentifier("note-photo-paste-button")
-                        }
-                    }
+        NavigationStack {
+            Group {
+                if let data, let image = UIImage(data: data) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding()
+                } else {
+                    ContentUnavailableView("写真を読み込めません", systemImage: "photo.badge.exclamationmark")
+                }
             }
-        } else {
-            PhotoPickerSheet { data in
-                if let data { pickedData = data } else { onFinish(nil) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("この写真を貼り付けますか?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("選び直す", action: onReselect)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("貼り付ける", action: onPaste)
+                        .fontWeight(.semibold)
+                        .disabled(data == nil)
+                        .accessibilityIdentifier("note-photo-paste-button")
+                }
             }
         }
     }
@@ -6210,6 +6308,9 @@ private struct NotebookPaneView: View {
     @Bindable var notebook: Notebook
     @Binding var currentPageIndex: Int
     var showsTitle = false
+    /// Material switcher shown within the title bar so it tracks the pane
+    /// when the page list changes the pane's width.
+    var headerAccessory: AnyView?
     var usesDarkPageDisplay = false
     /// Which side the page list opens from. `nil` hides the page list and its
     /// toggle (used by the read-only chat material preview).
@@ -6285,6 +6386,9 @@ private struct NotebookPaneView: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer()
+                    if let headerAccessory {
+                        headerAccessory
+                    }
                     if notebook.containsPDF {
                         Menu {
                             Button(action: onSummarizeCurrentPDFPage) {
@@ -8706,7 +8810,14 @@ private struct EditablePageElement: View {
     /// just flat image bytes, so unlike a lasso selection there's nothing
     /// to render/rasterize.
     private var dragPreviewImage: UIImage? {
-        displayedImage
+        if element.kind == .image { return displayedImage }
+        // Text, shapes, tape and links have no bitmap of their own, so the
+        // ghost is a snapshot of how they currently look.
+        let renderer = ImageRenderer(
+            content: elementContent.frame(width: elementSize.width, height: elementSize.height)
+        )
+        renderer.scale = displayScale
+        return renderer.uiImage
     }
 
     private var moveGesture: some Gesture {
@@ -8718,10 +8829,13 @@ private struct EditablePageElement: View {
                     moveSnapshot = PageElementSnapshot(element)
                 }
                 guard let origin = dragOrigin else { return }
-                // Only photos hand off to another page/pane — shapes already
-                // have the lasso for that, and every other kind (text, study
-                // tape, ...) keeps its purely local move.
-                if element.kind == .image, !pageGlobalFrameTracker.frame.contains(value.location) {
+                // Every inserted kind (photo, text, shape, tape, link) can be
+                // carried past this page's edge into the other page/pane.
+                // A page link stores a page number of its own notebook, so it
+                // stays put; and without a ghost image the element would just
+                // vanish, so it also stays when none can be made.
+                if element.kind != .pageLink, !pageGlobalFrameTracker.frame.contains(value.location),
+                   isDraggingAcrossBoundary || (dragPreviewImage != nil) {
                     if !isDraggingAcrossBoundary { cachedDragPreviewImage = dragPreviewImage }
                     isDraggingAcrossBoundary = true
                     NotificationCenter.default.post(
@@ -8974,28 +9088,39 @@ private struct PageSidebar: View {
     @State private var pageToRename: NotePage?
     @State private var pageName = ""
     @State private var jumpText = ""
+    @State private var showsJumpKeypad = false
     @State private var isSelectingPages = false
+    @State private var isReorderingPages = false
+    @State private var pageListEditMode: EditMode = .inactive
     @State private var selectedPageIDs: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("ページ").font(.headline)
-                Spacer()
-                TextField("番号", text: $jumpText)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 58)
-                    .onSubmit { jumpToPage() }
-                Button(action: jumpToPage) {
-                    Image(systemName: "arrow.right.circle")
+            HStack(spacing: 0) {
+                Button {
+                    showsJumpKeypad = true
+                } label: {
+                    Text(jumpText.isEmpty ? "番号" : jumpText)
+                        .foregroundStyle(jumpText.isEmpty ? .secondary : .primary)
+                        .frame(width: 58, height: 32)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("ページ番号")
+                .frame(maxWidth: .infinity)
                 Menu {
+                    Button {
+                        let startsReordering = !isReorderingPages
+                        isReorderingPages = startsReordering
+                        pageListEditMode = startsReordering ? .active : .inactive
+                    } label: {
+                        Label(isReorderingPages ? "並べ替えを終了" : "並べ替え", systemImage: "arrow.up.arrow.down")
+                    }
                     Button {
                         isSelectingPages.toggle()
                         if !isSelectingPages { selectedPageIDs.removeAll() }
                     } label: {
-                        Label(isSelectingPages ? "選択を終了" : "複数ページを選択", systemImage: "checkmark.circle")
+                        Label(isSelectingPages ? "複数選択を終了" : "複数選択", systemImage: "checkmark.circle")
                     }
                     if isSelectingPages {
                         Button(action: bookmarkSelectedPages) { Label("選択ページをブックマーク", systemImage: "bookmark") }
@@ -9015,12 +9140,23 @@ private struct PageSidebar: View {
                     }
                     .disabled(!canDeleteBookmarkedPages)
                 } label: {
-                    Image(systemName: "checklist")
+                    Text("編集")
                 }
-                EditButton()
+                .frame(maxWidth: .infinity)
                 Button(action: onRequestAddPage) { Image(systemName: "plus") }
+                    .frame(maxWidth: .infinity)
             }
             .padding()
+
+            if showsJumpKeypad {
+                pageJumpKeypad
+                    .frame(maxWidth: .infinity)
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             List {
                 ForEach(Array(notebook.sortedPages.enumerated()), id: \.element.persistentModelID) { index, page in
@@ -9078,6 +9214,7 @@ private struct PageSidebar: View {
             }
                 .themeScreenBackground()
             .listStyle(.plain)
+            .environment(\.editMode, $pageListEditMode)
         }
         .background(.bar)
         .alert("ページ名を編集", isPresented: Binding(
@@ -9098,6 +9235,47 @@ private struct PageSidebar: View {
         guard let pageNumber = Int(jumpText), notebook.sortedPages.indices.contains(pageNumber - 1) else { return }
         currentPageIndex = pageNumber - 1
         jumpText = ""
+        showsJumpKeypad = false
+    }
+
+    private var pageJumpKeypad: some View {
+        VStack(spacing: 8) {
+            Text(jumpText.isEmpty ? "ページ番号を入力" : jumpText)
+                .font(.headline.monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9"], id: \.self) { digit in
+                    keypadButton(digit) { jumpText.append(digit) }
+                }
+                keypadButton("消去", icon: "delete.left") {
+                    guard !jumpText.isEmpty else { return }
+                    jumpText.removeLast()
+                }
+                keypadButton("0") { jumpText.append("0") }
+                keypadButton("移動", icon: "arrow.right") { jumpToPage() }
+            }
+
+            Button("閉じる") { showsJumpKeypad = false }
+                .font(.footnote)
+        }
+        .frame(width: 190)
+    }
+
+    private func keypadButton(_ title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if let icon {
+                    Image(systemName: icon)
+                } else {
+                    Text(title)
+                }
+            }
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 38)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(title)
     }
 
     private var canDeleteBookmarkedPages: Bool {
@@ -9639,39 +9817,6 @@ private struct NoteChatPickerPopover: View {
     }
 }
 
-/// Kept outside `NoteEditorView` so its two confirmation dialogs do not make
-/// the already large editor body exceed SwiftUI's type-checking budget.
-private struct PaneChoiceDialogModifier: ViewModifier {
-    @Binding var showsAIChatPicker: Bool
-    @Binding var pendingChatTarget: NoteChatTarget?
-    let titleForPane: (ActivePane) -> String
-    let showAIChat: (ActivePane) -> Void
-    let showChat: (NoteChatTarget, ActivePane) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .confirmationDialog("AIトークを表示する場所", isPresented: $showsAIChatPicker, titleVisibility: .visible) {
-                Button(titleForPane(.primary)) { showAIChat(.primary) }
-                Button(titleForPane(.secondary)) { showAIChat(.secondary) }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
-            .confirmationDialog("チャットを表示する場所", isPresented: Binding(
-                get: { pendingChatTarget != nil },
-                set: { if !$0 { pendingChatTarget = nil } }
-            ), titleVisibility: .visible) {
-                if let target = pendingChatTarget {
-                    Button(titleForPane(.primary)) { showChat(target, .primary) }
-                    Button(titleForPane(.secondary)) { showChat(target, .secondary) }
-                }
-                Button("キャンセル", role: .cancel) { pendingChatTarget = nil }
-            } message: {
-                Text("入れ替えるペインを選んでください。")
-            }
-    }
-}
-
 struct IdentifiableURL: Identifiable {
     let id = UUID()
     let url: URL
@@ -9686,3 +9831,4 @@ private struct DimsWhenDisabled: ViewModifier {
         content.opacity(isEnabled ? 1 : 0.3)
     }
 }
+

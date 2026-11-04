@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { retrieve } from './rag/retrieval.ts';
+import { queryPlan } from './rag/query.ts';
 import { indexSource, accountKey } from './rag/storage.ts';
 import { JUDGE, LIMITS } from './rag/limits.ts';
 import { EMPTY_DETAILS } from './rag/contract.ts';
@@ -142,15 +143,26 @@ test('on: a comparison with a low probability is demoted to partial, never stopp
   assert.equal(hit.judge.action, 'partial');
 });
 
-test('on: a multi-subject question whose subjects cannot be named is demoted to partial, never stopped', async () => {
+test('on: a comparison whose subjects cannot be named is demoted to partial, never stopped', async () => {
   const pages = numbered('ポーラーロウは、冬季に寒帯前線の寒気側の海上に発生する低気圧である。', '上層寒冷低気圧は、対流圏では中心付近に寒気を持つことが特徴である。台風は熱帯の海上で発生し、熱帯低気圧が発達したものである。');
   // "AとBは、CとDの違い": four names, so no coverage groups are extracted, yet it is still a comparison.
-  for (const query of ['ポーラーロウと上層寒冷低気圧は、台風と熱帯低気圧の違いを説明してください。', 'ポーラーロウと上層寒冷低気圧は、台風と熱帯低気圧とは何が違いますか。']) {
+  const query = 'ポーラーロウと上層寒冷低気圧は、台風と熱帯低気圧の違いを説明してください。';
+  const plan = queryPlan(query);
+  assert.deepEqual([plan.coverageGroups.length, plan.unresolvedComparison], [0, true]);
+  const { hit } = await ask({ mode: 'on', judge: 0.02, pages, query });
+  assert.equal(hit.status, 'partial');
+  assert.equal(hit.judge.action, 'partial');
+  assert.ok(hit.citations.length > 0);
+});
+
+test('on: a single-subject question that merely contains 共通 or それぞれ is still stopped (plan.multi is not "several subjects")', async () => {
+  const pages = numbered('低気圧は、周囲より気圧が低い領域である。', '気温の単位は摂氏である。');
+  for (const query of ['低気圧の共通の原因は何ですか。', '低気圧の特徴を、それぞれ教えてください。']) {
+    const plan = queryPlan(query);
+    assert.deepEqual([plan.multi, plan.coverageGroups.length, plan.unresolvedComparison], [true, 0, false], query);
     const { hit } = await ask({ mode: 'on', judge: 0.02, pages, query });
-    assert.notEqual(hit.status, 'insufficient', query);
-    assert.equal(hit.status, 'partial', query);
-    assert.equal(hit.judge.action, 'partial', query);
-    assert.ok(hit.citations.length > 0, query);
+    assert.equal(hit.status, 'insufficient', query);
+    assert.equal(hit.detail, 'judged_unanswerable', query);
   }
 });
 

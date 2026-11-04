@@ -1073,8 +1073,6 @@ private struct MoreHomeView: View {
     let onShowProfile: () -> Void
     let onOpenCalendarConnection: () -> Void
     let onOpenCloudSettings: () -> Void
-    let onExportMCPData: () -> Void
-    let onImportMCPChanges: () -> Void
     let onRestoreBackup: () -> Void
     let onRestoreAutomaticBackups: () -> Void
     let onOpenTrash: () -> Void
@@ -1190,12 +1188,6 @@ private struct MoreHomeView: View {
             }
             Button(action: onRestoreAutomaticBackups) {
                 Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
-            }
-            Button(action: onExportMCPData) {
-                Label("MCP連携データを書き出す", systemImage: "brain.head.profile")
-            }
-            Button(action: onImportMCPChanges) {
-                Label("MCPの変更を読み込む", systemImage: "tray.and.arrow.down")
             }
         } header: {
             Text("データ")
@@ -3376,8 +3368,8 @@ struct ContentView: View {
     }
 
     /// The その他 tab: every setting in one place. Anything whose state lives
-    /// in this view (MCP cloud sheet, backup importers, the share sheet for
-    /// the MCP export, the report sheet, …) is reached through these
+    /// in this view (MCP cloud sheet, backup importers, the report sheet, …)
+    /// is reached through these
     /// callbacks so the existing sheets/importers on `body` are reused as-is.
     private var homeMore: some View {
         MoreHomeView(
@@ -3390,8 +3382,6 @@ struct ContentView: View {
                 homeSection = .calendar
             },
             onOpenCloudSettings: { showsMCPCloudSettings = true },
-            onExportMCPData: { backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:)) },
-            onImportMCPChanges: { presentFileImporter() },
             onRestoreBackup: { isImportingBackup = true },
             onRestoreAutomaticBackups: { showsAutomaticBackups = true },
             onOpenTrash: {
@@ -4220,7 +4210,7 @@ struct ContentView: View {
         } else {
             destination = nil
         }
-        var movedItems: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date)] = []
+        var movedItems: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date, sortIndex: Int)] = []
         var movedFolders: [FolderMoveSnapshot] = []
         for value in values {
             if let sourceFolder = resolveFolder(fromDragValue: value) {
@@ -4231,8 +4221,11 @@ struct ContentView: View {
             }
             guard let entry = resolveEntry(fromDragValue: value) else { continue }
             let item = entry.underlying
-            let previous = (item: item, folder: item.folder, path: item.folderName, updatedAt: item.updatedAt)
+            let previous = (item: item, folder: item.folder, path: item.folderName, updatedAt: item.updatedAt, sortIndex: item.sortIndex)
             if LibraryFolderMove.move(item, into: destination) {
+                if sortOption == .manual {
+                    item.sortIndex = nextManualIndex(in: destination?.legacyPath ?? "")
+                }
                 movedItems.append(previous)
             }
         }
@@ -4244,6 +4237,7 @@ struct ContentView: View {
                 previous.item.folder = previous.folder
                 previous.item.folderName = previous.path
                 previous.item.updatedAt = previous.updatedAt
+                previous.item.sortIndex = previous.sortIndex
             }
             for snapshot in movedFolders.reversed() {
                 restoreFolderMove(snapshot)
@@ -4252,6 +4246,10 @@ struct ContentView: View {
         }
         if let folder { expandedSidebarFolders.insert(folder) }
         return true
+    }
+
+    private func nextManualIndex(in folderPath: String) -> Int {
+        (entries(inLegacyPath: folderPath).map(\.sortIndex).max() ?? -1) + 1
     }
 
     private struct FolderMoveSnapshot {
@@ -4561,6 +4559,12 @@ struct ContentView: View {
               !source.isTrashed, !target.isTrashed else {
             return false
         }
+        if sortOption == .manual {
+            // In manual order, dropping on another material means reorder —
+            // never create a folder accidentally. Folder targets keep their
+            // separate drop handler and still move materials into folders.
+            return reorder(source, after: target)
+        }
         let parentPath = target.underlying.folderName
         let parent = folderObject(forLegacyPath: parentPath)
         guard parentPath.isEmpty || parent != nil else { return false }
@@ -4576,6 +4580,23 @@ struct ContentView: View {
         folderRenameText = newFolder.name
         folderToRename = newFolder
         return true
+    }
+
+    @discardableResult
+    private func reorder(_ source: HomeEntry, after target: HomeEntry) -> Bool {
+        let folderPath = target.underlying.folderName
+        guard source.underlying.folderName == folderPath else { return false }
+        var entries = entries(inLegacyPath: folderPath)
+        entries.removeAll { $0.id == source.id }
+        guard let targetIndex = entries.firstIndex(where: { $0.id == target.id }) else { return false }
+        entries.insert(source, at: targetIndex + 1)
+        for index in entries.indices { entries[index].sortIndex = index }
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// "新規フォルダ", "新規フォルダ 2", … — keeps `handleEntryDrop` from ever
@@ -4785,6 +4806,13 @@ struct ContentView: View {
                         }
                     }
                     Menu {
+                        Button {
+                            sortOption = .manual
+                        } label: {
+                            if sortOption == .manual { Label("手動", systemImage: "checkmark") }
+                            else { Text("手動") }
+                        }
+                        Divider()
                         Toggle("資料の種類ごとに並べる", isOn: $sortByMaterialType)
                             .accessibilityIdentifier("library-sort-by-material-type")
                         Divider()
@@ -4864,7 +4892,8 @@ struct ContentView: View {
                 } description: {
                     Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
-            } else if !isHomeScreen && isCurrentLibraryLocationEmpty {
+            } else if !isHomeScreen && isCurrentLibraryLocationEmpty
+                        && !(libraryMode == .documents && viewMode == .column) {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -5168,42 +5197,53 @@ struct ContentView: View {
     /// mirroring Finder's "selected row stays tinted in the column it came
     /// from" cue.
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
-        ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
-            ForEach(columnItems(parentPath: parentPath)) { item in
-                switch item {
-                case .folder(let path):
-                    columnFolderRow(path, highlightedPath: highlightedPath)
-                        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
-                            if let target = folderObject(forLegacyPath: path) {
-                                trashFolder(target)
-                            }
-                        })
-                case .entry(let entry):
-                    columnEntryRow(entry)
-                        .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
-                            trash(entry)
-                            try? modelContext.save()
-                        })
+        let items = columnItems(parentPath: parentPath)
+        return GeometryReader { geometry in
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                if items.isEmpty {
+                    ContentUnavailableView(
+                        "このフォルダは空です",
+                        systemImage: "folder"
+                    )
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                        .padding(.horizontal, 16)
                 }
-            }
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: 240)
-                .contentShape(Rectangle())
-                .accessibilityIdentifier("library-empty-\(parentPath ?? "root")")
-                .overlay(alignment: .top) {
-                    if emptyPaneDropTarget == (parentPath ?? "") {
-                        Label("ここに移動", systemImage: "plus.circle.fill")
-                            .foregroundStyle(.green)
-                            .padding(.top, 24)
-                            .allowsHitTesting(false)
+                ForEach(items) { item in
+                    switch item {
+                    case .folder(let path):
+                        columnFolderRow(path, highlightedPath: highlightedPath)
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
+                                if let target = folderObject(forLegacyPath: path) {
+                                    trashFolder(target)
+                                }
+                            })
+                    case .entry(let entry):
+                        columnEntryRow(entry)
+                            .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
+                                trash(entry)
+                                try? modelContext.save()
+                            })
                     }
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    handleFolderDrop(items, into: parentPath)
-                } isTargeted: { isTargeted in
-                    setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 240)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("library-empty-\(parentPath ?? "root")")
+                    .overlay(alignment: .top) {
+                        if emptyPaneDropTarget == (parentPath ?? "") {
+                            Label("ここに移動", systemImage: "plus.circle.fill")
+                                .foregroundStyle(.green)
+                                .padding(.top, 24)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        handleFolderDrop(items, into: parentPath)
+                    } isTargeted: { isTargeted in
+                        setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
+                    }
                 }
             }
         }
@@ -5401,6 +5441,17 @@ struct ContentView: View {
         }
         let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
         return items.sorted { first, second in
+            if sortOption == .manual {
+                func manualIndex(_ item: LibraryRowItem) -> Int {
+                    switch item {
+                    case .folder(let path): return folderObject(forLegacyPath: path)?.sortIndex ?? 0
+                    case .entry(let entry): return entry.sortIndex
+                    }
+                }
+                let firstIndex = manualIndex(first)
+                let secondIndex = manualIndex(second)
+                if firstIndex != secondIndex { return firstIndex < secondIndex }
+            }
             if sortByMaterialType {
                 let firstKind = materialSortRank(for: first)
                 let secondKind = materialSortRank(for: second)
@@ -5439,7 +5490,15 @@ struct ContentView: View {
         var result = notebooks.map(HomeEntry.notebook)
         result += displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
         result += displayedTextDocuments.map(HomeEntry.textDocument)
-        return result.sorted(by: sortOption.areInOrder)
+        return result.sorted(by: manualEntryOrder)
+    }
+
+    private func manualEntryOrder(_ first: HomeEntry, _ second: HomeEntry) -> Bool {
+        guard sortOption == .manual else { return sortOption.areInOrder(first, second) }
+        if first.sortIndex != second.sortIndex { return first.sortIndex < second.sortIndex }
+        // Existing libraries start with index 0. Preserve their familiar order
+        // until the first drag assigns a distinct manual order.
+        return NotebookSortOption.updatedNewest.areInOrder(first, second)
     }
 
     @ViewBuilder
@@ -5856,7 +5915,7 @@ struct ContentView: View {
         result += textDocuments
             .filter { !$0.isTrashed && $0.folderName == path }
             .map(HomeEntry.textDocument)
-        return result.sorted(by: sortOption.areInOrder)
+        return result.sorted(by: manualEntryOrder)
     }
 
     private func subfolderPaths(of parentPath: String?) -> [String] {
@@ -5936,32 +5995,6 @@ struct ContentView: View {
                 } label: {
                     Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
                 }
-            }
-            Divider()
-            Button {
-                backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:))
-            } label: {
-                Label("MCP連携データを書き出す", systemImage: "brain.head.profile")
-            }
-            Button {
-                presentFileImporter()
-            } label: {
-                Label("MCPの変更を読み込む", systemImage: "tray.and.arrow.down")
-            }
-            Button {
-                showsMCPCloudSettings = true
-            } label: {
-                Label("MCPクラウド連携", systemImage: "icloud")
-            }
-            Button {
-                isImportingBackup = true
-            } label: {
-                Label("バックアップを復元", systemImage: "externaldrive.badge.plus")
-            }
-            Button {
-                showsAutomaticBackups = true
-            } label: {
-                Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
             }
         } label: {
             Image(systemName: "plus")
@@ -6309,9 +6342,6 @@ struct ContentView: View {
             docxImportFailed = true
             return
         }
-        if fileExtension == "json", importMCPActions(from: url) {
-            return
-        }
         if type?.conforms(to: .pdf) == true || fileExtension == "pdf" {
             await importPDF(from: url)
             return
@@ -6413,17 +6443,6 @@ struct ContentView: View {
         finishCreation { openTextDocument(document) }
     }
 
-    private func exportMCPSnapshot() -> URL? {
-        guard let data = makeMCPSnapshotData() else { return nil }
-        let url = StudiquoWorkFiles.file(named: "studiquo-mcp-snapshot.json")
-        do {
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
-            return url
-        } catch {
-            return nil
-        }
-    }
-
     private func makeMCPSnapshotData() -> Data? {
         let snapshot = MCPSnapshot(
             version: 1,
@@ -6479,18 +6498,6 @@ struct ContentView: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try? encoder.encode(snapshot)
-    }
-
-    @discardableResult
-    private func importMCPActions(from url: URL) -> Bool {
-        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
-              let data = try? Data(contentsOf: url) else { return false }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
-            return false
-        }
-        return applyMCPActions(actions)
     }
 
     @discardableResult
@@ -7571,11 +7578,12 @@ private enum NotebookSortKey: CaseIterable, Identifiable {
 }
 
 private enum NotebookSortOption: String, CaseIterable, Identifiable {
-    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
+    case manual, updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
     var id: String { rawValue }
 
     var key: NotebookSortKey {
         switch self {
+        case .manual: .updated
         case .updatedNewest, .updatedOldest: .updated
         case .createdNewest, .createdOldest: .created
         case .nameAscending, .nameDescending: .name
@@ -7584,6 +7592,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var isAscending: Bool {
         switch self {
+        case .manual: false
         case .updatedOldest, .createdOldest, .nameAscending: true
         default: false
         }
@@ -7594,6 +7603,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
     func selecting(_ newKey: NotebookSortKey) -> NotebookSortOption {
         if newKey == key {
             switch self {
+            case .manual: return .updatedNewest
             case .updatedNewest: return .updatedOldest
             case .updatedOldest: return .updatedNewest
             case .createdNewest: return .createdOldest
@@ -7611,6 +7621,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .manual: L("手動")
         case .updatedNewest: L("更新日が新しい順")
         case .updatedOldest: L("更新日が古い順")
         case .createdNewest: L("作成日が新しい順")
@@ -7622,6 +7633,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     var comparator: (Notebook, Notebook) -> Bool {
         switch self {
+        case .manual: { $0.updatedAt > $1.updatedAt }
         case .updatedNewest: { $0.updatedAt > $1.updatedAt }
         case .updatedOldest: { $0.updatedAt < $1.updatedAt }
         case .createdNewest: { $0.createdAt > $1.createdAt }
@@ -7643,6 +7655,7 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
 
     func areInOrder(_ a: (title: String, created: Date, updated: Date), _ b: (title: String, created: Date, updated: Date)) -> Bool {
         switch self {
+        case .manual: a.updated > b.updated
         case .updatedNewest: a.updated > b.updated
         case .updatedOldest: a.updated < b.updated
         case .createdNewest: a.created > b.created

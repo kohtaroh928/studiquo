@@ -63,6 +63,7 @@ struct RAGAutomaticLibraryControls: View {
                     Task { @MainActor in
                         defer { working = false }
                         do { try await service.grant(scope: selectedScope, includeFuture: includeFuture, context: context, notebooks: notebooks) }
+                        catch let error as RAGLibrarySyncService.GrantError { errorMessage = error.localizedDescription }
                         catch { errorMessage = L("自動登録を開始できませんでした。通信と送信許可を確認してください。") }
                     }
                 }

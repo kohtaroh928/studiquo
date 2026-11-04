@@ -97,4 +97,45 @@ final class EditablePageElementDragTests: XCTestCase {
         XCTAssertFalse(PageCanvasContainer.stopsElementTouches(for: .eraser))
         XCTAssertFalse(PageCanvasContainer.stopsElementTouches(for: .none))
     }
+
+    // MARK: - 境界越えドラッグ(全種類対応・ページリンク除外・ゴースト画像ガード)
+
+    private func editablePageElementSource() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // studiquoTests/
+            .deletingLastPathComponent()  // project root
+            .appendingPathComponent("studiquo/Views/NoteEditorView.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private var dragPreviewImage: UIImage?"))
+        let rest = source[start.lowerBound...]
+        let end = try XCTUnwrap(rest.range(of: "private var resizeGesture: some Gesture"))
+        return String(rest[..<end.lowerBound])
+    }
+
+    func testDragPreviewImageRendersNonBitmapElementsViaImageRenderer() throws {
+        let slice = try editablePageElementSource()
+        XCTAssertTrue(
+            slice.contains("if element.kind == .image { return displayedImage }")
+                && slice.contains("ImageRenderer(")
+                && slice.contains("content: elementContent.frame(width: elementSize.width, height: elementSize.height)")
+                && slice.contains("renderer.scale = displayScale")
+                && slice.contains("return renderer.uiImage"),
+            "写真以外の部品(テキスト・図形・暗記テープ)も境界越えドラッグ時に ImageRenderer でゴースト画像を生成する必要があります。"
+        )
+    }
+
+    func testMoveGestureAllowsAllElementsExceptPageLinkAndGuardsMissingGhostImage() throws {
+        let slice = try editablePageElementSource()
+
+        // 以前は `element.kind == .image` だけだったが、ページリンク以外の全種類に広げたこと
+        XCTAssertFalse(
+            slice.contains("if element.kind == .image, !pageGlobalFrameTracker.frame.contains"),
+            "境界越えドラッグを .image のみに限定する古い条件が残っていてはいけません。"
+        )
+        XCTAssertTrue(
+            slice.contains("if element.kind != .pageLink, !pageGlobalFrameTracker.frame.contains(value.location),")
+                && slice.contains("isDraggingAcrossBoundary || (dragPreviewImage != nil)"),
+            "ページリンク(.pageLink)は元ノートのページ番号を持つため境界越えの対象外にし、ゴースト画像(dragPreviewImage)が作れない部品は消失を防ぐため元の位置に残す必要があります。"
+        )
+    }
 }
