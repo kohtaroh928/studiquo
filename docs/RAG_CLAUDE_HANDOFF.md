@@ -32,6 +32,24 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
+## 2026-11-03 手動の自動登録許可が古い再試行待機で止まる問題を修正
+
+実機で「対象PDFの自動登録を許可」を押したとき、正しい staging Worker のRAG同意APIへの到達が観測されず、画面は一般的な通信エラーを出していた。確認枠にはPR #111（`48d319e`）のSwiftData保存失敗の修正が入っており、今回はその例外ではない。`grant` が送信前に `flushInvalidations()` を呼び、過去の背景同期で保存された `controlRetryAfter` が未来ならローカル429を投げることを確認した。
+
+`codex/rag-manual-grant-retry` で、明示的な手動許可の直前に限り、このローカルの制御再試行待機を消して同意APIへ再試行するよう変更した。サーバーのレート制限自体は回避しない。期限が残った状態から、GET/POSTの同意APIに到達し、待機情報が消える回帰テストを追加した。`xcodegen generate` 後、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は終了コード0で完了。実機で再度エラーが表示されたが、調査で確認枠のHEADが17:51に修正コミット`28aac22`から修正前の`main`（`9a7465f`）へ切り替わっており、Xcodeもそのフォルダを実行していたことを確認した。17:56に確認枠を返却・再取得し、現在はXcodeの同一パスとHEADが`28aac22`で一致している。
+
+追加調査で、ステージングWorkerは2026-11-03 20:19の版114（`4c27225a`）に切り替わっており、`RAG_ENABLED`、`RAG_AUTO_INDEX_ENABLED`、`RAG_PDF_PROCESSING_ENABLED`、`RAG_PDF_CLEANUP_ENABLED`、`AI_PROVIDER_APPROVED` がすべて `false` だった。これが「対象PDFの自動登録」ボタンが無効になった直接原因。ユーザー依頼の実資料評価を継続するため、`--env staging --keep-vars` と同じ5フラグを明示した版115（`35aa4afd-055c-4c35-9641-5f45f3ff9592`）を配備し、5フラグがすべて `true` であることを読み取り確認した。本番、D1、Vectorizeの内容は変更していない。次はアプリを再起動または当該設定画面を開き直して利用可能性を再取得し、同意要求を実機で確認する。GitHub Projectへの今回の記録は未実施。
+
+## 2026-11-02 staging 実経路独立評価を開始
+
+ユーザーが実WorkerのD1/Vectorize、PDF取込み、iPad、最終回答までを通した独立評価を依頼し、staging用iPadが利用可能であることを確認した。`origin/main`（`c3ce941`）から専用worktree `codex/rag-e2e-evaluation` を作成。現行staging版112（`ad285b04-55d2-489a-8ad5-990a33deddb4`）を読み取り、stagingのD1 `studiquo-admin-staging` とVectorize `studiquo-rag-v1-staging`、staging App ID/URLを確認。本番IDは配備dry-runに出ず、dry-runは成功した（専用worktreeでは`npm ci`が必要だった。依存監査は既知のmoderate 2件・high 1件を表示したが、今回変更していない）。
+
+ユーザーの依頼の範囲で、`--env staging --keep-vars` により、RAG/PDF実経路だけを有効にした版113（`37e6ac89-8d56-47ce-9386-25b58ee05520`）を配備。照合済みの変更は `RAG_AUTO_INDEX_ENABLED=true`、`RAG_PDF_PROCESSING_ENABLED=true`、`RAG_PDF_CLEANUP_ENABLED=true`、`AI_PROVIDER_APPROVED=true`（既存`RAG_ENABLED=true`）、`RAG_JUDGE=off`。本番への配備・本番データ変更・`RAG_JUDGE=on`・コード/閾値変更はない。ロールバック候補は配備前の版112 `ad285b04-55d2-489a-8ad5-990a33deddb4`。次はユーザーがstudiquo-stagingで公開・ライセンス確認済みPDFを取り込み、RAG同意後に索引完了を知らせること。以後、offのベースライン、shadowの比較、ログ（本文を保存しない）と最終回答・出典遷移を評価する。GitHub Project記録は未実施（進行中評価）。
+
+追記: iPadで「対象PDFの自動登録を許可」を3回再現し、いずれも「自動登録を開始できませんでした。通信と送信許可を確認してください。」となった。RAGテーブル5種のstaging D1存在を読み取り確認。正しいstaging Workerへtailを接続し、最終再現はRAG URLと4xx/5xxに絞って確認したが、**RAGエンドポイントへのリクエストは0件**。したがってWorker/D1/Vectorize/外部送信許可ではなく、アプリ送信前の失敗。`RAGLibrarySyncService.grant`は最初の登録ではnetwork前に、各Notebook/FolderへRAG IDを設定して`try context.save()`する。画面はこの例外を固定の通信エラー文へ丸めるため、ここが最有力（または保存直前のローカルguard）である。アプリの端末ログ/詳細エラー表示を追加しない限り、どのSwiftData保存条件かは未確定。今回の診断でコード修正なし、常駐processなし。次はユーザーの明示依頼後に、送信前失敗を可観測にする最小修正と回帰テストを実装し、再度実機確認する。GitHub Project記録は未実施。
+
+追記2: ユーザーの修正依頼を受け、`codex/rag-auto-register-fix`で最小修正を実装し、コミット`234e7fd`に保存した。`grant`が全Notebook/Folderを無差別に変更して保存していた処理を、選択スコープ内かつRAG対象のPDFだけに限定する`prepareIdentities`へ置換した。SwiftDataの保存失敗は専用`GrantError.localPersistence`に変換し、画面では通信・送信許可ではなく「この端末の資料情報を保存できなかった」旨を表示する。対象外（ロック済み・ゴミ箱）のPDFへIDを書き込まない回帰テストを追加。`git diff --check`は成功。差分の独立レビューでは重大な問題なし（対象外資料の変更防止と既存スコープ判定を確認）、ただしSwiftDataが実際に保存失敗する端末状態を作るテストは未実施。iPadシミュレータでのテストは、専用worktreeにgit管理外の`Staging.local.xcconfig`（RevenueCat公開キー）が存在しないためビルド前に停止し、テスト未実施。キーの複製・表示はしていない。実機確認枠は`antigravity/ios-security-audit`が使用中で、メインチェックアウトにも未コミットの`studiquo/Localizable.xcstrings`があるため、札を奪わず待機。次は確認枠が戻りメインの変更が整理された後に、このコミットを`studiquo-staging`でRunして自動登録を再試行する。Workerへの再配備は不要（アプリ側のみ）。GitHub Project記録は未実施。
+
 最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
 ## 検証済みTS成果のコミット保存（2026-10-21）

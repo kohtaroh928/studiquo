@@ -23,7 +23,17 @@
     {
       "ecosystem": "npm",
       "name": "@cloudflare/workerd-darwin-64",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-darwin-64",
+      "version": "1.20261012.1",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -33,7 +43,17 @@
     {
       "ecosystem": "npm",
       "name": "@cloudflare/workerd-darwin-arm64",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-darwin-arm64",
+      "version": "1.20261012.1",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -43,7 +63,17 @@
     {
       "ecosystem": "npm",
       "name": "@cloudflare/workerd-linux-64",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-linux-64",
+      "version": "1.20261012.1",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -53,7 +83,17 @@
     {
       "ecosystem": "npm",
       "name": "@cloudflare/workerd-linux-arm64",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-linux-arm64",
+      "version": "1.20261012.1",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -63,8 +103,28 @@
     {
       "ecosystem": "npm",
       "name": "@cloudflare/workerd-windows-64",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
       "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-windows-64",
+      "version": "1.20261012.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workers-types",
+      "version": "5.20261019.1",
+      "direct": true,
       "exposure": "tooling",
       "sensitive": false,
       "usage": null,
@@ -725,8 +785,18 @@
     },
     {
       "ecosystem": "npm",
+      "name": "@peculiar/asn1-asym-key",
+      "version": "2.11.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
       "name": "@peculiar/asn1-cms",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -736,7 +806,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-csr",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -746,7 +816,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-ecc",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -756,7 +826,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-pfx",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -766,7 +836,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-pkcs8",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -776,7 +846,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-pkcs9",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -786,7 +856,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-rsa",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -796,7 +866,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-schema",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -806,7 +876,17 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-x509-attr",
-      "version": "2.9.4",
+      "version": "2.11.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-x509-post-quantum",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -816,7 +896,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/asn1-x509",
-      "version": "2.9.4",
+      "version": "2.11.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -836,7 +916,7 @@
     {
       "ecosystem": "npm",
       "name": "@peculiar/x509",
-      "version": "1.14.3",
+      "version": "2.2.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -876,7 +956,7 @@
     {
       "ecosystem": "npm",
       "name": "@simplewebauthn/server",
-      "version": "13.3.3",
+      "version": "14.0.3",
       "direct": true,
       "exposure": "server",
       "sensitive": true,
@@ -903,6 +983,216 @@
       "ecosystem": "npm",
       "name": "@speed-highlight/core",
       "version": "1.2.24",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/node",
+      "version": "26.6.5",
+      "direct": true,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-aix-ppc64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-darwin-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-darwin-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-freebsd-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-freebsd-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-arm",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-loong64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-mips64el",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-ppc64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-riscv64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-s390x",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-netbsd-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-netbsd-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-openbsd-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-openbsd-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-sunos-x64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-win32-arm64",
+      "version": "7.0.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-win32-x64",
+      "version": "7.0.2",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -962,7 +1252,7 @@
     {
       "ecosystem": "npm",
       "name": "body-parser",
-      "version": "2.3.0",
+      "version": "2.4.0",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -1183,7 +1473,7 @@
       "ecosystem": "npm",
       "name": "esbuild",
       "version": "0.28.2",
-      "direct": false,
+      "direct": true,
       "exposure": "tooling",
       "sensitive": false,
       "usage": null,
@@ -1262,7 +1552,7 @@
     {
       "ecosystem": "npm",
       "name": "fast-uri",
-      "version": "3.1.8",
+      "version": "3.1.9",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -1372,7 +1662,7 @@
     {
       "ecosystem": "npm",
       "name": "hono",
-      "version": "4.13.7",
+      "version": "4.13.13",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -1452,26 +1742,8 @@
     {
       "ecosystem": "npm",
       "name": "jose",
-      "version": "5.10.0",
+      "version": "6.2.12",
       "direct": true,
-      "exposure": "server",
-      "sensitive": true,
-      "usage": "JWTの署名・検証",
-      "nvd": {
-        "keyword": "jose",
-        "vendors": [
-          "panva"
-        ],
-        "products": [
-          "jose"
-        ]
-      }
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jose",
-      "version": "6.2.10",
-      "direct": false,
       "exposure": "server",
       "sensitive": true,
       "usage": "JWTの署名・検証",
@@ -1568,7 +1840,17 @@
     {
       "ecosystem": "npm",
       "name": "miniflare",
-      "version": "5.20261006.2-beta",
+      "version": "4.20260730.0",
+      "direct": true,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "miniflare",
+      "version": "5.20261012.1-beta",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -1728,7 +2010,7 @@
     {
       "ecosystem": "npm",
       "name": "qs",
-      "version": "6.16.0",
+      "version": "6.16.1",
       "direct": false,
       "exposure": "server",
       "sensitive": false,
@@ -1977,6 +2259,26 @@
     },
     {
       "ecosystem": "npm",
+      "name": "typescript",
+      "version": "7.0.2",
+      "direct": true,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "undici-types",
+      "version": "8.9.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
       "name": "undici",
       "version": "7.29.1",
       "direct": false,
@@ -2028,7 +2330,17 @@
     {
       "ecosystem": "npm",
       "name": "workerd",
-      "version": "1.20261006.1",
+      "version": "1.20260730.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "workerd",
+      "version": "1.20261012.1",
       "direct": false,
       "exposure": "tooling",
       "sensitive": false,
@@ -2038,7 +2350,7 @@
     {
       "ecosystem": "npm",
       "name": "wrangler",
-      "version": "4.150.0",
+      "version": "4.151.1",
       "direct": true,
       "exposure": "tooling",
       "sensitive": false,
@@ -2098,7 +2410,7 @@
     {
       "ecosystem": "npm",
       "name": "zod",
-      "version": "4.4.3",
+      "version": "4.6.7",
       "direct": true,
       "exposure": "server",
       "sensitive": false,

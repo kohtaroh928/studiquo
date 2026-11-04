@@ -19,6 +19,7 @@ QUEUE="$COMMON/studiquo-verify.queue"
 OWNER=${AGENT_NAME:-${USER:-unknown}}
 STALE_HOURS=4
 BASE_BRANCH=main
+STRING_CATALOG=studiquo/Localizable.xcstrings
 
 age_hours() {
   now=$(date +%s)
@@ -76,6 +77,17 @@ regen_project() {
 
 restore_main() { # $1=戻り先
   git -C "$MAIN" switch "$1" >/dev/null 2>&1 || git -C "$MAIN" switch --detach "$1" >/dev/null 2>&1 || true
+}
+
+# Xcode can still synchronize its string catalog while a verification build is
+# running, even though the generated project disables build-time extraction.
+# The verification checkout is read-only by convention, so discard only this
+# known generated side effect before checking whether it is safe to return it.
+discard_verification_catalog_sync() {
+  if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no -- "$STRING_CATALOG")" ]; then
+    git -C "$MAIN" restore --source=HEAD --staged --worktree -- "$STRING_CATALOG"
+    echo "確認中に自動同期された $STRING_CATALOG を戻しました。"
+  fi
 }
 
 check_free_and_clean() {
@@ -195,6 +207,7 @@ case "${1:-status}" in
   release)
     if [ ! -f "$LOCK" ]; then echo "札はありません。"; exit 0; fi
     back=$(sed -n 's/^return_to=//p' "$LOCK")
+    discard_verification_catalog_sync
     if [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then
       echo "確認枠に未コミットの変更があるため戻しません。ユーザーに確認してください:" >&2
       git -C "$MAIN" status --short --untracked-files=no >&2

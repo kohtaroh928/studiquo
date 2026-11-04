@@ -29,18 +29,27 @@ test('a question asking 何個 accepts the other generic counters a document may
   const ask = '地理教育支援策は何個示されていますか。';
   assert.equal(quantityEvidencePresent(ask, '６つの支援策を実施する。'), true);
   assert.equal(quantityEvidencePresent(ask, '支援策は三つある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '支援策は九つある。'), true);
   assert.equal(quantityEvidencePresent(ask, '支援策は6個ある。'), true);
   assert.equal(quantityEvidencePresent(ask, '拠点は3ヶ所、会場は2箇所ある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '拠点は3ヵ所ある。'), true);
+  assert.equal(quantityEvidencePresent(ask, '拠点は3ケ所ある。'), true);
   assert.equal(quantityEvidencePresent(ask, '支援策を実施する。'), false);
   assert.equal(quantityEvidencePresent(ask, '2019年3月の提言に基づく。'), false);
   assert.equal(quantityEvidencePresent(ask, 'いくつかの支援策を実施する。'), false);
+  // 何個か / 何個も are not asking for a count, so they must not require a number
+  assert.equal(quantityEvidencePresent('何個か例を挙げてください。', '具体的な例を説明する。'), true);
+  assert.equal(quantityEvidencePresent('何個も重なる理由は何ですか。', '気流の収束による。'), true);
 });
 
-test('台・枚・本 keep their own counters and do not accept つ', () => {
+test('台・枚・本 keep their own counters and do not accept つ or ヶ', () => {
   assert.equal(quantityEvidencePresent('配備は何台ですか。', '配備は3台である。'), true);
   assert.equal(quantityEvidencePresent('配備は何台ですか。', '配備は3つである。'), false);
   assert.equal(quantityEvidencePresent('資料は何枚ですか。', '資料は10枚である。'), true);
   assert.equal(quantityEvidencePresent('資料は何枚ですか。', '資料は10つである。'), false);
+  assert.equal(quantityEvidencePresent('ペンは何本ありますか。', 'ペンは5本ある。'), true);
+  assert.equal(quantityEvidencePresent('ペンは何本ありますか。', 'ペンは5つある。'), false);
+  assert.equal(quantityEvidencePresent('ペンは何本ありますか。', '拠点は5ヶ所ある。'), false);
 });
 
 test('several asked units are alternatives, and unit-less quantity words only need some number', () => {
