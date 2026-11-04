@@ -1,3 +1,4 @@
+import { withTableUnits } from './table-text.ts';
 // Two narrow checks that the selected excerpts can answer what the question
 // actually asks for. A matching topic is not enough: "the pass rate of X"
 // needs a rate, and a question about a term the library never mentions has no
@@ -6,10 +7,18 @@
 const NUMBER = '[\\d〇零一二三四五六七八九十百千万]';
 const amount = (unit: string) => new RegExp(`${NUMBER}[\\d.,]*\\s*${unit}`, 'u');
 
+// "Aの価格はBの何倍" can also be computed from two amounts of money. answerability.ts requires
+// the own price of both items for exactly this wording; any other ratio question needs a stated ratio.
+const MONEY_AMOUNT = /\d[\d,.]*\s*[億万千兆]?\s*(円|ドル)/gu;
+const priceRatioEvidence = { test: (text: string) => {
+  const units = [...text.matchAll(MONEY_AMOUNT)].map(m => m[1]);
+  return units.some((unit, i) => units.indexOf(unit) !== i);
+} };
+
 // "何%" and friends: what the question asks for, and the form that would answer it.
 // Longer units come first in the list only for readability; every entry is tested.
 // A "か" right after a unit means "some" (何件か, 何度か), unless it starts "かかる" (何時間かかる).
-const ASKED_UNITS: { ask: RegExp; have: RegExp }[] = [
+const ASKED_UNITS: { ask: RegExp; have: { test: (text: string) => boolean } }[] = [
   { ask: /何\s*(?:%|パーセント|割)/u, have: amount('(?:%|パーセント|割)') },
   // Money: any scale answers a question about money (5826億円 answers 何万円), so the scale is optional on both sides.
   { ask: /何\s*(?:[億万千兆])?\s*(?:円|ドル)(?!も|か(?!か))/u, have: amount('(?:[億万千兆])?\\s*(?:円|ドル)') },
@@ -20,6 +29,7 @@ const ASKED_UNITS: { ask: RegExp; have: RegExp }[] = [
   { ask: /何\s*個(?!も|か(?!か))/u, have: amount('(?:個|つ|[ヶヵケ]|箇)') },
   { ask: /何\s*(?:台|枚|本)(?!も|か(?!か))/u, have: amount('(?:個|台|枚|本)') },
   { ask: /何\s*倍(?!も|か(?!か))/u, have: amount('倍') },
+  { ask: /^.+?の(?:価格|値段)は.+?の(?:(?:価格|値段)の?)?何\s*倍(?!も|か(?!か))/u, have: priceRatioEvidence },
   { ask: /何\s*年(?!も|か(?!か))/u, have: amount('年') },
   { ask: /何\s*日(?!も|か(?!か))/u, have: amount('日') },
   { ask: /何\s*時間(?!も|か(?!か))/u, have: amount('時間') },
@@ -74,7 +84,7 @@ function subjectTokens(query: unknown) {
 export function quantityEvidencePresent(query: unknown, evidence: string | Excerpt[], options: { tied?: boolean } = {}) {
   const ask = fold(query);
   const excerpts: Excerpt[] = typeof evidence === 'string' ? [{ text: evidence, primary: true }] : evidence;
-  const folded = excerpts.map(e => ({ text: fold(e.text), primary: !!e.primary }));
+  const folded = excerpts.map(e => ({ text: fold(withTableUnits(fold(e.text))), primary: !!e.primary }));
   const asked = ASKED_UNITS.filter(u => u.ask.test(ask));
   if (asked.length) {
     const carrying = folded.filter(e => asked.some(u => u.have.test(e.text)));
