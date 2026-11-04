@@ -732,6 +732,7 @@ final class FriendStore: ObservableObject {
             }
             errorMessage = ""
         } catch {
+            guard !Self.isCancelledRequest(error) else { return }
             errorMessage = Self.isAuthFailure(error) ? Self.authExpiredErrorMessage : Self.connectivityErrorMessage
         }
         await syncMyAvatarIfNeeded()
@@ -865,7 +866,13 @@ final class FriendStore: ObservableObject {
     /// identically, so there's nothing to be gained by waiting, and every
     /// extra attempt just delays the one thing that actually helps — the
     /// user finding out they need to re-sign in.
+    private static func isCancelledRequest(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
     private func notePollResult(_ key: String, succeeded: Bool, error: Error? = nil) {
+        // SwiftUI cancels view tasks when the user switches tabs. This is not a network failure.
+        if let error, Self.isCancelledRequest(error) { return }
         if succeeded {
             consecutivePollFailures[key] = 0
             hasNotifiedAuthExpired = false
@@ -2373,12 +2380,6 @@ struct FriendsHomeView: View {
             friendSidebar
                 .navigationTitle("フレンド")
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: closeSidebar) {
-                            Label("閉じる", systemImage: "sidebar.left")
-                        }
-                        .accessibilityIdentifier("friends-sidebar-close")
-                    }
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
                             Button { showsAdd = true } label: { Label("フレンドを追加", systemImage: "person.badge.plus") }
@@ -2404,12 +2405,9 @@ struct FriendsHomeView: View {
                     // This is the compact-window escape hatch. On a regular
                     // width it duplicated the app's normal split-view
                     // navigation, so it must not appear in the full layout.
-                    // When the compact sidebar itself is on screen it owns
-                    // the closing control above. Keeping this detail-column
-                    // opener visible at the same time produced two sidebar
-                    // buttons after opening the list. It remains available
-                    // only from the detail screen, where it is needed to
-                    // reopen the list in a half-width app window.
+                    // The detail-column opener is available only while the
+                    // compact sidebar is closed, so reopening the list does
+                    // not add a second sidebar control to its toolbar.
                     if horizontalSizeClass == .compact && !isSidebarVisible {
                         ToolbarItem(placement: .topBarLeading) {
                             Button {
@@ -2692,11 +2690,6 @@ struct FriendsHomeView: View {
         horizontalSizeClass == .compact
             ? preferredCompactColumn == .sidebar
             : columnVisibility != .detailOnly
-    }
-
-    private func closeSidebar() {
-        columnVisibility = .detailOnly
-        preferredCompactColumn = .detail
     }
 
     private func selectDetail(_ target: FriendsDetailSelection) {

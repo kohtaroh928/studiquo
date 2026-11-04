@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# RAGの有料評価(Workers AIの実呼び出し)を、専用トークンで安全に動かす入口。
+# トークンはMacのキーチェーンに1回だけ保存し、実行のたびに読み出して、評価のプロセスにだけ渡す。
+# 値は画面・シェルの履歴・ファイル・Gitに出さない。docs/RUNBOOK.md 付録A-5。
+#
+#   scripts/rag-eval store                          トークンとアカウントIDを保存する(対話入力。表示されない)
+#   scripts/rag-eval check                          トークンが有効か検査する(利用量は使わない)
+#   scripts/rag-eval real-material <manifest> <出力> 実教材の評価(有料。最大500回)
+#   scripts/rag-eval quality <評価ディレクトリ>       合成100ページの評価(有料)
+#   scripts/rag-eval forget                         保存したトークンを消す
+set -euo pipefail
+
+SERVICE="${STUDIQUO_RAG_EVAL_SERVICE:-studiquo-rag-eval}"
+ACCOUNT_FILE="${STUDIQUO_RAG_EVAL_ACCOUNT_FILE:-$HOME/.studiquo-private/cloudflare-account-id}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPTS="$ROOT/mcp-server/scripts/rag-quality"
+
+die() { echo "$*" >&2; exit 1; }
+usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# アカウントIDは秘密ではないが、公開リポジトリに書かない。環境変数、なければ保存したファイルから読む。
+account_id() {
+  if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then printf '%s' "$CLOUDFLARE_ACCOUNT_ID"; return; fi
+  [ -r "$ACCOUNT_FILE" ] || die "アカウントIDがありません。先に scripts/rag-eval store を実行してください。"
+  tr -d '[:space:]' < "$ACCOUNT_FILE"
+}
+
+token() {
+  security find-generic-password -s "$SERVICE" -w 2>/dev/null \
+    || die "トークンがキーチェーンにありません。先に scripts/rag-eval store を実行してください。"
+}
+
+confirm_paid() {
+  [ "${STUDIQUO_RAG_EVAL_YES:-}" = "1" ] && return 0
+  echo "$1" >&2
+  printf '続けますか? [y/N] ' >&2
+  local answer; read -r answer
+  [ "$answer" = "y" ] || [ "$answer" = "Y" ] || die "中止しました。"
+}
+
+# トークンは、この呼び出しのプロセスだけの環境変数にする(呼び出し元のシェルには残らない)。
+run_node() {
+  # 読み出しに失敗したら、ここで止める(代入を別にしないと、set -e が効かず空のまま実行される)。
+  local acct tok
+  acct="$(account_id)"
+  tok="$(token)"
+  CLOUDFLARE_ACCOUNT_ID="$acct" CLOUDFLARE_API_TOKEN="$tok" node "$@"
+}
+
+case "${1:-}" in
+  store)
+    command -v security >/dev/null || die "macOSのsecurityコマンドが必要です。"
+    mkdir -p -m 700 "$(dirname "$ACCOUNT_FILE")"
+    printf 'CloudflareのアカウントID(秘密ではない。32文字): '
+    read -r id
+    [[ "$id" =~ ^[0-9a-f]{32}$ ]] || die "アカウントIDの形が違います(英数字の小文字32文字)。"
+    printf '%s\n' "$id" > "$ACCOUNT_FILE"; chmod 600 "$ACCOUNT_FILE"
+    echo "評価用トークンを入力してください(表示されません。確認のためもう一度求められます)。"
+    security add-generic-password -a "$USER" -s "$SERVICE" -U -w
+    echo "保存しました。確認は scripts/rag-eval check。"
+    ;;
+  check)
+    run_node "$SCRIPTS/check-cf-token.ts"
+    ;;
+  real-material)
+    [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+    manifest="$2"; out="$3"
+    [ -r "$manifest" ] || die "manifestが読めません: $manifest"
+    case "$manifest" in
+      *rag-real-material-v7*)
+        confirm_paid "警告: v7は凍結した未使用の質問です。調整に使わず、本測定の1回だけに使う決まりです。" ;;
+    esac
+    mkdir -p -m 700 "$(dirname "$out")"
+    confirm_paid "有料のWorkers AI呼び出しをします(最大500回、少額)。manifest: $manifest"
+    STUDIQUO_RAG_REAL_MATERIAL_REMOTE=true STUDIQUO_RAG_REAL_MATERIAL_PROGRESS=true \
+      run_node "$SCRIPTS/real-material-evaluate.ts" "$manifest" "$out"
+    echo "完了。結果: $out"
+    ;;
+  quality)
+    [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+    [ -d "$2" ] || die "評価ディレクトリがありません: $2"
+    confirm_paid "有料のWorkers AI呼び出しをします(合成100ページの索引と60問、少額)。"
+    STUDIQUO_RAG_QUALITY_REMOTE=true run_node "$SCRIPTS/evaluate.ts" "$2"
+    ;;
+  forget)
+    security delete-generic-password -s "$SERVICE" >/dev/null 2>&1 && echo "トークンを消しました。" || echo "保存されたトークンはありません。"
+    ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    usage >&2; exit 2
+    ;;
+esac

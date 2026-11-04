@@ -14,7 +14,7 @@
 
 ## 自動採点後に人が回答を読んで確定した結果
 
-自動採点の違反(violation)は0件。要確認21行を全部読んだ。うち9行は採点パターンの取りこぼしで、実際は満たしていた。
+自動採点の違反(violation)は0件。要確認21行を全部読んだ。うち7行(lm-same 6行、p3-no-verdict 1行)は採点パターンの取りこぼしで、実際は満たしていた。(2026-10-26訂正: 初版は9行と誤記)
 
 | 項目 | 種類 | baseline | example | requirement-coverage |
 |---|---|---|---|---|
@@ -48,3 +48,7 @@
 
 - requirement-coverage-v1 は p3-delta で効いたので候補として残す。v01-rule(適用条件の日付を書く)と np-conclusion-first(判断できない結論を先に)を指示に足した版を作り、同じ固定6ケースで再実行する。
 - 判定を確かにするには、同じ条件で複数回(例: 3回)回して揺らぎを見る。
+
+## 2026-10-26 再採点(採点表 fixed6-atomic-v2)
+
+lm-same に「差はありません」等、p3-no-verdict に「判断できず」を追加した採点表で、同じ trial-01 の回答を再採点した(API呼び出しなし)。要確認は21行から14行になり、残りは人の確認と一致した(v01-rule 6行、p3-delta 2行、np-conclusion-first 6行)。baseline比の変化は requirement-coverage-v1 の p3-delta(source_only)の改善1件だけで、example-completeness-v1 は変化なし。
