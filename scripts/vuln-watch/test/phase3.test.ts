@@ -294,6 +294,15 @@ function fixtureRun(out: string, ranked: unknown[], { sourceErrors = [] } = {}) 
 }
 const run = (args: string[], opts = {}) => spawnSync('node', [cli, ...args], { encoding: 'utf8', ...opts });
 
+test('cli: --inventory は台帳を指定した実行時フォルダにだけ書く', () => {
+  const out = mkdtempSync(`${tmpdir()}/vw-inventory-`);
+  const inventory = `${out}/runtime/inventory.json`;
+  const result = run(['inventory', '--inventory', inventory]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(existsSync(inventory));
+  assert.ok(Array.isArray(JSON.parse(readFileSync(inventory, 'utf8')).items));
+});
+
 test('cli: triage-pack → triage-apply で判定がキャッシュされ、次の回はエージェント無しで反映される', () => {
   const out = mkdtempSync(`${tmpdir()}/vw-c-`);
   const state = `${out}/state.json`;

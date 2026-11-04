@@ -304,4 +304,77 @@ final class NoteInsertionPolicyTests: XCTestCase {
             "用紙テンプレート変更はAIチャット選択中も noteToolPane 経由で対象ノートページへ適用され、activeNotebook.updatedAt を更新する必要があります。"
         )
     }
+
+    // MARK: - ページサイドバー整理・ページ番号テンキー・資料切替ボタン配置(PR #86, #87)
+
+    func testPageSidebarInlineKeypadAndSeparatedEditMenuOperations() throws {
+        let source = try noteEditorViewSource()
+        let sidebarSlice = try sliceFunction(
+            "private struct PageSidebar: View",
+            until: "private var canDeleteBookmarkedPages: Bool",
+            in: source
+        )
+
+        // 1. ページ番号テンキーがポップオーバーではなくサイドバー一覧内にインライン展開されること
+        XCTAssertFalse(
+            sidebarSlice.contains(".popover(isPresented: $showsJumpKeypad"),
+            "ページ番号テンキーはポップオーバーではなく、ページ一覧内にインライン表示する必要があります。"
+        )
+        XCTAssertTrue(
+            sidebarSlice.contains("if showsJumpKeypad {\n                pageJumpKeypad")
+                && sidebarSlice.contains(".accessibilityLabel(\"ページ番号\")"),
+            "showsJumpKeypad == true のとき、一覧上部に pageJumpKeypad がインライン表示される必要があります。"
+        )
+
+        // 2. jumpToPage の境界チェックと入力リセット・テンキー閉幕
+        XCTAssertTrue(
+            sidebarSlice.contains("guard let pageNumber = Int(jumpText), notebook.sortedPages.indices.contains(pageNumber - 1) else { return }")
+                && sidebarSlice.contains("currentPageIndex = pageNumber - 1")
+                && sidebarSlice.contains("jumpText = \"\"")
+                && sidebarSlice.contains("showsJumpKeypad = false"),
+            "jumpToPage() は有効範囲(1...ページ数)のときのみ currentPageIndex を更新し、jumpText と showsJumpKeypad をリセットする必要があります。"
+        )
+
+        // 3. テンキーの各ボタン(1..9, 0, 消去, 移動, 閉じる)
+        XCTAssertTrue(
+            sidebarSlice.contains("ForEach([\"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"]")
+                && sidebarSlice.contains("keypadButton(\"消去\", icon: \"delete.left\")")
+                && sidebarSlice.contains("guard !jumpText.isEmpty else { return }\n                    jumpText.removeLast()")
+                && sidebarSlice.contains("keypadButton(\"0\") { jumpText.append(\"0\") }")
+                && sidebarSlice.contains("keypadButton(\"移動\", icon: \"arrow.right\") { jumpToPage() }")
+                && sidebarSlice.contains("Button(\"閉じる\") { showsJumpKeypad = false }"),
+            "ページ番号テンキーには 0〜9・空文字ガード付きの消去・移動・閉じるボタンが必要です。"
+        )
+
+        // 4. 「編集」メニューで「並べ替え」と「複数選択」が分離されていること
+        XCTAssertTrue(
+            sidebarSlice.contains("Label(isReorderingPages ? \"並べ替えを終了\" : \"並べ替え\", systemImage: \"arrow.up.arrow.down\")")
+                && sidebarSlice.contains("pageListEditMode = startsReordering ? .active : .inactive")
+                && sidebarSlice.contains("Label(isSelectingPages ? \"複数選択を終了\" : \"複数選択\", systemImage: \"checkmark.circle\")")
+                && sidebarSlice.contains("if !isSelectingPages { selectedPageIDs.removeAll() }"),
+            "ページ一覧の「編集」メニューでは「並べ替え」(EditMode連動)と「複数選択」(selectedPageIDs管理)が分離されている必要があります。"
+        )
+    }
+
+    func testPaneReplaceButtonEmbeddingForNotesAndFriendChatAlignment() throws {
+        let source = try noteEditorViewSource()
+        let replaceSlice = try sliceFunction(
+            "private func paneEmbedsReplaceButton(_ pane: ActivePane) -> Bool",
+            until: "private func closeFlashcardPane",
+            in: source
+        )
+
+        // タイトルバーを持つノート(Secondary、分割中、またはPDFノート)はヘッダー内に埋め込み、1画面の通常ノートだけオーバーレイにする
+        XCTAssertTrue(
+            replaceSlice.contains("case .note:\n            let notebook = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook\n            return pane == .secondary || splitMode != .single || notebook?.containsPDF == true"),
+            "タイトルバーを持つノートペインでは資料切替ボタンをヘッダー内に埋め込み、ページ一覧の開閉に追従させる必要があります。"
+        )
+
+        // フレンドチャットはペインヘッダーが無いため、オーバーレイ余白が (8, 8) で右端に揃うこと
+        XCTAssertTrue(
+            replaceSlice.contains("case .friend:")
+                && replaceSlice.contains("return (8, 8)"),
+            "フレンドチャット(.friend)の資料切替ボタンはヘッダー無しペインに合わせて (8, 8) の余白に整列する必要があります。"
+        )
+    }
 }

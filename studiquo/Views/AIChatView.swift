@@ -92,7 +92,7 @@ struct AIChatPanel: View {
             onPaneDrop: onPaneDrop,
             onReplacePaneMaterial: onReplacePaneMaterial,
             onOpenRAG: { showsRAG = true },
-            isRAGActive: store.ragScope != nil
+            isRAGActive: store.ragScope != nil && RAGAnswerStyle.current != .normal
         )
         .sheet(isPresented: $showsRAG) {
             NavigationStack {
@@ -288,6 +288,8 @@ struct AIChatPane: View {
     let onReplacePaneMaterial: (() -> Void)?
     /// Opens the RAG controls; `nil` hides the button.
     let onOpenRAG: (() -> Void)?
+    @AppStorage(RAGAnswerStyle.storageKey) private var ragAnswerStyle = RAGAnswerStyle.sourceOnly.rawValue
+    private var currentRAGStyle: RAGAnswerStyle { RAGAnswerStyle(rawValue: ragAnswerStyle) ?? .sourceOnly }
     let isRAGActive: Bool
 
     init(
@@ -441,6 +443,21 @@ struct AIChatPane: View {
                             .accessibilityIdentifier("pane-replace-ai")
                         }
                         if let onOpenRAG {
+                            Button {
+                                ragAnswerStyle = currentRAGStyle.next.rawValue
+                            } label: {
+                                Text(currentRAGStyle.title)
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                    .foregroundStyle(currentRAGStyle == .normal ? Color.secondary : Theme.Palette.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("回答スタイル"))
+                            .accessibilityValue(currentRAGStyle.title)
+                            .accessibilityHint(currentRAGStyle.summary)
+                            .accessibilityIdentifier("rag-answer-style-toggle")
                             Button(action: onOpenRAG) {
                                 Image(systemName: "doc.text.magnifyingglass")
                                     .font(.system(size: 16, weight: .semibold))

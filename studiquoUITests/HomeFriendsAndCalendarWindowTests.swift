@@ -37,11 +37,12 @@ final class HomeFriendsAndCalendarWindowTests: XCTestCase {
         XCTAssertTrue(app.buttons["申請・招待"].waitForExistence(timeout: 5))
         XCTAssertFalse(
             app.buttons["friends-sidebar-toggle"].exists,
-            "一覧を開いている間は、開くためのボタンと閉じるためのボタンを重複表示しません"
+            "一覧を開いている間は、一覧を開くボタンを重複表示しません"
         )
-        app.buttons["friends-sidebar-close"].tap()
-        XCTAssertTrue(app.navigationBars["メッセージ"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["friends-sidebar-toggle"].isHittable)
+        XCTAssertFalse(
+            app.buttons["friends-sidebar-close"].exists,
+            "サイドバーに専用の閉じるボタンを追加しません"
+        )
     }
 
     func testHalfWindowCalendarCanCloseAndReopenDayEvents() {
