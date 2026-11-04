@@ -67,6 +67,10 @@ struct RAGCitation: Codable, Equatable, Identifiable {
 /// Search evidence state, independent of the generated answer's correctness.
 enum RAGRetrievalStatus: String, CaseIterable {
     case grounded, partial, insufficient, clarification, fallback
+    /// The search ran and found nothing / could not run: the server sent a fixed message instead of an answer.
+    case notFound = "not_found", unavailable
+    /// "補足あり" with no matching passage: an ordinary answer, not from the student's documents.
+    case general
 
     static func decodeEvent(_ data: Data, acceptingRAG: Bool) -> Self? {
         guard acceptingRAG else { return nil }
@@ -82,6 +86,9 @@ enum RAGRetrievalStatus: String, CaseIterable {
         case .insufficient: return L("取得した抜粋で必要な情報を確認できませんでした。")
         case .clarification: return L("何についての質問か、具体的に教えてください。")
         case .fallback: return L("資料検索を利用できないため、通常のAI回答です。")
+        case .notFound: return L("資料の中に該当する記載が見つかりませんでした。")
+        case .unavailable: return L("資料検索が利用できませんでした。")
+        case .general: return L("資料に該当する記載がないため、一般知識による回答です。")
         }
     }
 }
@@ -101,6 +108,36 @@ enum RAGRegistrationState: String, Decodable {
         case .limited: return L("この資料は大きいため、検索への反映を確認できませんでした。登録済みデータは保持されています。")
         case .empty: return L("検索できる本文がありません。資料の文字認識を確認してください。")
         }
+    }
+}
+
+/// How an answer treats the student's documents. Kept per device. `normal` never searches
+/// (an ordinary AI answer); the other two are sent with every search, and the server treats
+/// anything but "explain" as source-only.
+enum RAGAnswerStyle: String, CaseIterable {
+    case normal, sourceOnly = "source_only", explain
+    var title: String {
+        switch self {
+        case .normal: return L("Chat")
+        case .sourceOnly: return L("Strict")
+        case .explain: return L("Explain")
+        }
+    }
+    var summary: String {
+        switch self {
+        case .normal: return L("資料を検索せず、ふつうのAI回答をします。")
+        case .sourceOnly: return L("資料に書かれたことだけで答えます。該当がなければ、その旨を伝えます。")
+        case .explain: return L("資料に基づいて答え、背景の補足や、資料に該当がないときの一般知識も使います。")
+        }
+    }
+    /// The button steps through the styles in this order, wrapping around.
+    var next: Self {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
+    static let storageKey = LaunchStoreEnvironment.namespaced("ragAnswerStyle")
+    static var current: Self {
+        UserDefaults.standard.string(forKey: storageKey).flatMap(Self.init(rawValue:)) ?? .sourceOnly
     }
 }
 
