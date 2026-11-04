@@ -16,6 +16,7 @@
     "security:dast": "node ../security/dast/run.ts",
     "security:dast:contracts": "node ../security/dast/run.ts --contracts-only",
     "security:dast:test": "node --test ../security/dast/*.test.ts",
+    "security:authz": "node --test --test-timeout=120000 ../security/authz/*.test.ts",
     "security:sast:rules": "python3 ../security/sast/test_rules.py"
   },
   "dependencies": {
