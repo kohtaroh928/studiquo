@@ -1,4 +1,5 @@
 import { identifierText } from './identifiers.ts';
+import { bareNumber, headerUnit, tableRuns, type TableRow } from './table-text.ts';
 // Conservative checks for explicit detail requests. This is not an entailment
 // model or a guarantee of correctness, completeness, or document freshness.
 const escapePattern = (value: any) => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
@@ -21,6 +22,29 @@ const rules = [
  { id: 'quantity', request: /正確な値|具体的な値|数値|何度|何秒|何キロ|何メートル|何パーセント/u, label: /値|数値|潜熱|温度|速度|速さ|距離|時間|割合|長さ|重さ|質量|内角|角|和|合計/u, concrete: (s: any) => valueWithUnit.test(s) },
 ];
 
+// Items a price question does arithmetic on: "電流計を3個買うと合計は", "AとBを1個ずつ", "Aを2台とBを1台", "AとBの価格の差は", "Aの価格はBの何倍".
+// The answer is computed, so each item's own price is the evidence to look for. The whole question has to be this
+// arithmetic: "3個買うと送料は" asks for something else, and "第3回の料金" or "5本の価格" names a thing with its number.
+const COUNT = '(?:\\d+|[一二三四五六七八九十]+)\\s*(?:個|台|枚|本|つ|冊|人|回|袋|箱|セット|名|部|点|着|足|匹|杯)';
+const BOUGHT = '(?:を|の)?(?:買う|買った|買えば|買って|購入する|購入した|購入して|注文する|注文した|注文して|頼む|頼んだ)(?:と|ら|場合|とき|時|なら)?の?';
+const TOTAL_WORD = '(?:合計金額|合計|総額|総計|全部で|全部|代金|支払い額|支払額)';
+const PRICE_ASK = '(?:いくら|何円)(?:に?なりますか|に?なる(?:か|の)?|ですか|でしょうか|かかりますか|かかる(?:か|の)?|必要ですか|払いますか|か|です)?[。？！?!]?$';
+const COUNTED = new RegExp('^(.+?' + COUNT + '(?:ずつ)?)(?:' + BOUGHT + TOTAL_WORD + '?|(?:で|だと|なら)' + TOTAL_WORD + '?|の?' + TOTAL_WORD + ')(?:は|が|で)?' + PRICE_ASK, 'u');
+const COUNTED_SPLIT = new RegExp('(?<=' + COUNT + '(?:ずつ)?)(?:と|、|,)', 'u');
+const COUNTED_ITEM = new RegExp('^(.+?)(?:を|が)?' + COUNT + '(?:ずつ)?$', 'u');
+const PRICE_WORD = '(?:(?:の?(?:価格|値段|料金))の?)';
+const PAIR_TOTAL = new RegExp('^(.+?)' + PRICE_WORD + '?と(.+?)の' + PRICE_WORD + '?(?:差|合計|和|総額|総計)(?:は|が)?' + PRICE_ASK, 'u');
+const PAIR_RATIO = /^(.+?)の(?:価格|値段)は(.+?)の(?:(?:価格|値段)の?)?何倍/u;
+const MAX_CALCULATED_ITEMS = 5;
+const namedItems = (names: string[]) => names.length <= MAX_CALCULATED_ITEMS &&
+ names.every(n => n.length >= 2 && !/^(?:これ|それ|あれ|この|その|あの)|第$/u.test(n)) ? names : null;
+function calculatedItems(text: string) {
+ const counted = COUNTED.exec(text);
+ if (counted) return namedItems(counted[1].split(COUNTED_SPLIT).flatMap(part => COUNTED_ITEM.exec(part)?.[1]?.split(/と|、|,/u) ?? ['']));
+ const pair = PAIR_TOTAL.exec(text) ?? PAIR_RATIO.exec(text);
+ return pair ? namedItems([pair[1], pair[2]]) : null;
+}
+
 export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  const text = normalize(query).slice(0, 4000);
  // Asking what a detail means does not ask for an actual value/sequence/formula.
@@ -33,11 +57,14 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  let subject = /何度|何秒|何キロ|何メートル|何パーセント/u.test(text) ? text.split(/の|を|は/u)[0].trim() :
    conditions.reduce((out,c) => out.replaceAll(c,''),prefix.replace(/\s/gu,''))
      .replace(/メーカー別|地域別|最新|現在|直近/gu,'').replace(/のの/gu,'の').replace(/(?:の|を|は|正確な|具体的な)+$/u,'').trim();
+ if (facets.includes('price')) subject = subject.replace(/の?(?:\d+割引|\d+(?:%|パーセント)(?:引き?|オフ))(?:後|の|だと)*$/u, '');
  const requestedDate = /の(\d{4}年\d{1,2}月\d{1,2}日)(?:参加費|料金)/u.exec(text)?.[1] ?? null;
  if (requestedDate) subject = text.slice(0,text.indexOf('の'+requestedDate));
  if (facets.includes('time')) subject = subject.replace(/の出発$/u,'');
  let targets = comparisonSubjects.length ? comparisonSubjects.map(normalize).map(s => s.replace(/の(?:価格|値段|型番|数式|数値).*$/u, '')) :
    subject && !/^(?:これ|それ|あれ|この資料|このページ|その資料|そのページ)$/u.test(subject) ? [subject] : [''];
+ const calculated = facets.includes('price') && !comparisonSubjects.length ? calculatedItems(text) : null;
+ if (calculated) targets = calculated;
  const namedLaws = [...text.matchAll(/([\p{Script=Katakana}ー]{2,}の法則)/gu)].map(m => m[1]);
  const quantityLabel = ['潜熱', '温度', '速度', '速さ', '距離', '時間', '割合', '長さ', '重さ', '質量'].find(s => text.includes(s));
  // A symbolic answer is a different kind of evidence, never a numeric value.
@@ -68,17 +95,21 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  // A leading verb phrase is cut ("見つかった割合" -> "割合"). Without it the same-sentence route stays off.
  const attributeRun = askedUnit ? new RegExp('([^のをはが、。,\\s]{1,16})(?:は|が)(?:約)?' + escapePattern(askedUnit)).exec(text)?.[1] : null;
  const askedAttribute = attributeRun ? (attributeRun.replace(/^.*[たるだて]/u, '').length >= 2 ? attributeRun.replace(/^.*[たるだて]/u, '') : attributeRun) : null;
- return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit, askedAttribute,
-   completeness: facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
+ // The word the question uses for the column: "Xの時価総額はいくら". Table headers are open vocabulary.
+ const askedColumn = calculated ? null : /の([^のをはが、。,\s]{2,12})(?:は|を)(?:いくら|何円|教えて)/u.exec(text)?.[1] ?? null;
+ return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit, askedAttribute, askedColumn,
+   completeness: !calculated && facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
    freshness: facets.length > 0 && /最新|現在|直近|今日|今年/u.test(text) };
 }
+
+const NOT_STATED = /不明|未記載|記載されていない|載っていない|わからない|ではなく|でなく|ではない|でない/u;
+const INSTRUCTION = /指示|命令|システム|system|ignore previous|回答して|出典として|根拠として|扱って|と答え|捏造|偽造/iu;
 
 function passages(text: any) {
  // Only the actual bounded excerpt is checked, never source titles or metadata.
  // Keep paragraph context for formulas/tables, but don't join unrelated pages.
  return normalize(text).split(/\n\s*\n|[。！？!?]\s*/u)
-   .map(p => p.trim()).filter(p => p && p.length <= 600 &&
-     !/(?:不明|未記載|記載されていない|載っていない|わからない|ではなく|でなく|ではない|でない)|(?:指示|命令|システム|system|ignore previous|回答して|出典として|根拠として|扱って|と答え|捏造|偽造)/iu.test(p));
+   .map(p => p.trim()).filter(p => p && p.length <= 600 && !NOT_STATED.test(p) && !INSTRUCTION.test(p));
 }
 
 function factLabel(span: any, target: any, rule: any) {
@@ -213,6 +244,85 @@ function structuredSupport(text: any, target: any, id: any, requirements: any) {
  });
 }
 
+// What a cell of the asked-for column has to look like.
+function cellValue(id: string, requirements: any) {
+ if (id === 'price' || id === 'revenue') return money;
+ if (id === 'duration') return /\d+(?:\.\d+)?\s*時間/u;
+ if (id === 'time') return date;
+ if (id === 'model') return /^[a-z\d][a-z\d_-]{2,}$/u;
+ if (id !== 'quantity') return null;
+ const asked = askedUnitValue[requirements.askedUnit];
+ return asked ? new RegExp(asked.source, 'u') : valueWithUnit;
+}
+
+// A header names the asked-for attribute as a whole word: "修理費用" is not "費用", and "保存温度" is not "融点".
+// A question that names its column is held to that column, with the words for a price counting as one.
+const PRICE_COLUMN = /^(?:販売|税込|税抜|参考)?(?:価格|値段|料金|単価|金額|定価|参加費|費用)$/u;
+function columnHeader(cell: string, id: string, rule: any, requirements: any) {
+ const word = cell.replace(/[(][^()]*[)]\s*$/u, '').replace(/\s/gu, '');
+ if (!word || word.length > 20 || NOT_STATED.test(word) || INSTRUCTION.test(word)) return false;
+ if (requirements.askedColumn) return word === requirements.askedColumn || PRICE_COLUMN.test(word) && PRICE_COLUMN.test(requirements.askedColumn);
+ if (id === 'price') return PRICE_COLUMN.test(word);
+ if (id !== 'quantity') return new RegExp('^(?:' + rule.label.source + ')$', 'u').test(word);
+ if (requirements.askedAttribute) return word === requirements.askedAttribute || /(?:割合|率)$/u.test(requirements.askedAttribute) && /(?:割合|率)$/u.test(word);
+ return requirements.quantityLabel ? word === requirements.quantityLabel : /^(?:値|数値)$/u.test(word);
+}
+
+// The row's name is its first cell, after a row number if there is one. A name in another column belongs to something else.
+function rowName(row: TableRow, name: string) {
+ const start = bareNumber(row.cells[0]) ? 1 : 0;
+ for (let end = start + 1; end <= Math.min(row.cells.length, start + (row.marked ? 1 : 3)); end++) {
+  if (row.cells.slice(start, end).join('').replace(/\s/gu, '') === name) return { start, end };
+ }
+ return null;
+}
+
+// One row names the target and the first row of the run, which has no numbers, is its header. Every row between
+// them must hold a value of the asked-for kind: anything else may be another table's header or prose, and then the
+// header cannot be tied to this row. The value must sit in the attribute's column. An unmarked row may have more
+// tokens than its header ("電流計 5000円 0.5 A"), which only shifts what is right of a split, so the value is read at
+// its column and must be the only one in the row.
+function runSupport(run: TableRow[], name: string, id: string, rule: any, requirements: any) {
+ const named = run.flatMap((row, at) => { const place = rowName(row, name); return place ? [{ row, at, place }] : []; });
+ if (named.length !== 1 || named[0].at === 0) return false;
+ const { row, at, place } = named[0];
+ const value = cellValue(id, requirements);
+ const header = run[0];
+ if (!value || header.cells.some(c => /\d/u.test(c)) || row.cells.some(c => INSTRUCTION.test(c))) return false;
+ const nameWidth = place.end - place.start - 1;
+ const columns = header.cells.flatMap((c, i) => columnHeader(c, id, rule, requirements) && i !== place.start ? [i] : []);
+ const inColumn = (cell: string, i: number) => !NOT_STATED.test(cell) && value.test(bareNumber(cell) ? cell + headerUnit(header.cells[i]) : cell);
+ const holdsValue = (r: TableRow) => r.cells.length === header.cells.length ? columns.some(i => inColumn(r.cells[i], i)) :
+  !r.marked && r.cells.length > header.cells.length && value.test(r.cells.slice(1).join(' '));
+ if (!run.slice(1, at).every(holdsValue)) return false;
+ if (header.cells.length === row.cells.length - nameWidth) return columns.some(i => inColumn(row.cells[i > place.start ? i + nameWidth : i], i));
+ if (row.marked || row.cells.length < header.cells.length) return false;
+ const rest = row.cells.slice(place.end).join(' ');
+ if (NOT_STATED.test(rest) || [...rest.matchAll(new RegExp(value.source, value.flags.replace('g', '') + 'g'))].length !== 1) return false;
+ return columns.some(i => {
+  if (i <= place.start) return false;
+  const cell = row.cells[i + nameWidth] ?? '';
+  return value.test(cell) || bareNumber(cell) && value.test(cell + (row.cells[i + nameWidth + 1] ?? ''));
+ });
+}
+
+function transposed(run: TableRow[]) {
+ if (run.length < 2 || run.some(row => row.cells.length !== run[0].cells.length)) return null;
+ return run[0].cells.map((_, i) => ({ cells: run.map(row => row.cells[i]), marked: true }));
+}
+
+function tableSupport(text: any, target: any, id: any, rule: any, requirements: any) {
+ const column = requirements.askedColumn;
+ const named = String(target).replace(/\s/gu, '');
+ const name = column && named.endsWith('の' + column) ? named.slice(0, -column.length - 1) : named;
+ if (!name || requirements.conditions.length || requirements.requestedDate || requirements.namedLaws.length) return false;
+ // identifierText would join a name to the number in the next cell ("widget 5000").
+ return tableRuns(String(text).normalize('NFKC').replace(/℃/gu, '°C').toLowerCase()).some(run => {
+  const turned = transposed(run);
+  return runSupport(run, name, id, rule, requirements) || !!turned && runSupport(turned, name, id, rule, requirements);
+ });
+}
+
 export function referenceSupport(text: any, requirements: any) {
  const spans = passages(text);
  const found = new Set();
@@ -226,6 +336,7 @@ export function referenceSupport(text: any, requirements: any) {
    if(structuredSupport(text,target,id,requirements)) {found.add(`${targetIndex}:${id}`);continue;}
    // A price in the same year alone cannot prove applicability on this date.
    if(id==='price' && requirements.requestedDate)continue;
+   if(tableSupport(text,target,id,rule,requirements)) {found.add(`${targetIndex}:${id}`);continue;}
    const clauses = ['price', 'revenue', 'model', 'quantity', 'time'].includes(id) ? spans.flatMap(s => s.split(/[、;]/u)) : spans;
    if (clauses.some(s => {
     if (target && !s.includes(target)) return false;
