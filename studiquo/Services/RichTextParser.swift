@@ -54,7 +54,7 @@ indirect enum RichBlock: Equatable {
 enum RichTextParser {
     static func parse(_ source: String) -> [RichBlock] {
         let prepared = Prepared(source)
-        return BlockParser(prepared: prepared).parseBlocks(prepared.text.components(separatedBy: "\n"))
+        return BlockParser(prepared: prepared).parseBlocks(prepared.text.components(separatedBy: "\n"), depth: 0)
     }
 
     // MARK: Lifting math and code out
@@ -147,7 +147,12 @@ enum RichTextParser {
     fileprivate struct BlockParser {
         let prepared: Prepared
 
-        func parseBlocks(_ lines: [String]) -> [RichBlock] {
+        /// Quotes and lists nest only this deep; deeper markers are read as plain text. Each level is
+        /// a recursive call, and about 15,000 nested `>` used up the stack and crashed the app.
+        static let maxNesting = 24
+
+        func parseBlocks(_ lines: [String], depth: Int) -> [RichBlock] {
+            let canNest = depth < Self.maxNesting
             var blocks: [RichBlock] = []
             var i = 0
             while i < lines.count {
@@ -165,17 +170,17 @@ enum RichTextParser {
                     continue
                 }
                 if isRule(line) { blocks.append(.rule); i += 1; continue }
-                if isQuote(line) {
+                if canNest, isQuote(line) {
                     var inner: [String] = []
                     while i < lines.count, isQuote(lines[i]) {
                         inner.append(unquoted(lines[i]))
                         i += 1
                     }
-                    blocks.append(.quote(parseBlocks(inner)))
+                    blocks.append(.quote(parseBlocks(inner, depth: depth + 1)))
                     continue
                 }
-                if listItem(line) != nil {
-                    blocks.append(parseList(lines, &i))
+                if canNest, listItem(line) != nil {
+                    blocks.append(parseList(lines, &i, depth: depth))
                     continue
                 }
                 if i + 1 < lines.count, isTableRow(line), isTableSeparator(lines[i + 1]) {
@@ -268,7 +273,7 @@ enum RichTextParser {
             )
         }
 
-        private func parseList(_ lines: [String], _ i: inout Int) -> RichBlock {
+        private func parseList(_ lines: [String], _ i: inout Int, depth: Int) -> RichBlock {
             guard let first = listItem(lines[i]) else { return .paragraph([]) }
             var items: [[RichBlock]] = []
 
@@ -297,7 +302,7 @@ enum RichTextParser {
                     itemLines.append(line.trimmingCharacters(in: .whitespaces))
                     i += 1
                 }
-                items.append(parseBlocks(itemLines))
+                items.append(parseBlocks(itemLines, depth: depth + 1))
                 // a blank line between items does not end the list
                 var k = i
                 while k < lines.count, lines[k].trimmingCharacters(in: .whitespaces).isEmpty { k += 1 }
@@ -355,6 +360,12 @@ enum RichTextParser {
     fileprivate struct InlineParser {
         let prepared: Prepared
 
+        /// How many characters the searches for a closing `]` or `*` may look at in total for one
+        /// text. Every unclosed opener searched to the end of the line, so a line of 100,000 `[`
+        /// took a minute. Ordinary text uses a tiny fraction; past the budget openers are plain text.
+        private final class Budget { var remaining = 0 }
+        private let budget = Budget()
+
         struct Style {
             var bold = false, italic = false, strike = false
             var link: String?
@@ -362,7 +373,9 @@ enum RichTextParser {
 
         func parse(_ text: String) -> [RichSpan] {
             var spans: [RichSpan] = []
-            parse(Array(text), style: Style(), into: &spans, depth: 0)
+            let characters = Array(text)
+            budget.remaining = 40 * characters.count + 10_000
+            parse(characters, style: Style(), into: &spans, depth: 0)
             return spans
         }
 
@@ -465,6 +478,8 @@ enum RichTextParser {
             }
             var j = openEnd
             while j < s.count {
+                budget.remaining -= 1
+                if budget.remaining < 0 { return nil }
                 if s[j] == "\\" { j += 2; continue }
                 if s[j] == c {
                     let closing = runLength(of: c, in: s, at: j)
@@ -488,6 +503,8 @@ enum RichTextParser {
             var depth = 0
             var j = i
             while j < s.count {
+                budget.remaining -= 1
+                if budget.remaining < 0 { return nil }
                 if s[j] == "\\" { j += 2; continue }
                 if s[j] == "[" { depth += 1 }
                 if s[j] == "]" {
@@ -498,7 +515,11 @@ enum RichTextParser {
             }
             guard j < s.count, s[j] == "]", j + 1 < s.count, s[j + 1] == "(" else { return nil }
             var k = j + 2
-            while k < s.count, s[k] != ")", !s[k].isWhitespace { k += 1 }
+            while k < s.count, s[k] != ")", !s[k].isWhitespace {
+                budget.remaining -= 1
+                if budget.remaining < 0 { return nil }
+                k += 1
+            }
             guard k < s.count, s[k] == ")" else { return nil }
             return (Array(s[(i + 1)..<j]), Array(s[(j + 2)..<k]), k + 1)
         }
