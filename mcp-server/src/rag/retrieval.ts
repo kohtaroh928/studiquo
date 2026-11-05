@@ -224,15 +224,19 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const pool: any[] = [...references], seenPages = new Set(selected.map(c => JSON.stringify([c.source_id, c.page_number])));
     let attempted = 0;
     for (const hit of ordered) {
-      if (!missingEvidence(pool, plan, requirements).length || attempted >= LIMITS.reserveReads || deadline - Date.now() <= LIMITS.finalAssemblyMs) break;
+      const stillMissing = [requirements, requirements.alternative].filter(Boolean).every((r: any) => missingEvidence(pool, plan, r).length);
+      if (!stillMissing || attempted >= LIMITS.reserveReads || deadline - Date.now() <= LIMITS.finalAssemblyMs) break;
       const page = JSON.stringify([hit.source_id, hit.page_number]);
       if (seenPages.has(page) || !referenceEligible(hit)) continue;
       seenPages.add(page); attempted++;
       const reference = await boundedSearch(() => expand(hit), LIMITS.reserveReadTimeoutMs).catch(() => null);
       if (reference) pool.push(reference);
     }
-    const compact = selectEvidence(pool, plan, requirements, LIMITS.referenceLimit, LIMITS.contextChars, references);
-    const evidence = assessReferences(compact, requirements);
+    // The question as written, unless its alternative is better supported ("3個買うと合計は": each item's price).
+    const alternative = requirements.alternative;
+    const active = alternative && !assessReferences(pool, requirements).accepted && missingEvidence(pool, plan, alternative).length < missingEvidence(pool, plan, requirements).length ? alternative : requirements;
+    const compact = selectEvidence(pool, plan, active, LIMITS.referenceLimit, LIMITS.contextChars, references);
+    const evidence = assessReferences(compact, active);
     if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" }, "requirements");
     const supported = evidence.references;
     // A matching topic is not an answer. If the question asks for a number of a kind the
