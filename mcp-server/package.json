@@ -16,7 +16,8 @@
     "security:dast": "node ../security/dast/run.ts",
     "security:dast:contracts": "node ../security/dast/run.ts --contracts-only",
     "security:dast:test": "node --test ../security/dast/*.test.ts",
-    "security:sast:rules": "python3 ../security/sast/test_rules.py"
+    "security:sast:rules": "python3 ../security/sast/test_rules.py",
+    "security:restore-drill": "node ../security/restore-drill/run.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
