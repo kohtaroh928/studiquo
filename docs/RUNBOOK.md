@@ -404,7 +404,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 
 ### RB-20: バックアップと復元
 
-D1・KV・Durable Objectsの何を失ってよいか、目標(RPO/RTO)、復元の手順は[BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)。**復元の訓練は未実施**(同文書の「訓練の記録」が空である間は、復元できると言わない)。
+D1・KV・Durable Objectsの何を失ってよいか、目標(RPO/RTO)、復元の手順は[BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)。復元の訓練は手元のMiniflareで実施した(2026-11-05)。**KV・D1・DOを古い状態へ戻すと、退会・失効・停止・終了した購読が復活する**ので、復元の前に必ず現在のKVを書き出し、同文書「訓練で確かめた復活」の手順に従う。Cloudflare上の訓練は未実施。
 
 ### RB-21: RAGが資料を使わなかった件数を見る(`insufficient`・`no_match`)
 
