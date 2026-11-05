@@ -34,7 +34,7 @@ const COUNTED_SPLIT = new RegExp('(?<=' + COUNT + '(?:ずつ)?)(?:と|、|,)', '
 const COUNTED_ITEM = new RegExp('^(.+?)(?:を|が)?' + COUNT + '(?:ずつ)?$', 'u');
 const PRICE_WORD = '(?:(?:の?(?:価格|値段|料金))の?)';
 const PAIR_TOTAL = new RegExp('^(.+?)' + PRICE_WORD + '?と(.+?)の' + PRICE_WORD + '?(?:差|合計|和|総額|総計)(?:は|が)?' + PRICE_ASK, 'u');
-const PAIR_RATIO = /^(.+?)の(?:価格|値段)は(.+?)の(?:(?:価格|値段)の?)?何倍/u;
+const PAIR_RATIO = /^(.+?)の(?:価格|値段)は(.+?)の(?:(?:価格|値段)の?)?何倍(?:ですか|でしょうか|になりますか|になる(?:か|の)?|か)?[。？！?!]?$/u;
 const MAX_CALCULATED_ITEMS = 5;
 const namedItems = (names: string[]) => names.length <= MAX_CALCULATED_ITEMS &&
  names.every(n => n.length >= 2 && !/^(?:これ|それ|あれ|この|その|あの)|第$/u.test(n)) ? names : null;
@@ -42,7 +42,8 @@ function calculatedItems(text: string) {
  const counted = COUNTED.exec(text);
  if (counted) return namedItems(counted[1].split(COUNTED_SPLIT).flatMap(part => COUNTED_ITEM.exec(part)?.[1]?.split(/と|、|,/u) ?? ['']));
  const pair = PAIR_TOTAL.exec(text) ?? PAIR_RATIO.exec(text);
- return pair ? namedItems([pair[1], pair[2]]) : null;
+ // "AとBの保守料金の合計" asks for an attribute the items' prices do not answer.
+ return pair && !/の/u.test(pair[1] + pair[2]) ? namedItems([pair[1], pair[2]]) : null;
 }
 
 export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
@@ -57,14 +58,12 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  let subject = /何度|何秒|何キロ|何メートル|何パーセント/u.test(text) ? text.split(/の|を|は/u)[0].trim() :
    conditions.reduce((out,c) => out.replaceAll(c,''),prefix.replace(/\s/gu,''))
      .replace(/メーカー別|地域別|最新|現在|直近/gu,'').replace(/のの/gu,'の').replace(/(?:の|を|は|正確な|具体的な)+$/u,'').trim();
- if (facets.includes('price')) subject = subject.replace(/の?(?:\d+割引|\d+(?:%|パーセント)(?:引き?|オフ))(?:後|の|だと)*$/u, '');
  const requestedDate = /の(\d{4}年\d{1,2}月\d{1,2}日)(?:参加費|料金)/u.exec(text)?.[1] ?? null;
  if (requestedDate) subject = text.slice(0,text.indexOf('の'+requestedDate));
  if (facets.includes('time')) subject = subject.replace(/の出発$/u,'');
  let targets = comparisonSubjects.length ? comparisonSubjects.map(normalize).map(s => s.replace(/の(?:価格|値段|型番|数式|数値).*$/u, '')) :
    subject && !/^(?:これ|それ|あれ|この資料|このページ|その資料|そのページ)$/u.test(subject) ? [subject] : [''];
  const calculated = facets.includes('price') && !comparisonSubjects.length ? calculatedItems(text) : null;
- if (calculated) targets = calculated;
  const namedLaws = [...text.matchAll(/([\p{Script=Katakana}ー]{2,}の法則)/gu)].map(m => m[1]);
  const quantityLabel = ['潜熱', '温度', '速度', '速さ', '距離', '時間', '割合', '長さ', '重さ', '質量'].find(s => text.includes(s));
  // A symbolic answer is a different kind of evidence, never a numeric value.
@@ -96,10 +95,16 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
  const attributeRun = askedUnit ? new RegExp('([^のをはが、。,\\s]{1,16})(?:は|が)(?:約)?' + escapePattern(askedUnit)).exec(text)?.[1] : null;
  const askedAttribute = attributeRun ? (attributeRun.replace(/^.*[たるだて]/u, '').length >= 2 ? attributeRun.replace(/^.*[たるだて]/u, '') : attributeRun) : null;
  // The word the question uses for the column: "Xの時価総額はいくら". Table headers are open vocabulary.
- const askedColumn = calculated ? null : /の([^のをはが、。,\s]{2,12})(?:は|を)(?:いくら|何円|教えて)/u.exec(text)?.[1] ?? null;
- return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit, askedAttribute, askedColumn,
-   completeness: !calculated && facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
+ const askedColumn = /の([^のをはが、。,\s]{2,12})(?:は|を)(?:いくら|何円|教えて)/u.exec(text)?.[1] ?? null;
+ const literal = { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate, askedUnit, askedAttribute, askedColumn,
+   completeness: facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
    freshness: facets.length > 0 && /最新|現在|直近|今日|今年/u.test(text) };
+ // A document may state the total or the discounted price itself, so the question as written is tried first
+ // (retrieval.ts). The alternative is what the answer can be computed from: each item's own price.
+ const undiscounted = facets.includes('price') && targets.length === 1 ? targets[0].replace(/の?(?:\d+割引|\d+(?:%|パーセント)(?:引き?|オフ))(?:後|の|だと)*$/u, '') : targets[0];
+ const alternative = calculated ? { ...literal, targets: calculated, askedColumn: null, completeness: false } :
+  undiscounted !== targets[0] ? { ...literal, targets: [undiscounted] } : null;
+ return { ...literal, alternative };
 }
 
 const NOT_STATED = /不明|未記載|記載されていない|載っていない|わからない|ではなく|でなく|ではない|でない/u;
@@ -257,9 +262,11 @@ function cellValue(id: string, requirements: any) {
 
 // A header names the asked-for attribute as a whole word: "修理費用" is not "費用", and "保存温度" is not "融点".
 // A question that names its column is held to that column, with the words for a price counting as one.
-const PRICE_COLUMN = /^(?:販売|税込|税抜|参考)?(?:価格|値段|料金|単価|金額|定価|参加費|費用)$/u;
+const PRICE_COLUMN = /^(?:販売|税込|税抜|参考)?(?:価格|値段|料金|単価|定価|参加費)$/u;
+// Brackets after a header are dropped only when they hold a unit: "費用(修理)" is not "費用".
+const COLUMN_NOTE = /[(](?:[千万億兆]?(?:円|ドル)|%|パーセント|税込|税抜|°c|度|秒|分|時間|人|件|回|個|台|kg|g|km|m|cm|mm|v|a|w|hz|kj|j|年|日|月)[)]\s*$/u;
 function columnHeader(cell: string, id: string, rule: any, requirements: any) {
- const word = cell.replace(/[(][^()]*[)]\s*$/u, '').replace(/\s/gu, '');
+ const word = cell.replace(COLUMN_NOTE, '').replace(/\s/gu, '');
  if (!word || word.length > 20 || NOT_STATED.test(word) || INSTRUCTION.test(word)) return false;
  if (requirements.askedColumn) return word === requirements.askedColumn || PRICE_COLUMN.test(word) && PRICE_COLUMN.test(requirements.askedColumn);
  if (id === 'price') return PRICE_COLUMN.test(word);
