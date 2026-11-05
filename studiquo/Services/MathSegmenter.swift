@@ -50,10 +50,19 @@ enum MathSegmenter {
                 continue
             }
             // Inline code.
-            if scanner.current == "`", let end = scanner.endOfInlineCode() {
-                flush()
-                result.append(.code(scanner.substring(i, end)))
-                scanner.index = end
+            if scanner.current == "`" {
+                if let end = scanner.endOfInlineCode() {
+                    flush()
+                    result.append(.code(scanner.substring(i, end)))
+                    scanner.index = end
+                    continue
+                }
+                // No closing run of the same length: the whole run is literal text, as in CommonMark.
+                // Retrying from each next backtick re-counted the rest of the run every time, so a
+                // line of 47,000 backticks took 35 seconds.
+                let run = scanner.backtickRunLength()
+                text.append(String(repeating: "`", count: run))
+                scanner.index += run
                 continue
             }
             // Escaped dollar: a literal "$".
@@ -164,11 +173,21 @@ enum MathSegmenter {
         }
 
         func matches(_ s: String, at i: Int? = nil) -> Bool {
+            matches(Array(s), at: i)
+        }
+
+        /// The pattern is passed already split, for the callers that test it at every position.
+        func matches(_ pattern: [Character], at i: Int? = nil) -> Bool {
             let at = i ?? index
-            let pattern = Array(s)
             guard at + pattern.count <= chars.count else { return false }
             for k in 0..<pattern.count where chars[at + k] != pattern[k] { return false }
             return true
+        }
+
+        func backtickRunLength() -> Int {
+            var j = index
+            while j < chars.count, chars[j] == "`" { j += 1 }
+            return j - index
         }
 
         func substring(_ from: Int, _ to: Int) -> String { String(chars[from..<min(to, chars.count)]) }
@@ -181,8 +200,9 @@ enum MathSegmenter {
         func find(_ closing: String, from start: Int) -> Int? {
             var j = start
             let startsWithBackslash = closing.first == "\\"
+            let pattern = Array(closing)
             while j < chars.count {
-                if matches(closing, at: j) { return j }
+                if matches(pattern, at: j) { return j }
                 if chars[j] == "\\" && !startsWithBackslash { j += 2 } else { j += 1 }
             }
             return nil
@@ -237,7 +257,7 @@ enum MathSegmenter {
             var run = 0
             var j = index
             while j < chars.count, chars[j] == "`" { run += 1; j += 1 }
-            let marker = String(repeating: "`", count: run)
+            let marker = [Character](repeating: "`", count: run)
             let limit = endOfParagraph(from: j)
             var k = j
             while k < limit {
@@ -258,18 +278,27 @@ enum MathSegmenter {
         }
 
         func inlineDollar(at i: Int) -> Dollar {
-            let limit = endOfParagraph(from: i + 1)
             guard i + 1 < chars.count, !chars[i + 1].isWhitespace else { return .literal }
-            // closing: next unescaped "$" that is not the start of "$$"
+            // closing: next unescaped "$" that is not the start of "$$". The paragraph's end is
+            // looked for in the same pass: computing it first scanned the rest of the paragraph for
+            // every dollar sign, which grows with the square of the paragraph's length.
             var j = i + 1
-            while j < limit {
-                if chars[j] == "\\" { j += 2; continue }
+            var limit = chars.count
+            while j < chars.count {
+                if chars[j] == "\n", j + 1 < chars.count, chars[j + 1] == "\n" { limit = j; break }
+                if chars[j] == "\\" {
+                    // The escaped character is skipped, but a blank line right after the backslash still ends the paragraph.
+                    if j + 2 < chars.count, chars[j + 1] == "\n", chars[j + 2] == "\n" { limit = j + 1; break }
+                    j += 2
+                    continue
+                }
                 if chars[j] == "$" { break }
                 j += 1
             }
+            if j >= chars.count { limit = chars.count } // escape at the very end can step past it
             guard j < limit, chars[j] == "$" else {
                 // never closed: a half-streamed formula, or a stray dollar
-                let rest = substring(i + 1, limit)
+                let rest = substring(i + 1, min(limit, chars.count))
                 let looksLikeMath = rest.contains("\\") || rest.contains("^") || rest.contains("_") || rest.contains("{")
                 return looksLikeMath ? .incomplete : .literal
             }

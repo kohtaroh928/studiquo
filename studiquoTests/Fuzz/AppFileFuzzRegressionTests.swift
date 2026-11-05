@@ -87,4 +87,45 @@ final class AppFileFuzzRegressionTests: XCTestCase {
         let data = try DocxZip.write([.init(path: "word/document.xml", data: Data(xml.utf8))])
         XCTAssertThrowsError(try DocxReader.read(from: data)) { XCTAssertEqual($0 as? DocxReader.ReadError, .archiveTooLarge) }
     }
+
+    // MARK: Text and math
+
+    /// A few thousand nested braces used up the stack: the app crashed (SIGSEGV) instead of showing the text.
+    func testMathExpressionParserSurvivesDeepNesting() {
+        for opener in ["{", "\\frac{", "\\sqrt{", "{{"] {
+            let expression = MathExpressionParser.parse(String(repeating: opener, count: 200_000) + "x")
+            XCTAssertNotNil(expression)
+        }
+        XCTAssertEqual(MathExpressionParser.parse("x^{2}"), .sequence([.superscript(.text("x"), .sequence([.text("2")]))]))
+    }
+
+    /// Every backtick of an unclosed run re-counted the rest of the run: 47,000 of them took 35 seconds.
+    func testLongUnclosedBacktickRunIsLinear() {
+        let source = "a " + String(repeating: "`", count: 40_000) // not at the start of a line, so not a code fence
+        let began = Date()
+        let segments = MathSegmenter.segments(in: source)
+        XCTAssertLessThan(Date().timeIntervalSince(began), 3)
+        XCTAssertEqual(segments, [.text(source)])
+    }
+
+    func testBacktickCodeStillWorks() {
+        XCTAssertEqual(MathSegmenter.segments(in: "a `b` c"), [.text("a "), .code("`b`"), .text(" c")])
+        XCTAssertEqual(MathSegmenter.segments(in: "``a`b``"), [.code("``a`b``")])
+        XCTAssertEqual(MathSegmenter.segments(in: "`open"), [.text("`open")])
+    }
+
+    /// Looking for the end of the paragraph at every dollar sign made a long paragraph of prices slow.
+    func testManyDollarSignsInOneParagraphAreLinear() {
+        let source = String(repeating: "$5 ", count: 30_000)
+        let began = Date()
+        _ = MathSegmenter.segments(in: source)
+        XCTAssertLessThan(Date().timeIntervalSince(began), 3)
+    }
+
+    func testInlineMathAndParagraphBreaksStillSegment() {
+        XCTAssertEqual(MathSegmenter.segments(in: "x $a+b$ y"), [.text("x "), .inlineMath("a+b"), .text(" y")])
+        // a blank line ends the paragraph, so a dollar in the next one does not close it
+        let broken = MathSegmenter.segments(in: "$a^2\n\nb$")
+        XCTAssertFalse(broken.contains(.inlineMath("a^2\n\nb")))
+    }
 }
