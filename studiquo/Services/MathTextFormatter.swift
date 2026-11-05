@@ -854,9 +854,13 @@ private struct TeXRenderer {
     // MARK: Environments
 
     private func environment(_ name: String, _ rows: [[[TeX]]]) -> Frag {
-        let rowStrings = rows.map { row in row.map { string($0) } }
+        // Rendered only by the environments that print cells as strings. `cases`
+        // and the align family lay the same cells out with `frags` instead, so
+        // rendering them here as well doubled the work at every nesting level:
+        // 60 nested `\begin{align}` (the parser's depth limit) never finished.
+        func renderedRows() -> [[String]] { rows.map { row in row.map { string($0) } } }
         func listRows(_ separator: String) -> String {
-            rowStrings.map { $0.joined(separator: separator) }.joined(separator: "; ")
+            renderedRows().map { $0.joined(separator: separator) }.joined(separator: "; ")
         }
         switch name {
         case "pmatrix": return Frag(text: "(\(listRows(", ")))", kind: .ordinary)
@@ -868,9 +872,9 @@ private struct TeXRenderer {
             let body = rows.map { row in join(row.flatMap { frags($0) + [Frag(text: " ", kind: .space)] }) }.joined(separator: "; ")
             return Frag(text: "{ \(body) }", kind: .ordinary)
         case "array", "tabular", "tabularx":
-            return Frag(text: rowStrings.map { $0.joined(separator: " | ") }.joined(separator: "\n"), kind: .ordinary)
+            return Frag(text: renderedRows().map { $0.joined(separator: " | ") }.joined(separator: "\n"), kind: .ordinary)
         case "substack":
-            return Frag(text: rowStrings.map { $0.joined(separator: " ") }.joined(separator: ", "), kind: .ordinary)
+            return Frag(text: renderedRows().map { $0.joined(separator: " ") }.joined(separator: ", "), kind: .ordinary)
         default:
             // aligned, align, gather, equation, split, …: one line per row
             let lines = rows.map { row in join(row.flatMap { frags($0) + [Frag(text: " ", kind: .space)] }) }
