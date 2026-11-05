@@ -268,9 +268,9 @@ final class AIConsentGateAndNormalFeaturesTests: XCTestCase {
 
         NotebookEncryptionService.lock(notebook, keyService: keyService)
 
-        let option = try XCTUnwrap(AIAppAttachmentCatalog.notebookAttachmentOption(notebook))
-        XCTAssertFalse(option.attachment.contextText.contains("極秘"), "Sealed notebook text must never leak into AI attachment context")
-        XCTAssertEqual(option.attachment.contextText, "この資料には、AIが読める抽出済みテキストがまだありません。")
+        // A locked notebook is not offered at all, so its text cannot reach the AI context.
+        XCTAssertNil(AIAppAttachmentCatalog.notebookAttachmentOption(notebook))
+        XCTAssertTrue(AIAppAttachmentCatalog.options(notebooks: [notebook], flashcardDecks: [], textDocuments: []).isEmpty)
     }
 }
 

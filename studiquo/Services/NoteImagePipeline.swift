@@ -103,6 +103,12 @@ actor NoteImageCache {
         }
         return image
     }
+
+    func removeAll() {
+        for task in inFlight.values { task.cancel() }
+        inFlight.removeAll()
+        cache.removeAllObjects()
+    }
 }
 
 /// Existing notebooks are upgraded only as their photos become visible and

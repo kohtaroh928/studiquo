@@ -166,10 +166,16 @@ private indirect enum TeX {
 }
 
 private struct TeXParser {
+    private static let maxNodes = 8_192
+    private static let maxMacroDefinitions = 64
+    private static let maxMacroNodes = 64
+
     private let chars: [Character]
     private var i = 0
     private var macros: [String: [TeX]] = [:]
+    private var macroNodeCounts: [String: Int] = [:]
     private var depth = 0
+    private var nodeCount = 0
 
     init(_ source: String) { chars = Array(source) }
 
@@ -183,8 +189,9 @@ private struct TeXParser {
         var nodes: [TeX] = []
         depth += 1
         defer { depth -= 1 }
-        guard depth < 60 else { i = chars.count; return nodes }
+        guard depth < 60, nodeCount < Self.maxNodes else { i = chars.count; return nodes }
         while i < chars.count {
+            guard nodeCount < Self.maxNodes else { i = chars.count; break }
             let c = chars[i]
             switch stop {
             case .brace where c == "}": return nodes
@@ -235,7 +242,8 @@ private struct TeXParser {
     // MARK: Atoms
 
     private mutating func parseAtom() -> TeX? {
-        guard i < chars.count else { return nil }
+        guard i < chars.count, nodeCount < Self.maxNodes else { i = chars.count; return nil }
+        nodeCount += 1
         let c = chars[i]
         switch c {
         case "{":
@@ -371,7 +379,12 @@ private struct TeXParser {
         }
 
         if Self.noOpCommands.contains(name) { return nil }
-        if let macro = macros[name] { return .group(macro) }
+        if let macro = macros[name] {
+            let cost = max(macroNodeCounts[name] ?? macro.count, 1)
+            nodeCount += cost
+            guard nodeCount <= Self.maxNodes else { i = chars.count; return nil }
+            return .group(macro)
+        }
 
         switch name {
         case "quad", "enspace", "thinspace", "medspace", "thickspace": return .space(" ")
@@ -545,13 +558,20 @@ private struct TeXParser {
         skipSpaces()
         guard i < chars.count, chars[i] == "{" else { return }
         i += 1
+        let startNodeCount = nodeCount
         let body = parseSequence(stop: .brace)
+        let bodyCost = max(nodeCount - startNodeCount, body.count)
         if i < chars.count, chars[i] == "}" { i += 1 }
+        guard !name.isEmpty,
+              bodyCost <= Self.maxMacroNodes,
+              macros[name] != nil || macros.count < Self.maxMacroDefinitions else { return }
         if command == "DeclareMathOperator" {
             // \DeclareMathOperator{\name}{text}
             macros[name] = [.styled("operatorname", .group(body))]
-        } else if !name.isEmpty {
+            macroNodeCounts[name] = bodyCost + 1
+        } else {
             macros[name] = body
+            macroNodeCounts[name] = bodyCost
         }
     }
 

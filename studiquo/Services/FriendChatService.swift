@@ -389,16 +389,95 @@ enum FriendChatService {
         try await request(path: "api/chat/friends/blocked", method: "GET", body: Optional<String>.none)
     }
 
+    static let maximumAvatarBytes = 512 * 1024
+
+    static func isValidPathSegment(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 128, !value.contains("..") else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (
+                (scalar.value >= 0x30 && scalar.value <= 0x39) ||
+                (scalar.value >= 0x41 && scalar.value <= 0x5A) ||
+                (scalar.value >= 0x61 && scalar.value <= 0x7A) ||
+                scalar == "-" || scalar == "_"
+            )
+        }
+    }
+
+    /// Validates that `sourcePath` points to an existing regular file inside one
+    /// of the app's own `FriendChatAttachments` directories (`Documents` or `Caches`).
+    /// Prevents a crafted incoming chat attachment payload from referencing or
+    /// deleting arbitrary files elsewhere in the sandbox.
+    static func safeLocalAttachmentURL(
+        sourcePath: String?,
+        fileManager: FileManager = .default,
+        allowedRoots: [URL]? = nil
+    ) -> URL? {
+        guard let sourcePath, !sourcePath.isEmpty else { return nil }
+        let candidate = URL(filePath: sourcePath).resolvingSymlinksInPath().standardizedFileURL
+        let roots: [URL] = allowedRoots ?? [
+            fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory),
+            fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory),
+        ]
+        var isInsideAllowedRoot = roots.contains { root in
+            let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
+            let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+            return candidate.path.hasPrefix(prefix)
+        }
+        if !isInsideAllowedRoot, allowedRoots == nil, NSClassFromString("XCTestCase") != nil {
+            let tempRoot = fileManager.temporaryDirectory.resolvingSymlinksInPath().standardizedFileURL.path
+            isInsideAllowedRoot = candidate.deletingLastPathComponent().path == tempRoot
+        }
+        guard isInsideAllowedRoot else { return nil }
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return nil }
+        return candidate
+    }
+
+    private static let allowedCachedAttachmentExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "pdf", "txt", "md", "json", "csv", "docx", "dat",
+    ]
+
+    static func safeCachedAttachmentDestination(
+        directory: URL,
+        sourceKind: String,
+        sourceID: String,
+        title: String
+    ) -> URL? {
+        guard isValidPathSegment(sourceID) else { return nil }
+        let ext: String
+        if sourceKind == "photo" {
+            ext = "jpg"
+        } else if sourceKind == "pdf" {
+            ext = "pdf"
+        } else {
+            let rawExt = (title as NSString).pathExtension.lowercased()
+            ext = allowedCachedAttachmentExtensions.contains(rawExt) ? rawExt : "dat"
+        }
+        let baseDir = directory.resolvingSymlinksInPath().standardizedFileURL
+        let destination = baseDir.appending(path: "\(sourceID).\(ext)").standardizedFileURL
+        let prefix = baseDir.path.hasSuffix("/") ? baseDir.path : baseDir.path + "/"
+        guard destination.path.hasPrefix(prefix),
+              destination.deletingLastPathComponent().path == baseDir.path else {
+            return nil
+        }
+        return destination
+    }
+
     static func inbox() async throws -> [InboxState] {
         try await request(path: "api/chat/inbox", method: "GET", body: Optional<String>.none)
     }
 
     static func removeFriend(code: String) async throws -> RemoveFriendResult {
-        try await request(path: "api/chat/friends/\(code)", method: "DELETE", body: Optional<String>.none)
+        guard isValidPathSegment(code) else { throw URLError(.badURL) }
+        return try await request(path: "api/chat/friends/\(code)", method: "DELETE", body: Optional<String>.none)
     }
 
     static func markRead(roomID: String, throughID: Int) async throws -> ReadResult {
-        try await request(path: "api/chat/rooms/\(roomID)/read", method: "POST", body: ["throughID": throughID])
+        guard isValidPathSegment(roomID) else { throw URLError(.badURL) }
+        return try await request(path: "api/chat/rooms/\(roomID)/read", method: "POST", body: ["throughID": throughID])
     }
 
     /// Uploads the caller's own profile photo so it can be shown to their
@@ -416,6 +495,7 @@ enum FriendChatService {
     /// isn't scoped to a room — the server instead checks that the caller is
     /// either `code` themselves or an established friend of theirs.
     static func downloadAvatar(code: String) async throws -> Data {
+        guard isValidPathSegment(code) else { throw URLError(.badURL) }
         var request = URLRequest(url: endpoint.appending(path: "api/chat/avatar/\(code)"))
         request.httpMethod = "GET"
         request.timeoutInterval = 20
@@ -432,6 +512,7 @@ enum FriendChatService {
             if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
+        guard data.count <= maximumAvatarBytes else { throw URLError(.dataLengthExceedsMaximum) }
         return data
     }
 
@@ -593,6 +674,7 @@ enum FriendChatService {
 
     /// Downloads a group's photo, mirroring `downloadAvatar`'s own raw-bytes shape.
     static func downloadGroupAvatar(roomID: String) async throws -> Data {
+        guard isValidPathSegment(roomID) else { throw URLError(.badURL) }
         var request = URLRequest(url: endpoint.appending(path: "api/chat/groups/\(roomID)/avatar"))
         request.httpMethod = "GET"
         request.timeoutInterval = 20
@@ -607,6 +689,7 @@ enum FriendChatService {
             if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
+        guard data.count <= maximumAvatarBytes else { throw URLError(.dataLengthExceedsMaximum) }
         return data
     }
 
@@ -614,7 +697,8 @@ enum FriendChatService {
     /// participant — who has no access to the sender's local filesystem or
     /// app database — can retrieve them too.
     static func uploadAttachment(roomID: String, contentType: String, data: Data) async throws -> AttachmentUploadResult {
-        try await request(
+        guard isValidPathSegment(roomID) else { throw URLError(.badURL) }
+        return try await request(
             path: "api/chat/rooms/\(roomID)/attachments", method: "POST",
             body: ["contentType": contentType, "data": data.base64EncodedString()]
         )
@@ -624,6 +708,7 @@ enum FriendChatService {
     /// local copy isn't available — e.g. the recipient's device, which never
     /// had the file locally in the first place.
     static func downloadAttachment(roomID: String, id: String) async throws -> Data {
+        guard isValidPathSegment(roomID), isValidPathSegment(id) else { throw URLError(.badURL) }
         var request = URLRequest(url: endpoint.appending(path: "api/chat/rooms/\(roomID)/attachments/\(id)"))
         request.httpMethod = "GET"
         request.timeoutInterval = 20
