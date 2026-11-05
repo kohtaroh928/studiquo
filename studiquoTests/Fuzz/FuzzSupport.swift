@@ -93,7 +93,9 @@ enum FuzzMutate {
                 bytes.insert(contentsOf: chunk, at: rng.below(bytes.count + 1))
             case 5 where bytes.count > 1:
                 bytes.removeLast(1 + rng.below(min(bytes.count - 1, 512)))
-            case 6, 7 where bytes.count >= 4:
+            case 6, 7:
+                // (`where` on a multi-pattern case guards only the last pattern, so the check is inside.)
+                guard bytes.count >= 4 else { break }
                 let at = rng.below(bytes.count - 3)
                 let value = rng.pick(magic32)
                 for k in 0..<4 { bytes[at + k] = UInt8(truncatingIfNeeded: value >> UInt32(8 * k)) }
