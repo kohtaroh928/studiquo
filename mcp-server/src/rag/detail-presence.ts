@@ -1,3 +1,4 @@
+import { withTableUnits } from './table-text.ts';
 // Two narrow checks that the selected excerpts can answer what the question
 // actually asks for. A matching topic is not enough: "the pass rate of X"
 // needs a rate, and a question about a term the library never mentions has no
@@ -5,6 +6,16 @@
 // ever remove references, never add them. Nothing here reads titles or metadata.
 const NUMBER = '[\\d〇零一二三四五六七八九十百千万]';
 const amount = (unit: string) => new RegExp(`${NUMBER}[\\d.,]*\\s*${unit}`, 'u');
+
+// "Aの価格はBの何倍" can also be computed: each item named in a sentence or table row with an amount of money.
+const PRICE_RATIO = /^(.+?)の(?:価格|値段)は(.+?)の(?:(?:価格|値段)の?)?何\s*倍(?:ですか|でしょうか|になりますか|になる(?:か|の)?|か)?[。？！?!]?$/u;
+const MONEY_AMOUNT = /\d[\d,.]*\s*[億万千兆]?\s*(?:円|ドル)/u;
+function priceRatioEvidence(ask: string, texts: string[]) {
+  const items = PRICE_RATIO.exec(ask)?.slice(1, 3);
+  if (!items) return false;
+  const clauses = texts.flatMap(text => text.split(/[\n。]/u)).filter(clause => MONEY_AMOUNT.test(clause));
+  return items.every(item => clauses.some(clause => clause.includes(item)));
+}
 
 // "何%" and friends: what the question asks for, and the form that would answer it.
 // Longer units come first in the list only for readability; every entry is tested.
@@ -74,7 +85,8 @@ function subjectTokens(query: unknown) {
 export function quantityEvidencePresent(query: unknown, evidence: string | Excerpt[], options: { tied?: boolean } = {}) {
   const ask = fold(query);
   const excerpts: Excerpt[] = typeof evidence === 'string' ? [{ text: evidence, primary: true }] : evidence;
-  const folded = excerpts.map(e => ({ text: fold(e.text), primary: !!e.primary }));
+  const folded = excerpts.map(e => ({ text: fold(withTableUnits(fold(e.text))), primary: !!e.primary }));
+  if (priceRatioEvidence(ask, folded.map(e => e.text))) return true;
   const asked = ASKED_UNITS.filter(u => u.ask.test(ask));
   if (asked.length) {
     const carrying = folded.filter(e => asked.some(u => u.have.test(e.text)));
