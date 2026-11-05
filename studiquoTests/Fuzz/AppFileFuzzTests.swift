@@ -13,9 +13,8 @@ final class AppFileFuzzTests: XCTestCase {
     private var seed: UInt64 { UInt64(FuzzEnv.int("STUDIQUO_FUZZ_SEED") ?? 20_261_105) }
     private var start: Int { FuzzEnv.int("STUDIQUO_FUZZ_START") ?? 0 }
     private func cases(smoke: Int) -> Int { FuzzEnv.int("STUDIQUO_FUZZ_CASES") ?? smoke }
-    private var deadline: DispatchTime {
-        .now() + .milliseconds(Int((Double(FuzzEnv.int("STUDIQUO_FUZZ_BUDGET_SECONDS") ?? 120)) * 1000))
-    }
+    /// Seconds this invocation may run; the loop stops starting cases after it (the driver also kills a hung process).
+    private var budgetSeconds: Double { Double(FuzzEnv.int("STUDIQUO_FUZZ_BUDGET_SECONDS") ?? 120) }
 
     // MARK: Loop
 
@@ -27,9 +26,10 @@ final class AppFileFuzzTests: XCTestCase {
         let total = cases(smoke: smoke)
         var accepted = 0, rejected = 0, ran = 0
         let began = DispatchTime.now().uptimeNanoseconds
+        let stopAt = DispatchTime.now() + .milliseconds(Int(budgetSeconds * 1000)) // fixed once: a computed property would move with every check
         var last = start - 1
         for index in start..<(start + total) {
-            if DispatchTime.now() > deadline { break }
+            if DispatchTime.now() > stopAt { break }
             var rng = FuzzRNG(seed: seed, index: index, salt: UInt64(truncatingIfNeeded: target.hashValue &* 0) &+ UInt64(target.utf8.reduce(0) { $0 &* 31 &+ Int($1) }))
             let input = make(&rng, index)
             if FuzzEnv.string("STUDIQUO_FUZZ_DUMP_ONLY") != nil { // rebuild one case from its seed and index, without running the parser
@@ -85,7 +85,7 @@ final class AppFileFuzzTests: XCTestCase {
             xml = xml.replacingOccurrences(of: "<w:body>", with: "<w:body>" + String(repeating: "<w:p>", count: n))
         case 1: // entity expansion and external entities must not be resolved
             let entities = (1...9).map { "<!ENTITY l\($0) \"" + String(repeating: "&l\($0 - 1);", count: 10) + "\">" }.joined()
-            xml = "<?xml version=\"1.0\"?><!DOCTYPE w:document [<!ENTITY l0 \"lol\">\(entities)<!ENTITY xxe SYSTEM \"file:///etc/hosts\">]>" + xml.drop { _ in false }.replacingOccurrences(of: "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>", with: "").replacingOccurrences(of: "<w:t>見出し</w:t>", with: "<w:t>&l9;&xxe;</w:t>")
+            xml = "<?xml version=\"1.0\"?><!DOCTYPE w:document [<!ENTITY l0 \"lol\">\(entities)<!ENTITY xxe SYSTEM \"file:///etc/hosts\">]>" + xml.replacingOccurrences(of: "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>", with: "").replacingOccurrences(of: "<w:t>見出し</w:t>", with: "<w:t>&l9;&xxe;</w:t>")
         case 2: // huge attribute and text
             xml = xml.replacingOccurrences(of: "w:val=\"Heading1\"", with: "w:val=\"" + String(repeating: "h", count: 1 + rng.below(2_000_000)) + "\"")
         case 3:
@@ -102,6 +102,16 @@ final class AppFileFuzzTests: XCTestCase {
     }
 
     // MARK: ZIP and DOCX
+
+    /// The words of a read document: paragraph bodies and table cells. (A block's own description names only its type.)
+    static func text(of blocks: [DocumentBlock]) -> String {
+        blocks.map { block in
+            if block.kind == .table {
+                return (block.tableRows ?? []).flatMap { $0.cells ?? [] }.map(\.text).joined(separator: " ")
+            }
+            return DocumentBody.decode(block.bodyData).string
+        }.joined(separator: "\n")
+    }
 
     func testZip() throws {
         let valid = try docx()
@@ -134,7 +144,7 @@ final class AppFileFuzzTests: XCTestCase {
             do {
                 let result = try DocxReader.read(from: data)
                 // External entities must never leak file contents into the document.
-                let text = result.blocks.map { String(describing: $0) }.joined()
+                let text = Self.text(of: result.blocks)
                 if text.contains("localhost") && text.contains("127.0.0.1") { rec.violation(index: index, "external entity content (/etc/hosts) appeared in output", input: data) }
                 return true
             } catch { return false }

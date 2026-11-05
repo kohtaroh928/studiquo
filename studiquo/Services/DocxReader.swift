@@ -123,7 +123,6 @@ enum DocxReader {
                 for (cellIndex, parsedCell) in parsedRow.cells.enumerated() {
                     let cell = DocumentTableCell(order: cellIndex)
                     cell.columnSpan = max(1, parsedCell.gridSpan)
-                    cell.row = row
                     let combinedText = parsedCell.paragraphs.map { attributedString(from: $0).string }.joined(separator: "\n")
                     cell.text = combinedText
                     cells.append(cell)

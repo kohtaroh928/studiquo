@@ -90,6 +90,10 @@ enum RichTextParser {
             // that usually starts the next text must not become a blank line
             // (which would split a list around a formula).
             var afterBlock = false
+            // The parser's own placeholders live in the private-use area; the same characters in the
+            // source would be read as placeholders (and each one searched to the end of the text).
+            let reserved = Set([RichTextParser.inlineOpen, RichTextParser.inlineClose, RichTextParser.blockOpen, RichTextParser.blockClose])
+            let source = source.contains(where: reserved.contains) ? String(source.filter { !reserved.contains($0) }) : source
             for segment in MathSegmenter.segments(in: source) {
                 var isBlock = false
                 switch segment {
@@ -287,8 +291,9 @@ enum RichTextParser {
                         var k = i + 1
                         while k < lines.count, lines[k].trimmingCharacters(in: .whitespaces).isEmpty { k += 1 }
                         guard k < lines.count, indentation(of: lines[k]) >= start.contentOffset else { break itemLoop }
-                        itemLines.append("")
-                        i += 1
+                        // All the blank lines at once: taking them one by one searched the rest again for each.
+                        itemLines.append(contentsOf: Array(repeating: "", count: k - i))
+                        i = k
                         continue
                     }
                     if indentation(of: line) >= start.contentOffset {

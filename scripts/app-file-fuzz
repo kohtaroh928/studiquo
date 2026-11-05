@@ -94,6 +94,9 @@ def main():
     if a.resume and (out / "next-index.txt").exists():
         next_index = int((out / "next-index.txt").read_text())
     executed = 0
+    if not a.resume:  # a new run must not read an earlier run's summaries or findings as its own
+        for stale in list(out.glob("summary-*.json")) + list(out.glob("findings-*.jsonl")) + list(out.glob("repro-*.bin")):
+            stale.unlink()
     crashes = []
     infra = None
     while next_index < end and time.time() - began < a.budget_seconds:
@@ -106,7 +109,7 @@ def main():
         })
         if a.target == "canary-crash":
             env["TEST_RUNNER_STUDIQUO_FUZZ_CANARY"] = "crash"
-        for stale in out.glob("journal-*.txt"):
+        for stale in list(out.glob("journal-*.txt")) + list(out.glob(f"summary-{a.target}-{a.seed}-{next_index}.json")):
             stale.unlink()
         cmd = ["xcodebuild", "test-without-building", "-project", str(ROOT / "studiquo.xcodeproj"), "-scheme", "studiquo",
                "-destination", f"id={SIM}", "-derivedDataPath", derived, "-parallel-testing-enabled", "NO",

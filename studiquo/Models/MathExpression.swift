@@ -117,7 +117,12 @@ enum MathExpressionParser {
     private static func parseFactor(_ scanner: inout Scanner) -> MathExpression {
         scanner.skipWhitespace()
         var base = parseAtom(&scanner)
-        while true {
+        // Each suffix wraps the base one level deeper, so a chain of them is nesting too: `a^1^1^1…`
+        // (hundreds of thousands) would build a tree too deep to draw or free. Past the limit the
+        // remaining suffixes are left for `parseSequence` to read as ordinary characters.
+        var suffixes = 0
+        while suffixes < maxDepth {
+            suffixes += 1
             if scanner.current == "^" {
                 scanner.advance()
                 base = .superscript(base, parseGroup(&scanner))
