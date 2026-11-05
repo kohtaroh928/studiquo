@@ -128,4 +128,32 @@ final class AppFileFuzzRegressionTests: XCTestCase {
         let broken = MathSegmenter.segments(in: "$a^2\n\nb$")
         XCTAssertFalse(broken.contains(.inlineMath("a^2\n\nb")))
     }
+
+    /// About 15,000 nested `>` used up the stack: the app crashed.
+    func testDeeplyNestedQuotesAndListsDoNotCrash() {
+        for marker in ["> ", "- ", "1. ", "> - "] {
+            let blocks = RichTextParser.parse(String(repeating: marker, count: 30_000) + "end")
+            XCTAssertFalse(blocks.isEmpty)
+        }
+        guard case .quote(let inner)? = RichTextParser.parse("> a\n> > b").first else { return XCTFail("a quote is still a quote") }
+        XCTAssertFalse(inner.isEmpty)
+    }
+
+    func testManyUnclosedLinkAndEmphasisOpenersAreBounded() {
+        for opener in ["[", "*a ", "_a ", "~~a ", "![", "[a]("] {
+            let source = String(repeating: opener, count: 20_000)
+            let began = Date()
+            _ = RichTextParser.parse(source)
+            XCTAssertLessThan(Date().timeIntervalSince(began), 4, "opener \(opener)")
+        }
+        // ordinary markup keeps working
+        XCTAssertFalse(RichTextParser.parse("a **b** and [c](http://example.com) and *d*").isEmpty)
+    }
+
+    func testPlainTextOfAVeryLongLineIsBounded() {
+        let began = Date()
+        _ = MathTextFormatter.plainText(from: String(repeating: "[", count: 100_000))
+        XCTAssertLessThan(Date().timeIntervalSince(began), 4)
+        XCTAssertEqual(MathTextFormatter.plainText(from: "## 見出し\n- 項目 **太字**"), "見出し\n・項目 太字")
+    }
 }

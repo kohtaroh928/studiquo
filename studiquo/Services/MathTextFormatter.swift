@@ -102,9 +102,14 @@ enum MathTextFormatter {
         return code.trimmingCharacters(in: CharacterSet(charactersIn: "`"))
     }
 
+    private static let maxLineLengthForMarkdown = 5_000
+
     private static func strippingMarkdown(_ text: String) -> String {
         var lines: [String] = []
         for var line in text.components(separatedBy: "\n") {
+            // A line this long is not prose, and the patterns below backtrack: one line of 155,000 `[`
+            // ran for minutes. It is left as written.
+            if line.count > Self.maxLineLengthForMarkdown { lines.append(line); continue }
             if line.range(of: #"^\s*([-*_]\s*){3,}$"#, options: .regularExpression) != nil,
                line.range(of: #"^\s*[-*]\s+\S"#, options: .regularExpression) == nil { continue }
             if line.range(of: #"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$"#, options: .regularExpression) != nil,
