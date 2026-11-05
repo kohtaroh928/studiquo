@@ -144,7 +144,8 @@ enum NotebookBackupService {
               let urls = try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
         return urls.compactMap { url in
             guard let data = try? Data(contentsOf: url),
-                  let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
+                  let archive = try? JSONDecoder().decode(Archive.self, from: data),
+              archive.pages.count <= ImportLimits.maxBackupPages else { return nil }
             return AutomaticBackup(url: url, title: archive.title, date: archive.createdAt ?? modificationDate(url))
         }
         .sorted { $0.date > $1.date }
@@ -159,7 +160,8 @@ enum NotebookBackupService {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) == nil,
               let data = try? Data(contentsOf: url),
-              let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
+              let archive = try? JSONDecoder().decode(Archive.self, from: data),
+              archive.pages.count <= ImportLimits.maxBackupPages else { return nil }
         let notebook = Notebook(title: archive.title)
         notebook.folderName = archive.folderName
         notebook.tagsText = archive.tagsText

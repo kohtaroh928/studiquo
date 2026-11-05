@@ -38,6 +38,10 @@ enum ImportLimits {
     static let maxTextFileBytes: Int64 = 5_000_000
     /// The app's own notebook backup: JSON with every page image inside.
     static let maxBackupFileBytes: Int64 = 600_000_000
+    /// Pages in one restored notebook. Restoring links every page to its notebook,
+    /// and that work grows with the square of the page count: about 9,000 pages
+    /// took half a minute. A 1,000-page PDF is the largest import, so this leaves room.
+    static let maxBackupPages = 5_000
 
     enum Rejection: Error, Equatable {
         case fileTooLarge(limitBytes: Int64)
