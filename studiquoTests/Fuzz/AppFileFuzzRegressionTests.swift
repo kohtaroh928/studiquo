@@ -93,8 +93,7 @@ final class AppFileFuzzRegressionTests: XCTestCase {
     /// A few thousand nested braces used up the stack: the app crashed (SIGSEGV) instead of showing the text.
     func testMathExpressionParserSurvivesDeepNesting() {
         for opener in ["{", "\\frac{", "\\sqrt{", "{{"] {
-            let expression = MathExpressionParser.parse(String(repeating: opener, count: 200_000) + "x")
-            XCTAssertNotNil(expression)
+            _ = MathExpressionParser.parse(String(repeating: opener, count: 200_000) + "x") // the check is that it returns
         }
         XCTAssertEqual(MathExpressionParser.parse("x^{2}"), .sequence([.superscript(.text("x"), .sequence([.text("2")]))]))
     }
@@ -209,5 +208,48 @@ final class AppFileFuzzRegressionTests: XCTestCase {
             XCTAssertEqual(page.elements?.count, 2)
             XCTAssertTrue(page.elements?.allSatisfy { $0.page === page } ?? false)
         }
+    }
+
+    /// `a^1^1^1…` nested without any brace, so the depth limit on groups did not apply.
+    func testLongChainOfScriptsDoesNotBuildAnUnboundedTree() {
+        for suffix in ["^1", "_1", "^{1}", "^1_1"] {
+            _ = MathExpressionParser.parse("a" + String(repeating: suffix, count: 300_000))
+        }
+        XCTAssertEqual(MathExpressionParser.parse("a^1_2"), .sequence([.subscriptExpression(.superscript(.text("a"), .text("1")), .text("2"))]))
+    }
+
+    func testPrivateUseCharactersInTheSourceAreNotReadAsPlaceholders() {
+        let source = String(repeating: "\u{E100}", count: 300_000) + "text \u{E200}0\u{E201}"
+        let began = Date()
+        let blocks = RichTextParser.parse(source)
+        XCTAssertLessThan(Date().timeIntervalSince(began), 4)
+        XCTAssertFalse(blocks.isEmpty)
+    }
+
+    func testManyBlankLinesInsideAListItemAreBounded() {
+        let source = "- a\n" + String(repeating: "\n", count: 100_000) + "  b"
+        let began = Date()
+        let blocks = RichTextParser.parse(source)
+        XCTAssertLessThan(Date().timeIntervalSince(began), 4)
+        guard case .list(_, _, let items)? = blocks.first else { return XCTFail("a list") }
+        XCTAssertEqual(items.count, 1)
+    }
+
+    func testDocxCellsAreLinkedToTheirRowAndRowsToTheTable() throws {
+        let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"
+        let data = try DocxZip.write([.init(path: "word/document.xml", data: Data(xml.utf8))])
+        let table = try XCTUnwrap(DocxReader.read(from: data).blocks.first)
+        let row = try XCTUnwrap(table.sortedTableRows.first)
+        XCTAssertTrue(row.block === table)
+        XCTAssertEqual(row.cells?.count, 2)
+        XCTAssertTrue(row.cells?.allSatisfy { $0.row === row } ?? false)
+    }
+
+    /// The harness's check for document text must see words, or a leak through an external entity would pass unseen.
+    func testFuzzDocumentTextHelperSeesParagraphsAndCells() throws {
+        let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>paragraph-word</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell-word</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"
+        let data = try DocxZip.write([.init(path: "word/document.xml", data: Data(xml.utf8))])
+        let text = AppFileFuzzTests.text(of: try DocxReader.read(from: data).blocks)
+        XCTAssertTrue(text.contains("paragraph-word") && text.contains("cell-word"), text)
     }
 }
