@@ -49,4 +49,42 @@ final class AppFileFuzzRegressionTests: XCTestCase {
         try JSONEncoder().encode(archive).write(to: url)
         XCTAssertEqual(NotebookBackupService.restore(from: url)?.sortedPages.count, 50)
     }
+
+    // MARK: DOCX
+
+    private func docxWithTableRows(_ rows: Int) throws -> Data {
+        let xml = "<?xml version=\"1.0\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:tbl>"
+            + String(repeating: "<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr>", count: rows) + "</w:tbl></w:body></w:document>"
+        return try DocxZip.write([.init(path: "word/document.xml", data: Data(xml.utf8))])
+    }
+
+    /// Building the rows linked each row to its table twice, and that grew with the square of the row
+    /// count: 40,000 rows took 7 s, 10,000 took 0.7 s. The check is on the growth, not on a time.
+    func testDocxTableRowsAreBuiltInLinearTime() throws {
+        func seconds(_ rows: Int) throws -> Double {
+            let data = try docxWithTableRows(rows)
+            let began = Date()
+            _ = try DocxReader.read(from: data)
+            return Date().timeIntervalSince(began)
+        }
+        _ = try seconds(2_000) // warm up
+        let small = try seconds(10_000), large = try seconds(40_000)
+        XCTAssertLessThan(large / max(small, 0.001), 7, "4x the rows took \(large / max(small, 0.001))x the time (linear is about 4)")
+    }
+
+    func testDocxTableKeepsItsRowsAndTheirOrder() throws {
+        let result = try DocxReader.read(from: docxWithTableRows(300))
+        let table = try XCTUnwrap(result.blocks.first { $0.kind == .table })
+        let rows = table.sortedTableRows
+        XCTAssertEqual(rows.count, 300)
+        XCTAssertTrue(rows.allSatisfy { $0.block === table })
+        XCTAssertEqual(rows.map(\.order), Array(0..<300))
+    }
+
+    func testDocxWithAnOversizedBodyPartIsRefused() throws {
+        let filler = String(repeating: "<w:p/>", count: ImportLimits.maxDocxDocumentXMLBytes / 6 + 1)
+        let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>\(filler)</w:body></w:document>"
+        let data = try DocxZip.write([.init(path: "word/document.xml", data: Data(xml.utf8))])
+        XCTAssertThrowsError(try DocxReader.read(from: data)) { XCTAssertEqual($0 as? DocxReader.ReadError, .archiveTooLarge) }
+    }
 }
