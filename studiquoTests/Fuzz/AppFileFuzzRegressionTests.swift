@@ -156,4 +156,58 @@ final class AppFileFuzzRegressionTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(began), 4)
         XCTAssertEqual(MathTextFormatter.plainText(from: "## 見出し\n- 項目 **太字**"), "見出し\n・項目 太字")
     }
+
+    /// The fuzzer's own mutator crashed on inputs shorter than 4 bytes (a `where` on a two-pattern case).
+    func testMutatorsAcceptTinyInputs() {
+        var rng = FuzzRNG(seed: 1, index: 0)
+        for length in 0...5 {
+            for _ in 0..<2_000 {
+                var bytes = [UInt8](repeating: 0x47, count: length)
+                FuzzMutate.generic(&bytes, &rng)
+                FuzzMutate.zipFields(&bytes, &rng)
+                FuzzMutate.imageDimensions(&bytes, &rng)
+            }
+        }
+    }
+
+    private func backupFile(pages: Int, elementsPerPage: Int = 1) throws -> URL {
+        let element = NotebookBackupService.ElementArchive(kind: "rectangle", text: "", imageData: nil, centerX: 1, centerY: 1, width: 1, height: 1, rotation: 0, colorHex: "#000000", isLocked: false, layerIndex: 0, lineWidth: 1)
+        let page = NotebookBackupService.PageArchive(
+            drawingData: nil, backgroundImageData: nil, width: 1, height: 1, template: "blank", bookmark: false, title: "", paperColorHex: nil,
+            recognizedText: "", backgroundPDFData: nil, flashcardQuestion: nil, flashcardAnswer: nil, flashcardMastery: nil, flashcardReviewCount: nil,
+            elements: Array(repeating: element, count: elementsPerPage))
+        let archive = NotebookBackupService.Archive(title: "t", folderName: "", tagsText: "", createdAt: nil, pages: Array(repeating: page, count: pages))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("scale-\(UUID().uuidString).json")
+        try JSONEncoder().encode(archive).write(to: url)
+        return url
+    }
+
+    /// Linking each page to its notebook twice made the restore grow with the square of the page
+    /// count: about 4,000 pages took 9 seconds. The check is on the growth, not on a time.
+    func testBackupRestoreIsLinearInPagesAndElements() throws {
+        func seconds(pages: Int, elements: Int) throws -> Double {
+            let url = try backupFile(pages: pages, elementsPerPage: elements)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let began = Date()
+            XCTAssertNotNil(NotebookBackupService.restore(from: url))
+            return Date().timeIntervalSince(began)
+        }
+        _ = try seconds(pages: 200, elements: 1) // warm up
+        let few = try seconds(pages: 1_000, elements: 1), many = try seconds(pages: 4_000, elements: 1)
+        XCTAssertLessThan(many / max(few, 0.001), 8, "4x the pages took \(many / max(few, 0.001))x the time (linear is about 4)")
+        let fewElements = try seconds(pages: 20, elements: 500), manyElements = try seconds(pages: 20, elements: 2_000)
+        XCTAssertLessThan(manyElements / max(fewElements, 0.001), 8, "4x the elements took \(manyElements / max(fewElements, 0.001))x the time")
+    }
+
+    func testRestoredPagesAndElementsAreLinkedBothWays() throws {
+        let url = try backupFile(pages: 3, elementsPerPage: 2)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let notebook = try XCTUnwrap(NotebookBackupService.restore(from: url))
+        XCTAssertEqual(notebook.sortedPages.count, 3)
+        for page in notebook.sortedPages {
+            XCTAssertTrue(page.notebook === notebook)
+            XCTAssertEqual(page.elements?.count, 2)
+            XCTAssertTrue(page.elements?.allSatisfy { $0.page === page } ?? false)
+        }
+    }
 }
