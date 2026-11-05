@@ -19,7 +19,7 @@ async function search(text: string, query: string) {
  return await retrieve(env, { sub: 'synthetic-user' }, { query }) as any;
 }
 
-const answerable: [string, string, string][] = [
+const answerable: [string, string, string, string?][] = [
  ['price in a marked table', marked, '電流計の価格を教えて'],
  ['price in a row split on spaces', pdfText, '電流計の価格を教えて'],
  ['unit in the header', unitHeader, '電流計の価格はいくらですか'],
@@ -44,14 +44,19 @@ const answerable: [string, string, string][] = [
  ['unit price asked and named', '| 器具 | 単価 |\n| 電流計 | 5000円 |', '電流計の単価はいくらですか'],
  ['tabbed name with a number next to it', 'product\t価格(円)\nwidget\t5000', 'widgetの価格はいくらですか'],
  ['two-token value in its column', '器具 価格\n電流計 5000 円', '電流計の価格を教えて'],
+ ['discounted price stated', '電流計の2割引の価格は4000円です。', '電流計の2割引の価格はいくらですか', '4000'],
+ ['discounted price stated, percent', '電流計の10%オフの価格は4500円です。', '電流計の10%オフの価格はいくらですか', '4500'],
+ ['total stated', '電流計3個の合計価格は15000円です。', '電流計3個の合計はいくらですか', '15000'],
+ ['total stated, purchase', '電流計を3個購入した場合の価格は15000円です。', '電流計を3個購入した場合はいくらですか', '15000'],
+ ['total of a pair stated', '電流計と電圧計の合計の価格は8000円です。', '電流計と電圧計の合計はいくらですか', '8000'],
  ['a number written with its name stays one name: session', 'セミナー第3回の料金は5000円です。', 'セミナー第3回の料金はいくらですか'],
  ['a number written with its name stays one name: count', '鉛筆5本の価格は5000円です。', '鉛筆5本の価格はいくらですか'],
 ];
-for (const [name, text, query] of answerable) test(`answerable: ${name}`, async () => {
+for (const [name, text, query, value = '5000'] of answerable) test(`answerable: ${name}`, async () => {
  const hit = await search(text, query);
  assert.equal(hit.status, 'grounded');
  assert.equal(hit.citations.length, 1);
- assert.ok(hit.context.includes('5000'), 'the excerpt goes to the model as extracted');
+ assert.ok(hit.context.includes(value), 'the excerpt goes to the model as extracted');
 });
 
 const unanswerable: [string, string, string][] = [
@@ -99,6 +104,17 @@ const unanswerable: [string, string, string][] = [
  ['ratio over time', '電流計の価格は5000円です。送料は500円です。', '電流計の価格はこの10年で何倍になりましたか'],
  ['unpriced row with the next cell priced', '器具 価格 送料\n電流計 未定 500円 税別', '電流計の価格を教えて'],
  ['price on request with the next cell priced', '器具 価格 送料\n電流計 要問合せ 500円 税別', '電流計の価格を教えて'],
+ ['bracket names another charge: repair', '| 器具 | 費用(修理) |\n| 電流計 | 8000円 |', '電流計の価格を教えて'],
+ ['bracket names another charge: cancellation', '| 器具 | 料金(解約時) |\n| 電流計 | 8000円 |', '電流計の価格を教えて'],
+ ['bracket names another charge: shipping', '器具 価格(送料)\n電流計 8000円', '電流計の価格を教えて'],
+ ['bracket names another charge: sideways', '項目 電流計\n費用(修理) 8000円', '電流計の価格を教えて'],
+ ['bracket names another charge: calculation', '| 器具 | 料金(解約時) |\n| 電流計 | 8000円 |', '電流計を3個買うと合計はいくらですか'],
+ ['ratio asks something else: raise', prose, '電流計の価格は電圧計の価格の何倍まで値上げできますか'],
+ ['ratio asks something else: policy', prose, '電流計の価格は電圧計の価格の何倍にすべきですか'],
+ ['attribute of a pair: maintenance total', '電流計の価格は5000円です。電圧計の保守料金は500円です。', '電流計と電圧計の保守料金の合計はいくらですか'],
+ ['attribute of a pair: repair difference', '| 器具 | 価格 |\n| 電流計 | 5000円 |\n\n電圧計の修理料金は500円です。', '電流計と電圧計の修理料金の差はいくらですか'],
+ ['line total read as unit price', '| 器具 | 数量 | 金額 |\n| 電流計 | 3 | 15000円 |', '電流計の単価はいくらですか'],
+ ['line total read as price', '| 器具 | 数量 | 金額 |\n| 電流計 | 3 | 15000円 |', '電流計の価格はいくらですか'],
  ['header beyond a line of prose', '器具 価格\n電圧計 3000円\n以下は別の表です。\n電流計 5000円 0.5A', '電流計の価格を教えて'],
 ];
 for (const [name, text, query] of unanswerable) test(`not answerable: ${name}`, async () => {
@@ -117,28 +133,33 @@ test('a year in the question is not satisfied by a table row without it', () => 
  assert.equal(assessReference(marked, detailRequirements('電流計の2027年の価格を教えて')).accepted, false);
 });
 
-test('arithmetic wording only changes the items looked for in price questions', () => {
- assert.deepEqual(detailRequirements('電流計を3個買うと合計はいくらですか').targets, ['電流計']);
- assert.deepEqual(detailRequirements('電流計と電圧計を1個ずつ買うと合計はいくらですか').targets, ['電流計', '電圧計']);
- assert.deepEqual(detailRequirements('電流計の価格を教えて').targets, ['電流計']);
- assert.deepEqual(detailRequirements('これを3個買うと合計はいくらですか').targets, ['これを3個買うと合計']);
- assert.deepEqual(detailRequirements('セミナー第3回の料金はいくらですか').targets, ['セミナー第3回']);
- assert.deepEqual(detailRequirements('鉛筆5本の価格はいくらですか').targets, ['鉛筆5本']);
+test('the question as written stays the target, with the items as its alternative', () => {
+ const three = detailRequirements('電流計を3個買うと合計はいくらですか');
+ assert.deepEqual(three.targets, ['電流計を3個買うと合計']);
+ assert.deepEqual(three.alternative.targets, ['電流計']);
+ assert.deepEqual(detailRequirements('電流計と電圧計を1個ずつ買うと合計はいくらですか').alternative.targets, ['電流計', '電圧計']);
+ assert.equal(detailRequirements('電流計の価格を教えて').alternative, null);
+ assert.equal(detailRequirements('これを3個買うと合計はいくらですか').alternative, null);
+ assert.equal(detailRequirements('セミナー第3回の料金はいくらですか').alternative, null);
+ assert.equal(detailRequirements('鉛筆5本の価格はいくらですか').alternative, null);
+ assert.deepEqual(detailRequirements('電流計の2割引の価格はいくらですか').alternative.targets, ['電流計']);
 });
 
 test('a question cannot multiply the work with an endless list of items', () => {
  const many = Array.from({ length: 800 }, (_, i) => `品${i}`).join('と') + 'を1個ずつ買うと合計はいくらですか';
  assert.equal(detailRequirements(many).targets.length, 1);
+ assert.equal(detailRequirements(many).alternative, null);
  const five = Array.from({ length: 5 }, (_, i) => `品${i}`).join('と') + 'を1個ずつ買うと合計はいくらですか';
- assert.equal(detailRequirements(five).targets.length, 5);
+ assert.equal(detailRequirements(five).alternative.targets.length, 5);
 });
 
-test('a ratio needs a stated ratio, or for a price two amounts of money', () => {
+test('a ratio needs a stated ratio, or for a price each item with an amount of money', () => {
  assert.equal(quantityEvidencePresent('Aは何倍ですか', 'Aは2倍である。'), true);
- assert.equal(quantityEvidencePresent('Aの価格はBの何倍ですか', 'Aは5000円、Bは3000円である。'), true);
- assert.equal(quantityEvidencePresent('Aの価格はBの何倍ですか', 'Aは1万円、Bは3000円である。'), true);
- assert.equal(quantityEvidencePresent('Aの価格はBの何倍ですか', 'Aは5000円、Bは3 kgである。'), false);
- assert.equal(quantityEvidencePresent('Aの質量はBの何倍ですか', 'Aは5 kg、Bは3 kgである。'), false);
+ assert.equal(quantityEvidencePresent('aの価格はbの何倍ですか', 'aは5000円である。bは3000円である。'), true);
+ assert.equal(quantityEvidencePresent('aの価格はbの何倍ですか', [{ text: 'aは1万円である。', primary: true }, { text: 'bは3000円である。' }]), true);
+ assert.equal(quantityEvidencePresent('aの価格はbの何倍ですか', 'aは5000円である。bは3 kgである。'), false);
+ assert.equal(quantityEvidencePresent('aの価格はbの何倍まで上げられますか', 'aは5000円である。bは3000円である。'), false);
+ assert.equal(quantityEvidencePresent('aの質量はbの何倍ですか', 'aは5 kgである。bは3 kgである。'), false);
 });
 
 test('table text: cells, separators, runs and header units', () => {
