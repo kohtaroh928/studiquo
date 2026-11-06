@@ -58,6 +58,12 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 追記2: ユーザーの修正依頼を受け、`codex/rag-auto-register-fix`で最小修正を実装し、コミット`234e7fd`に保存した。`grant`が全Notebook/Folderを無差別に変更して保存していた処理を、選択スコープ内かつRAG対象のPDFだけに限定する`prepareIdentities`へ置換した。SwiftDataの保存失敗は専用`GrantError.localPersistence`に変換し、画面では通信・送信許可ではなく「この端末の資料情報を保存できなかった」旨を表示する。対象外（ロック済み・ゴミ箱）のPDFへIDを書き込まない回帰テストを追加。`git diff --check`は成功。差分の独立レビューでは重大な問題なし（対象外資料の変更防止と既存スコープ判定を確認）、ただしSwiftDataが実際に保存失敗する端末状態を作るテストは未実施。iPadシミュレータでのテストは、専用worktreeにgit管理外の`Staging.local.xcconfig`（RevenueCat公開キー）が存在しないためビルド前に停止し、テスト未実施。キーの複製・表示はしていない。実機確認枠は`antigravity/ios-security-audit`が使用中で、メインチェックアウトにも未コミットの`studiquo/Localizable.xcstrings`があるため、札を奪わず待機。次は確認枠が戻りメインの変更が整理された後に、このコミットを`studiquo-staging`でRunして自動登録を再試行する。Workerへの再配備は不要（アプリ側のみ）。GitHub Project記録は未実施。
 
+## 2026-11-02 実資料・本番相当評価の現状照合
+
+ユーザー照会に対して評価記録を照合した。実資料の検索評価は実施済みだが、現在のRAGについて実運用の全経路（本番WorkerのD1/Vectorize、PDF取り込み、iPad、最終回答）を通した総合精度を測ったものではない。主な最新の未調整評価は、気象教材30問で答えありの必要根拠取得22/24（91.7%）、答えなしの出典抑制は修正後6/6、別の地理教材44問で判定on時の全根拠取得27/29（93.1%）・答えなし出典抑制15/15である。後者はローカルFTS5/厳密cosine代替＋実Workers AIで、最終回答生成・実Vectorize/D1・iPadは未検証。最終回答については、実資料由来の答えなし9問で本番`handleAI`＋実OpenAIを用いた小規模probeが9/9で「資料にない」と回答し、捏造0件だった一方、無関係な出典表示は9/9（31件）に残った。判定しきい値は事前登録の未使用119問で、答えあり誤停止0/74、答えなしで従来通過した15問の新規停止12/15（80%）、判定失敗2/92（2.2%）だった。今後はステージングshadowの観測と、実Worker/実Vectorize/D1/PDF/iPad/最終回答を含む独立評価が必要。今回の変更は引き継ぎ記録のみで、実装・設定・配備・API実行なし。GitHub Project記録は未実施（本件は読み取り照会）。
+
+追記: ユーザーが一続きの独立評価の実施を依頼。`full`手順として既存の`RAG_JUDGE_GENERALIZATION_PLAN.md`・staging/PDF/iPad経路を再調査した。過去のiPad staging 20問（off→shadow）は完了しているが、現行コードでの残り55問はstaging設定が別配備で戻ったため未実施。再開では公開・ライセンス確認済み資料のみを用い、staging限定、judgeはoff/shadowのみ（on・本番は対象外）、コード/閾値/質問を凍結し、配備前後の変数・ロールバック版を記録する。実機での資料取込み、同意、索引完了、質問入力はユーザー操作が必要。現在のstaging版を`wrangler versions list --env staging`で読み取り確認しようとしたが、版情報は得られず（wrangler 4.156.1起動のみ）；配備や設定変更は未実行。次はユーザーのiPad準備の可否を確認後、staging preflight・必要なら明示済み範囲のstaging配備・観測を行う。GitHub Project記録は未実施（評価開始前）。
+
 最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
 ## 検証済みTS成果のコミット保存（2026-10-21）
