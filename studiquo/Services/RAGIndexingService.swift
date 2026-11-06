@@ -494,7 +494,10 @@ enum RAGCitationNavigation {
         if RAGLibrarySyncService.shared.isManaged {
             return RAGLibrarySyncService.shared.resolve(citation, notebooks: notebooks)
         }
-        guard let notebook = notebooks.first(where: { $0.matchesRAGSource(citation.sourceId) && !$0.isTrashed && !$0.isLocked && $0.lockedPDFData == nil }),
+        // A notebook sealed after it was indexed (`encryptedContent`) must not be
+        // shown from an old citation either: the citation sheet renders the page
+        // directly, without the notebook's unlock gate.
+        guard let notebook = notebooks.first(where: { $0.matchesRAGSource(citation.sourceId) && !$0.isTrashed && !$0.isLocked && $0.lockedPDFData == nil && $0.encryptedContent == nil }),
               notebook.sortedPages.indices.contains(citation.pageNumber - 1) else { return nil }
         return (notebook, citation.pageNumber - 1)
     }

@@ -275,11 +275,14 @@
       ],
       "vars": {
         "DEPLOYMENT_ENVIRONMENT": "staging",
-        "RAG_ENABLED": "false",
+        // Staging is where document search is tried, so these stay on here. Any deploy without
+        // --var overrides used to turn them off and stop evaluations partway. Production keeps
+        // its own "false" values above. PDF processing still refuses without DOCLING_PROCESSOR.
+        "RAG_ENABLED": "true",
         "RAG_JUDGE": "off",
-        "RAG_AUTO_INDEX_ENABLED": "false",
-        "RAG_PDF_PROCESSING_ENABLED": "false",
-        "RAG_PDF_CLEANUP_ENABLED": "false",
+        "RAG_AUTO_INDEX_ENABLED": "true",
+        "RAG_PDF_PROCESSING_ENABLED": "true",
+        "RAG_PDF_CLEANUP_ENABLED": "true",
         "RAG_PDF_ADMISSION_POLICY": "{\"perOwnerActive\":1,\"globalActive\":1,\"globalMemoryBytes\":67108864,\"perOwnerDailyUnits\":10,\"globalDailyUnits\":20,\"reservationUnits\":1,\"perOwnerDailyRequests\":10,\"globalDailyRequests\":20}",
         "RAG_PDF_INTAKE_LIMITS": "{\"ownerRows\":10,\"globalRows\":100,\"ownerPending\":1,\"globalPending\":2}",
         // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
@@ -290,7 +293,7 @@
         "OPENAI_SOL_MODEL": "gpt-6.1-sol",
         "OPENAI_ASTRA_MODEL": "gpt-6-astra",
         "PRIVACY_RETENTION_ENABLED": "false",
-        "AI_PROVIDER_APPROVED": "false",
+        "AI_PROVIDER_APPROVED": "true",
         "ALLOW_SANDBOX_PURCHASES": "true",
         // Marks every Slack message, push, e-mail subject and admin page from this Worker
         // as staging (environment.ts). Production leaves it unset, so nothing is marked there.

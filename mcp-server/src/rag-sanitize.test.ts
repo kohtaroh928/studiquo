@@ -82,3 +82,10 @@ test("standard variation selectors after kanji count too, and a long text cannot
   // emoji style selectors are not counted
   assert.deepEqual(stripInvisible("❤️".repeat(50)), { text: "❤️".repeat(50), removed: 0 });
 });
+
+test('PDF object placeholders go, and their lines leave no paragraph break behind', () => {
+  assert.deepEqual(stripInvisible('見出し\n\uFFFC\n\uFFFC\uFFFC\n本文'), { text: '見出し\n本文', removed: 3 });
+  assert.deepEqual(stripInvisible('図\uFFFCの説明'), { text: '図の説明', removed: 1 });
+  assert.deepEqual(stripInvisible('\uFFFC\n本文\n\n次の段落\n\uFFFC'), { text: '本文\n\n次の段落\n', removed: 2 });
+  assert.equal(stripInvisible('器具 価格\n\uFFFC\n電流計 5000円').text, '器具 価格\n電流計 5000円');
+});

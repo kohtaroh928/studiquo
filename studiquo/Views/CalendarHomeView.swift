@@ -420,15 +420,19 @@ enum UniversityCalendar {
         SecItemDelete(base as CFDictionary)
         var item = base
         item[kSecValueData as String] = Data(value.utf8)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
     }
 
     static func removeURL() {
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ] as CFDictionary)
+        for targetService in [service, legacyService] {
+            SecItemDelete([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: targetService,
+                kSecAttrAccount as String: account,
+            ] as CFDictionary)
+        }
+        storedName = nil
     }
 
     struct Event {
@@ -785,6 +789,7 @@ enum GoogleCalendar {
         guard !value.isEmpty else { return }
         var item = base
         item[kSecValueData as String] = Data(value.utf8)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
     }
 
