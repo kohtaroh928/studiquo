@@ -19,7 +19,13 @@ export const getApplePublicKeys = defaultVerifier.getPublicKeys;
 /// Apple uses the app bundle identifier as the JWT audience. A separate
 /// staging bundle identifier must therefore be verified only by staging.
 export function verifyAppleIdentityToken(token: string, env: import("./env.ts").Env) {
-  const audience = env.APPLE_OAUTH_CLIENT_ID?.trim() || "com.yabuko.studiquo";
+  const configured = env.APPLE_OAUTH_CLIENT_ID?.trim();
+  // Same rule as Google: a staging Worker without its own client id must not
+  // fall back to (and so accept tokens meant for) the production app.
+  if (env.DEPLOYMENT_ENVIRONMENT === "staging" && !configured) {
+    throw new Error("Staging Apple OAuth client is not configured");
+  }
+  const audience = configured || "com.yabuko.studiquo";
   return jwksVerifier({
     providerName: "Apple",
     jwksUrl: "https://appleid.apple.com/auth/keys",
