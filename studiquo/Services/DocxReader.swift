@@ -155,7 +155,7 @@ enum DocxReader {
             if run.underline { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             if run.strikethrough { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             if let hex = run.colorHex { attributes[.foregroundColor] = UIColor(inkHex: hex) }
-            if let urlString = run.hyperlinkURL, let url = URL(string: urlString) { attributes[.link] = url }
+            if let urlString = run.hyperlinkURL, let url = DocumentBody.safeWebURL(from: urlString, requireExplicitScheme: true) { attributes[.link] = url }
             result.append(NSAttributedString(string: run.text, attributes: attributes))
         }
         return result

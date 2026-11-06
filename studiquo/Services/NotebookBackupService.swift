@@ -78,6 +78,7 @@ enum NotebookBackupService {
     }
 
     static func export(_ notebook: Notebook) -> URL? {
+        guard !notebook.isLocked, !notebook.hasLockedPDFToUnlock, !notebook.hasEncryptedPages else { return nil }
         let archive = makeArchive(notebook)
         guard let data = try? JSONEncoder().encode(archive) else { return nil }
         let safeName = notebook.title.replacingOccurrences(of: "/", with: "-")
@@ -95,7 +96,7 @@ enum NotebookBackupService {
     /// encrypted before writing; that's a smaller risk than silently
     /// defeating the lock.
     static func saveAutomaticBackup(for notebook: Notebook) {
-        guard !notebook.isLocked else { return }
+        guard !notebook.isLocked, !notebook.hasLockedPDFToUnlock, !notebook.hasEncryptedPages else { return }
         guard let data = try? JSONEncoder().encode(makeArchive(notebook)) else { return }
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
