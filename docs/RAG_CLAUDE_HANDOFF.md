@@ -40,6 +40,14 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 追加調査で、ステージングWorkerは2026-11-03 20:19の版114（`4c27225a`）に切り替わっており、`RAG_ENABLED`、`RAG_AUTO_INDEX_ENABLED`、`RAG_PDF_PROCESSING_ENABLED`、`RAG_PDF_CLEANUP_ENABLED`、`AI_PROVIDER_APPROVED` がすべて `false` だった。これが「対象PDFの自動登録」ボタンが無効になった直接原因。ユーザー依頼の実資料評価を継続するため、`--env staging --keep-vars` と同じ5フラグを明示した版115（`35aa4afd-055c-4c35-9641-5f45f3ff9592`）を配備し、5フラグがすべて `true` であることを読み取り確認した。本番、D1、Vectorizeの内容は変更していない。次はアプリを再起動または当該設定画面を開き直して利用可能性を再取得し、同意要求を実機で確認する。GitHub Projectへの今回の記録は未実施。
 
+## 2026-11-03 自動登録の再現確認（継続調査）
+
+確認枠は `codex/xcode-issues` の `158b891` で、PR #111 の修正コミット `48d319e` を祖先として含む。Xcode が開いているプロジェクトも `/Users/yabukohtarohgmail.com/studiquo/studiquo.xcodeproj` であることを確認した。したがって、前回の「対象外の資料にもRAG IDを書き込み、SwiftData保存で失敗し得る」修正は今回の実機ビルドに入っている。
+
+ユーザーが「対象PDFの自動登録を許可」を再度押下した時点で、正しい staging Worker の tail を監視した。RAG の consent 要求および 4xx/5xx は観測されなかった。画面は引き続き一般的な通信エラーを表示したため、今回の失敗は `GrantError.localPersistence`（これは端末の資料情報を保存できない文言になる）ではない。`grant` の `context.save()` より前には `flushInvalidations()` があり、保存済みの `controlRetryAfter` が未来ならローカルで 429 を投げ、ネットワーク送信をしない。これが現在の最有力経路である。ただし端末内の永続状態・例外値を直接取得していないため、現時点で唯一の確定原因とは断定しない。
+
+今回、コード・Worker・D1・Vectorize・本番設定は変更していない。常駐 tail は停止済み。次の一手は、端末側で実際に投げた例外または保存済み retry 状態を可観測にして確定すること。その上で、明示的な手動許可が古いローカルretryで無期限に一般エラーへ落ちない最小修正と回帰テストを実装し、確認枠で再確認する。GitHub Projectへの今回の記録は未実施。
+
 ## 2026-11-02 staging 実経路独立評価を開始
 
 ユーザーが実WorkerのD1/Vectorize、PDF取込み、iPad、最終回答までを通した独立評価を依頼し、staging用iPadが利用可能であることを確認した。`origin/main`（`c3ce941`）から専用worktree `codex/rag-e2e-evaluation` を作成。現行staging版112（`ad285b04-55d2-489a-8ad5-990a33deddb4`）を読み取り、stagingのD1 `studiquo-admin-staging` とVectorize `studiquo-rag-v1-staging`、staging App ID/URLを確認。本番IDは配備dry-runに出ず、dry-runは成功した（専用worktreeでは`npm ci`が必要だった。依存監査は既知のmoderate 2件・high 1件を表示したが、今回変更していない）。
