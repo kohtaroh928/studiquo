@@ -13,7 +13,7 @@ import {
   HarnessFailure, bundleWorker, createOutboundGuard, createSecrets, readWranglerConfig, repositoryRoot, startWorker, applyMigrations,
   type StoreDirectories, type SyntheticSecrets, type WorkerInstance,
 } from '../restore-drill/runtime.ts';
-import { createWorld, setPasswordWithCode } from '../restore-drill/actors.ts';
+import { createWorld, confirmEmailCode } from '../restore-drill/actors.ts';
 import { redact, sha256 } from '../restore-drill/lib.ts';
 
 interface Check { id: string; area: string; step: string; expected: string; observed: string; ok: boolean }
@@ -66,7 +66,7 @@ async function main() {
   // --- Token signing (RB-14) ---------------------------------------------------------------
   await withWorker({}, async w => {
     await applyMigrations(w.d1);
-    const made = await setPasswordWithCode(w, world, email, password, ip);
+    const made = await confirmEmailCode(w, world, email, password, ip);
     if (made.status !== 200 || !made.token) throw new HarnessFailure(`Sign-up answered ${made.status}`);
     legacy = made.token;
     record('token', 'T0', 'no key set: a token has no signature and works', '200', await plan(w, legacy));
@@ -129,7 +129,7 @@ async function main() {
   };
   await withWorker({ TOKEN_SIGNING_KEY: K3, SNAPSHOT_ENCRYPTION_KEY: S1 }, async w => {
     tokenB = await login(w, email, password, ip); // reuse the first account for B
-    const madeC = await setPasswordWithCode(w, world, emailC, passwordC, '203.0.113.9');
+    const madeC = await confirmEmailCode(w, world, emailC, passwordC, '203.0.113.9');
     tokenC = madeC.token ?? '';
     for (const [token, marker] of [[tokenB, markerB], [tokenC, markerC]] as const) {
       const put = await w.call('/api/snapshot', { method: 'PUT', token, json: snapshot(marker) });

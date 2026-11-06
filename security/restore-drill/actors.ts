@@ -81,7 +81,7 @@ export async function requestEmailCode(w: WorkerInstance, world: World, email: s
 }
 
 /** Sign-up, reset and re-registration are one route: prove the mailbox and set a password. */
-export async function setPasswordWithCode(w: WorkerInstance, world: World, email: string, password: string, ip: string) {
+export async function confirmEmailCode(w: WorkerInstance, world: World, email: string, password: string, ip: string) {
   const { status, code } = await requestEmailCode(w, world, email, ip);
   if (status !== 200 || !code) return { status, token: undefined as string | undefined };
   const confirmed = await w.call('/api/auth/email/confirm-code', { json: { email, code, password }, ip });
@@ -94,7 +94,7 @@ async function signUp(w: WorkerInstance, world: World, label: string, index: num
   const password = randomBytes(18).toString('base64url');
   const ip = `203.0.113.${index + 1}`;
   remember(world, email, password);
-  const { status, token } = await setPasswordWithCode(w, world, email, password, ip);
+  const { status, token } = await confirmEmailCode(w, world, email, password, ip);
   if (status !== 200 || !token) throw new HarnessFailure(`Sign-up of ${label} answered ${status}`);
   const sub = `email:${email}`;
   const account: Account = { label, email, password, ip, sub, token, chatKey: sha256(`chat-account:${sub}`) };
@@ -326,7 +326,7 @@ export async function applyRevocations(w: WorkerInstance, world: World) {
 
   expectStatus(await w.call('/api/session/revoke', { method: 'POST', token: C.token }), 'logout', 200);
 
-  const reset = await setPasswordWithCode(w, world, D.email, randomBytes(18).toString('base64url'), D.ip);
+  const reset = await confirmEmailCode(w, world, D.email, randomBytes(18).toString('base64url'), D.ip);
   if (reset.status !== 200 || !reset.token) throw new HarnessFailure(`Password reset answered ${reset.status}`);
   D.newToken = reset.token;
   D.newPassword = [...world.sensitive].at(-2);
@@ -357,7 +357,7 @@ export async function applyRevocations(w: WorkerInstance, world: World) {
     token: I.token, json: { transaction: reauth.json.transaction, credential: world.passkeys.I.assertionResponse(reauth.json.options.challenge) },
   }), 'passkey reauth verify', 200);
   expectStatus(await w.call('/api/passkeys/remove-all', { method: 'POST', token: I.token }), 'passkey removal', 200);
-  const passkeyReset = await setPasswordWithCode(w, world, I2.email, randomBytes(18).toString('base64url'), I2.ip);
+  const passkeyReset = await confirmEmailCode(w, world, I2.email, randomBytes(18).toString('base64url'), I2.ip);
   if (passkeyReset.status !== 200 || !passkeyReset.token) throw new HarnessFailure(`Passkey-account reset answered ${passkeyReset.status}`);
   I2.newToken = passkeyReset.token;
 
@@ -368,7 +368,7 @@ export async function applyRevocations(w: WorkerInstance, world: World) {
   // Both come back as new accounts of the same identity.
   for (const account of [J, JR]) {
     const password = randomBytes(18).toString('base64url');
-    const again = await setPasswordWithCode(w, world, account.email, password, account.ip);
+    const again = await confirmEmailCode(w, world, account.email, password, account.ip);
     if (again.status !== 200 || !again.token) throw new HarnessFailure(`Re-registration of ${account.label} answered ${again.status}`);
     account.newToken = again.token;
     account.newPassword = password;
