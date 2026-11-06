@@ -11,14 +11,83 @@ import UniformTypeIdentifiers
 /// `NSAttributedString` is archived rather than converted to RTF so inline
 /// images (`NSTextAttachment`) survive a round trip; RTF would drop them.
 enum DocumentBody {
+    private static let allowedArchiveClasses: [AnyClass] = [
+        NSAttributedString.self,
+        NSMutableAttributedString.self,
+        NSDictionary.self,
+        NSMutableDictionary.self,
+        NSArray.self,
+        NSMutableArray.self,
+        NSString.self,
+        NSMutableString.self,
+        NSNumber.self,
+        NSValue.self,
+        NSData.self,
+        NSMutableData.self,
+        NSURL.self,
+        UIFont.self,
+        UIColor.self,
+        NSParagraphStyle.self,
+        NSMutableParagraphStyle.self,
+        NSTextTab.self,
+        NSTextAttachment.self,
+        UIImage.self,
+        NSShadow.self,
+    ]
+
+    static func safeWebURL(from raw: String, requireExplicitScheme: Bool = false) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 2_048 else { return nil }
+        if requireExplicitScheme, !trimmed.contains("://") { return nil }
+        let normalized = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let components = URLComponents(string: normalized),
+              let url = components.url,
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.user == nil,
+              components.password == nil,
+              let host = components.host, !host.isEmpty else {
+            return nil
+        }
+        return url
+    }
+
     static func decode(_ data: Data?) -> NSAttributedString {
-        guard let data else { return NSAttributedString(string: "") }
-        let unarchiver = try? NSKeyedUnarchiver(forReadingFrom: data)
-        unarchiver?.requiresSecureCoding = false
-        guard let restored = unarchiver?.decodeObject(
-            of: NSAttributedString.self, forKey: NSKeyedArchiveRootObjectKey
-        ) else { return NSAttributedString(string: "") }
-        return restored
+        guard let data, !data.isEmpty else { return NSAttributedString(string: "") }
+        guard let unarchiver = try? NSKeyedUnarchiver(forReadingFrom: data) else {
+            return NSAttributedString(string: "")
+        }
+        unarchiver.requiresSecureCoding = true
+        guard let restored = unarchiver.decodeObject(
+            of: allowedArchiveClasses, forKey: NSKeyedArchiveRootObjectKey
+        ) as? NSAttributedString else { return NSAttributedString(string: "") }
+        return sanitizedLinks(in: restored)
+    }
+
+    private static func sanitizedLinks(in attributed: NSAttributedString) -> NSAttributedString {
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        guard fullRange.length > 0 else { return attributed }
+        var needsSanitizing = false
+        attributed.enumerateAttribute(.link, in: fullRange) { value, _, stop in
+            guard let value else { return }
+            let raw: String? = (value as? URL)?.absoluteString ?? (value as? String)
+            if raw == nil || safeWebURL(from: raw!, requireExplicitScheme: true) == nil {
+                needsSanitizing = true
+                stop.pointee = true
+            }
+        }
+        guard needsSanitizing else { return attributed }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
+            guard let value else { return }
+            let raw: String? = (value as? URL)?.absoluteString ?? (value as? String)
+            if let raw, let valid = safeWebURL(from: raw, requireExplicitScheme: true) {
+                mutable.addAttribute(.link, value: valid, range: range)
+            } else {
+                mutable.removeAttribute(.link, range: range)
+            }
+        }
+        return mutable
     }
 
     static func encode(_ text: NSAttributedString) -> Data? {
@@ -1071,13 +1140,7 @@ struct TextDocumentView: View {
     }
 
     private func applyLink(urlString: String) {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        // A bare domain like "example.com" is a common thing to type and
-        // clearly meant as a link, but has no scheme for `URL` to parse
-        // correctly as one — default it to https rather than rejecting it.
-        let normalized = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
-        guard let url = URL(string: normalized) else { return }
+        guard let url = DocumentBody.safeWebURL(from: urlString) else { return }
         mutateRange(linkTargetRange) { text, range in
             text.addAttribute(.link, value: url, range: range)
             text.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: range)
