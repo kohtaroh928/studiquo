@@ -1,0 +1,15 @@
+#!/bin/sh
+# 使い方: scripts/check-xcodegen-version
+# `.xcodegen-version` に書いた版の xcodegen でなければ止める。brew は常に最新を入れるので、
+# 版が上がったときに project.yml の生成結果が黙って変わらないよう、上げるときは
+# このファイルを意図して更新し、`xcodegen generate` の差分とビルドを確認する。
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+want=$(tr -d ' \n' < "$root/.xcodegen-version")
+have=$(xcodegen --version 2>/dev/null | sed -n 's/^Version: *//p' | tr -d ' ')
+if [ "$have" != "$want" ]; then
+  echo "error: xcodegen $have is installed, but .xcodegen-version pins $want." >&2
+  echo "  To move to $have: confirm that 'xcodegen generate' and the build still pass, then change .xcodegen-version." >&2
+  exit 1
+fi
+echo "xcodegen $have (pinned)"
