@@ -46,7 +46,15 @@ final class AppFileFuzzTests: XCTestCase {
         let seconds = Double(DispatchTime.now().uptimeNanoseconds - began) / 1e9
         recorder.writeSummary(cases: ran, accepted: accepted, rejected: rejected, firstIndex: start, lastIndex: last, seconds: seconds)
         XCTAssertGreaterThan(ran, 0, "\(target): no case ran; an empty run is not a clean run")
-        if FuzzEnv.directory == nil { XCTAssertTrue(recorder.findings.isEmpty, "\(target): \(recorder.findings)") }
+        if FuzzEnv.directory == nil {
+            // The plain test run (CI included) fails on a broken invariant, but not on time or memory: those budgets
+            // were set for a quiet development machine, and a shared runner several times slower would fail a
+            // healthy build. Slowness is judged by the regression tests (growth with input size) and by campaigns.
+            let broken = recorder.findings.filter { $0.kind == "invariant" }
+            XCTAssertTrue(broken.isEmpty, "\(target): \(broken)")
+            let slow = recorder.findings.filter { $0.kind != "invariant" }
+            if !slow.isEmpty { print("FUZZ-SMOKE \(target): \(slow.count) time/memory observations (not a failure in a plain run)") }
+        }
         return recorder
     }
 
