@@ -173,7 +173,7 @@ async function main() {
   const scenarios: Scenario[] = [
     { name: 'none (control)', description: 'Nothing restored: the baseline must reproduce', apply: async d => copyStores(post, d, ['kv', 'd1', 'do']) },
     ...subsets.map((set): Scenario => ({
-      name: set.join('+').toUpperCase().replace(/DO/g, 'DO'),
+      name: set.join('+').toUpperCase(),
       description: `Whole-store restore of ${set.join(', ')} to the backup point`,
       apply: async d => { await copyStores(post, d, ['kv', 'd1', 'do']); await copyStores(backup, d, set); },
     })),

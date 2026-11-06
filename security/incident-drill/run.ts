@@ -13,7 +13,7 @@ import {
   HarnessFailure, bundleWorker, createOutboundGuard, createSecrets, readWranglerConfig, repositoryRoot, startWorker, applyMigrations,
   type WorkerInstance,
 } from '../restore-drill/runtime.ts';
-import { createWorld, setPasswordWithCode } from '../restore-drill/actors.ts';
+import { createWorld, confirmEmailCode } from '../restore-drill/actors.ts';
 
 interface Check { id: string; claim: string; expected: string; observed: string; ok: boolean }
 const checks: Check[] = [];
@@ -43,7 +43,7 @@ async function main() {
   // Baseline: the production configuration with nothing switched off.
   await withVars({ DISABLED_FEATURES: '', MAINTENANCE_MODE: '', MIN_APP_BUILD: '' }, async w => {
     await applyMigrations(w.d1);
-    const made = await setPasswordWithCode(w, world, email, password, '203.0.113.30');
+    const made = await confirmEmailCode(w, world, email, password, '203.0.113.30');
     if (made.status !== 200 || !made.token) throw new HarnessFailure(`Sign-up answered ${made.status}`);
     token = made.token;
     const again = await w.call('/api/auth/local/login', { json: { email, password }, ip: '203.0.113.30' });
