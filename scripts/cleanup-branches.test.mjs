@@ -83,6 +83,7 @@ function setupReposAndMockGh() {
   writeFileSync(
     ghMockPath,
     `#!/bin/sh
+if [ "$1" = "repo" ]; then echo "me"; exit 0; fi
 branch=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--head" ]; then
@@ -178,4 +179,30 @@ test('branch currently checked out in the main directory is protected even if PR
 
   const branches = runGit(mainDir, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']).split('\n');
   assert.ok(branches.includes('claude/in-main-dir'));
+});
+
+test('--yes refuses to run when fetch fails, but the dry run still works', (t) => {
+  const {root, mainDir, binDir} = setupReposAndMockGh();
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+
+  runGit(mainDir, ['remote', 'set-url', 'origin', path.join(root, 'missing.git')]);
+  const yes = runCleanup(mainDir, binDir, ['--yes']);
+  assert.notEqual(yes.status, 0);
+  assert.match(yes.stderr, /fetchに失敗したため --yes は実行しません/);
+  const branches = runGit(mainDir, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']).split('\n');
+  assert.ok(branches.includes('claude/merged-clean'));
+
+  const dry = runCleanup(mainDir, binDir, []);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.match(dry.stdout, /警告: fetchに失敗/);
+});
+
+test('--yes refuses to run when the repository owner cannot be determined', (t) => {
+  const {root, mainDir, binDir} = setupReposAndMockGh();
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+
+  writeFileSync(path.join(binDir, 'gh'), '#!/bin/sh\nexit 1\n');
+  const res = runCleanup(mainDir, binDir, ['--yes']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr, /所有者を判定できない/);
 });

@@ -135,3 +135,18 @@ test("getApplePublicKeys fetches from Apple and caches the result when the cache
     globalThis.fetch = originalFetch;
   }
 });
+
+test("a staging Worker without its own Apple client id refuses instead of using the production audience", () => {
+  const env = { ...environment(), DEPLOYMENT_ENVIRONMENT: "staging" } as any;
+  assert.throws(() => verifyAppleIdentityToken("irrelevant", env), /Staging Apple OAuth client is not configured/);
+});
+
+test("a staging Worker accepts only its own audience and rejects the production one", async () => {
+  const env = { ...environment(), DEPLOYMENT_ENVIRONMENT: "staging", APPLE_OAUTH_CLIENT_ID: "com.yabuko.studiquo.staging" } as any;
+  const { privateKey, jwk } = await makeTestSigningKey();
+  await seedJWKS(env, jwk);
+  const own = await signToken(privateKey, jwk.kid, { audience: "com.yabuko.studiquo.staging" });
+  assert.equal((await verifyAppleIdentityToken(own, env)).aud, "com.yabuko.studiquo.staging");
+  const production = await signToken(privateKey, jwk.kid, { audience: REAL_AUDIENCE });
+  await assert.rejects(() => verifyAppleIdentityToken(production, env), /aud/i);
+});
