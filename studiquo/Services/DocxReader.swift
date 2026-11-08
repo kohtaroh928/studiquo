@@ -45,6 +45,7 @@ enum DocxReader {
         guard let documentEntry = entries.first(where: { $0.path == "word/document.xml" }) else {
             throw ReadError.missingDocumentPart
         }
+        guard documentEntry.data.count <= ImportLimits.maxDocxDocumentXMLBytes else { throw ReadError.archiveTooLarge }
 
         let relationships = parseRelationships(entries)
         let numbering = parseNumbering(entries)
@@ -118,12 +119,10 @@ enum DocxReader {
             var rows: [DocumentTableRow] = []
             for (rowIndex, parsedRow) in table.rows.enumerated() {
                 let row = DocumentTableRow(order: rowIndex)
-                row.block = block
                 var cells: [DocumentTableCell] = []
                 for (cellIndex, parsedCell) in parsedRow.cells.enumerated() {
                     let cell = DocumentTableCell(order: cellIndex)
                     cell.columnSpan = max(1, parsedCell.gridSpan)
-                    cell.row = row
                     let combinedText = parsedCell.paragraphs.map { attributedString(from: $0).string }.joined(separator: "\n")
                     cell.text = combinedText
                     cells.append(cell)
