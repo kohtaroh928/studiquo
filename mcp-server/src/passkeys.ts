@@ -12,11 +12,7 @@ import { json, readJSONLimited } from "./http.ts";
 import { confirmVerificationCode, sendVerificationCode } from "./email-verification.ts";
 import { mintSession, hasRealSession, realSession } from "./session.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
-import {
-  REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
-  passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,
-  listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
-} from "./passkey-policy.ts";
+import { REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys, listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice, refuseDuringPasskeyResetHold } from "./passkey-policy.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { PasskeyChallenge, PasskeyRecord } from "./records.ts";
@@ -244,6 +240,12 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, userKey);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     if (await isRevoked(env, userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    // While the wait after a password reset runs, no passkey is added either: the reset removed the
+    // account's passkeys, so "an established passkey is needed to add one" (below) no longer protects it,
+    // and a passkey registered with a stolen mailbox code would be the thief's way back in. Checked before
+    // the mailbox code is asked for, so the owner is not sent for a code and then refused.
+    const onHold = await refuseDuringPasskeyResetHold(env, session.sub);
+    if (onHold) return onHold;
     // Signing in with this passkey later is treated as proof of THIS e-mail
     // (mintPasskeySession), so the address must already belong to the account
     // that is registering it. A session for any account used to be enough to
@@ -297,8 +299,12 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       return json({ error: "Registration expired." }, 400);
     }
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-    if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    const registering = await realSession(env, token);
+    if (!registering) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     if (await isRevoked(env, pending.userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    // Again here: the hold may have started after the options were issued (a reset in another session).
+    const holdOnVerify = await refuseDuringPasskeyResetHold(env, registering.sub);
+    if (holdOnVerify) return holdOnVerify;
     if (!(await claimChallenge(env, transaction))) return json({ error: "Registration expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     await env.STUDIQUO_DATA.delete(emailProofKey(pending.userKey));

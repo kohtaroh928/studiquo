@@ -2588,6 +2588,54 @@ test("after a reset removed the passkeys, deleting the account and approving an 
   assert.notEqual((await deleteAccount()).status, 403);
 });
 
+const allowAll = { limit: async () => ({ success: true }) };
+function withRegisterLimits(env: any) {
+  env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS = allowAll;
+  env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY = allowAll;
+  return env;
+}
+
+test("after a reset removed the passkeys, no passkey is added for 48 hours, and the owner is not sent for a mailbox code first", async () => {
+  const env = withRegisterLimits(environment({ strictSessions: true }));
+  assert.equal((await resetPasswordWith(env, "pk-hold-add@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-hold-add@example.com", "owners-passkey", "device-a", 1);
+  const reset = await resetPasswordWith(env, "pk-hold-add@example.com", "another-passphrase-1", "n".repeat(40));
+  assert.equal(reset.status, 200);
+  const token = (await reset.json()).token;
+
+  const options = () => worker.fetch(request("/api/passkeys/register/options", { method: "POST", token, body: { email: "pk-hold-add@example.com" } }), env, noopCtx);
+  const refused = await options();
+  assert.equal(refused.status, 403);
+  const body = await refused.json();
+  assert.equal(body.code, "passkey_reset_hold", "the hold is named before the mailbox code, which would have been wasted");
+  assert.ok(body.availableAt > Date.now() + 47 * 3_600_000);
+
+  // A challenge issued before the hold began (a reset in another session) is refused at verify too.
+  await env.STUDIQUO_DATA.put("passkeys:challenge:early-transaction", JSON.stringify({ kind: "registration", userKey: sha256Hex(token), challenge: "c" }), { expirationTtl: 300 });
+  const verify = await worker.fetch(request("/api/passkeys/register/verify", { method: "POST", token, body: { transaction: "early-transaction", credential: { id: "x" } } }), env, noopCtx);
+  assert.equal(verify.status, 403);
+  assert.equal((await verify.json()).code, "passkey_reset_hold");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:challenge:early-transaction"), null, "a refused attempt does not use up the challenge");
+
+  // Sign-in itself and other passkey routes that do not add one are not held.
+  assert.notEqual((await worker.fetch(request("/api/passkeys/status", { token }), env, noopCtx)).status, 403);
+
+  const key = (await env.STUDIQUO_DATA.list({ prefix: "passkey-reset-hold:" })).keys[0].name;
+  await env.STUDIQUO_DATA.put(key, String(Date.now() - 49 * 3_600_000));
+  const afterWait = await options();
+  assert.equal(afterWait.status, 403);
+  assert.equal((await afterWait.json()).code, "email_code_required", "after the wait the normal first-passkey step (the mailbox code) comes next");
+});
+
+test("an account that never lost its passkeys to a reset can add one without any wait", async () => {
+  const env = withRegisterLimits(environment({ strictSessions: true }));
+  const reset = await resetPasswordWith(env, "pk-no-hold@example.com", "correct-horse-battery", "s".repeat(40));
+  const token = (await reset.json()).token;
+  const response = await worker.fetch(request("/api/passkeys/register/options", { method: "POST", token, body: { email: "pk-no-hold@example.com" } }), env, noopCtx);
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, "email_code_required", "no hold: the ordinary first-passkey step");
+});
+
 test("a retry after a reset failed part-way still waits and still tells the owner", async () => {
   const env = environment({ strictSessions: true });
   assert.equal((await resetPasswordWith(env, "pk-retry2@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
