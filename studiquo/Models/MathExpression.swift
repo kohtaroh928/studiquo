@@ -41,9 +41,14 @@ enum MathExpressionParser {
         return .sequence(parseSequence(&scanner, stopAt: nil))
     }
 
+    /// Groups nest only this deep. Each `{` or `\\frac{` is a recursive call, and a few thousand of
+    /// them used up the stack and crashed the app. The TeX formatter has the same limit (60).
+    private static let maxDepth = 60
+
     private struct Scanner {
         let text: [Character]
         var index = 0
+        var depth = 0
 
         var isAtEnd: Bool { index >= text.count }
         var current: Character? { isAtEnd ? nil : text[index] }
@@ -62,6 +67,13 @@ enum MathExpressionParser {
 
     private static func parseSequence(_ scanner: inout Scanner, stopAt: Character?) -> [MathExpression] {
         var terms: [MathExpression] = []
+        scanner.depth += 1
+        defer { scanner.depth -= 1 }
+        // Past the limit the rest of the source is dropped rather than parsed.
+        guard scanner.depth <= maxDepth else {
+            scanner.index = scanner.text.count
+            return terms
+        }
         scanner.skipWhitespace()
         while let c = scanner.current, c != stopAt {
             terms.append(parseFactor(&scanner))
@@ -105,7 +117,12 @@ enum MathExpressionParser {
     private static func parseFactor(_ scanner: inout Scanner) -> MathExpression {
         scanner.skipWhitespace()
         var base = parseAtom(&scanner)
-        while true {
+        // Each suffix wraps the base one level deeper, so a chain of them is nesting too: `a^1^1^1…`
+        // (hundreds of thousands) would build a tree too deep to draw or free. Past the limit the
+        // remaining suffixes are left for `parseSequence` to read as ordinary characters.
+        var suffixes = 0
+        while suffixes < maxDepth {
+            suffixes += 1
             if scanner.current == "^" {
                 scanner.advance()
                 base = .superscript(base, parseGroup(&scanner))

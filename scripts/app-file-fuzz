@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""アプリのファイル・テキスト解析のファジングを、シミュレータで実行するドライバー。
+
+使い方:
+  scripts/app-file-fuzz --target zip --seed 1 --cases 30000 --budget-seconds 480 [--sanitize asan-ubsan] [--no-build]
+  --target: zip docx text backup image pdf canary-crash
+  --start N: 開始するケース番号(--resume は前回の続きから)
+
+終了コード: 0=所見なし / 1=所見あり / 2=基盤の失敗(ビルド失敗、実行ケース0件など。"問題なし"とは扱わない)
+
+プロセスが落ちたとき(クラッシュ)は、テスト側が各ケースの前に書くjournalから、落ちたケース番号を特定して
+所見として記録し、その次のケースから再開する。結果は security-reports/app-fuzz/(Git管理外)に出す。
+"""
+import argparse, json, os, signal, subprocess, sys, time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "security-reports" / "app-fuzz"
+SIM = os.environ.get("STUDIQUO_FUZZ_SIMULATOR", "A75961C9-C9AA-4B52-A094-9D074133F0D9")
+DERIVED = os.environ.get("STUDIQUO_FUZZ_DERIVED_DATA", str(ROOT / "build" / "dd-fuzz"))
+METHODS = {"zip": "testZip", "docx": "testDocx", "text": "testText", "backup": "testBackupArchive",
+           "image": "testImages", "pdf": "testPDF", "canary-crash": "testCanaryCrash"}
+
+
+def xcodebuild(action, extra, log, timeout):
+    cmd = ["xcodebuild", action, "-project", str(ROOT / "studiquo.xcodeproj"), "-scheme", "studiquo",
+           "-destination", f"id={SIM}", "-derivedDataPath", DERIVED, "-parallel-testing-enabled", "NO",
+           "CODE_SIGNING_ALLOWED=NO"] + extra
+    return cmd
+
+
+def run(cmd, env, log_path, timeout):
+    """子プロセスをグループごと管理する。戻り値は (終了コード, 理由)。理由は ok / timeout / crash。
+    テストプロセスが落ちるとxcodebuildは再起動を試みて長く待つので、そのログが出たら打ち切る。"""
+    markers = ("Restarting after unexpected exit, crash, or test timeout",)
+    deadline = time.time() + timeout
+    with open(log_path, "w") as log:
+        proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        while True:
+            try:
+                return proc.wait(timeout=2), "ok"
+            except subprocess.TimeoutExpired:
+                pass
+            reason = None
+            if time.time() > deadline:
+                reason = "timeout"
+            else:
+                text = Path(log_path).read_text(errors="replace")
+                if any(m in text for m in markers):
+                    reason = "crash"
+            if reason:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                return -9, reason
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--target", required=True, choices=sorted(METHODS))
+    ap.add_argument("--seed", type=int, default=20261105)
+    ap.add_argument("--cases", type=int, default=1000)
+    ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--budget-seconds", type=int, default=480)
+    ap.add_argument("--sanitize", choices=["asan-ubsan"])
+    ap.add_argument("--coverage", action="store_true")
+    ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--resume", action="store_true")
+    a = ap.parse_args()
+
+    mode = a.sanitize or "plain"
+    out = OUT / f"{a.target}-{a.seed}-{mode}"
+    out.mkdir(parents=True, exist_ok=True)
+    flags = []
+    if a.sanitize:
+        flags += ["-enableAddressSanitizer", "YES", "-enableUndefinedBehaviorSanitizer", "YES"]
+    if a.coverage:
+        flags += ["-enableCodeCoverage", "YES"]
+    derived = DERIVED + ("-asan" if a.sanitize else "")
+    global DERIVED_USED
+    base = os.environ.copy()
+
+    if not a.no_build:
+        cmd = ["xcodebuild", "build-for-testing", "-project", str(ROOT / "studiquo.xcodeproj"), "-scheme", "studiquo",
+               "-destination", f"id={SIM}", "-derivedDataPath", derived, "-parallel-testing-enabled", "NO",
+               "CODE_SIGNING_ALLOWED=NO"] + flags
+        code, _ = run(cmd, base, out / "build.log", 1500)
+        if code != 0:
+            print("基盤の失敗: ビルドできませんでした(", out / "build.log", ")", file=sys.stderr)
+            return 2
+
+    began = time.time()
+    next_index = a.start
+    end = a.start + a.cases
+    if a.resume and (out / "next-index.txt").exists():
+        next_index = int((out / "next-index.txt").read_text())
+    executed = 0
+    if not a.resume:  # a new run must not read an earlier run's summaries or findings as its own
+        for stale in list(out.glob("summary-*.json")) + list(out.glob("findings-*.jsonl")) + list(out.glob("repro-*.bin")):
+            stale.unlink()
+    crashes = []
+    infra = None
+    while next_index < end and time.time() - began < a.budget_seconds:
+        left = int(a.budget_seconds - (time.time() - began))
+        env = base.copy()
+        env.update({
+            "TEST_RUNNER_STUDIQUO_FUZZ_DIR": str(out), "TEST_RUNNER_STUDIQUO_FUZZ_SEED": str(a.seed),
+            "TEST_RUNNER_STUDIQUO_FUZZ_START": str(next_index), "TEST_RUNNER_STUDIQUO_FUZZ_CASES": str(end - next_index),
+            "TEST_RUNNER_STUDIQUO_FUZZ_BUDGET_SECONDS": str(max(left, 10)),
+        })
+        if a.target == "canary-crash":
+            env["TEST_RUNNER_STUDIQUO_FUZZ_CANARY"] = "crash"
+        for stale in list(out.glob("journal-*.txt")) + list(out.glob(f"summary-{a.target}-{a.seed}-{next_index}.json")):
+            stale.unlink()
+        cmd = ["xcodebuild", "test-without-building", "-project", str(ROOT / "studiquo.xcodeproj"), "-scheme", "studiquo",
+               "-destination", f"id={SIM}", "-derivedDataPath", derived, "-parallel-testing-enabled", "NO",
+               f"-only-testing:studiquoTests/AppFileFuzzTests/{METHODS[a.target]}", "CODE_SIGNING_ALLOWED=NO"] + flags
+        code, reason = run(cmd, env, out / f"run-{next_index}.log", left + 180)
+        sums = sorted(out.glob(f"summary-{a.target}-{a.seed}-{next_index}.json"))
+        journal = out / f"journal-{a.target}.txt"
+        if sums:
+            s = json.loads(sums[0].read_text())
+            executed += s["cases"]
+            next_index = s["lastIndex"] + 1
+            if s["cases"] == 0:
+                infra = "0ケースしか実行されませんでした"
+                break
+            if s["lastIndex"] + 1 < end:  # 時間切れで途中終了
+                break
+        elif journal.exists():  # 落ちた: journalが落ちたケースを指す
+            _, seed, index = journal.read_text().split()
+            index = int(index)
+            if index < next_index:
+                infra = f"落ちたケース番号 {index} が開始位置 {next_index} より前です(再開しても進みません)"
+                break
+            kind = "hang-kill" if reason == "timeout" else "crash"
+            crashes.append({"target": a.target, "kind": kind, "seed": int(seed), "index": index, "exitCode": code,
+                            "log": f"run-{next_index}.log"})
+            with open(out / f"findings-{a.target}.jsonl", "a") as f:
+                f.write(json.dumps(crashes[-1]) + "\n")
+            executed += max(index - next_index, 0) + 1
+            next_index = index + 1
+        else:
+            infra = f"テストが起動しなかったか、記録を残さず終了しました(終了コード {code}、ログ {out / f'run-{next_index}.log'})"
+            break
+    (out / "next-index.txt").write_text(str(next_index))
+
+    findings = []
+    fl = out / f"findings-{a.target}.jsonl"
+    if fl.exists():
+        findings = [json.loads(line) for line in fl.read_text().splitlines() if line.strip()]
+    summary = {"target": a.target, "seed": a.seed, "mode": mode, "startedAtIndex": a.start, "nextIndex": next_index,
+               "casesExecuted": executed, "findings": len(findings), "crashes": len(crashes),
+               "seconds": round(time.time() - began, 1), "infrastructureFailure": infra,
+               "status": "infra-failure" if infra or executed == 0 else ("partial" if next_index < end else "completed")}
+    (out / "driver-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+    print(json.dumps(summary, ensure_ascii=False))
+    if infra or executed == 0:
+        return 2
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
