@@ -945,31 +945,33 @@ struct TextDocumentView: View {
         }
     }
 
-    private func collabEditMarker() -> Int {
-        var hasher = Hasher()
-        hasher.combine(attributedText.string)
-        hasher.combine(document.updatedAt)
-        return hasher.finalize()
-    }
-
     private func syncCollabOnce() async {
         guard document.collabRoomID != nil, hasLoaded, !isCollabSyncing else { return }
         isCollabSyncing = true
         defer { isCollabSyncing = false }
-        final class Marker { var value = 0 }
+        // What the document looked like when the round started. `updatedAt` is not used:
+        // every autosave bumps it, which would make nearly every round look "edited".
+        final class Marker { var live = ""; var snapshot: DocumentSnapshot? }
         let marker = Marker()
         do {
             let outcome = try await CollabSyncEngine.sync(
                 document: document,
                 canWrite: !collabReadOnly,
                 client: LiveDocumentSnapshotClient(),
-                flush: { flushSave(); marker.value = collabEditMarker() },
-                stillCurrent: { collabEditMarker() == marker.value },
+                flush: {
+                    flushSave()
+                    marker.live = attributedText.string
+                    marker.snapshot = DocumentSnapshotCodec.make(from: document).snapshot
+                },
+                stillCurrent: {
+                    attributedText.string == marker.live && DocumentSnapshotCodec.make(from: document).snapshot == marker.snapshot
+                },
                 didApply: { reloadAfterRemoteApply() },
                 save: { try? modelContext.save() }
             )
             switch outcome {
-            case .upToDate, .skipped: collabStatus = L("同期済み")
+            case .upToDate: collabStatus = L("同期済み")
+            case .skipped: collabStatus = L("入力中のため、次の同期で反映します")
             case .pushed: collabStatus = L("変更を送信しました")
             case .pulled(let conflicts):
                 collabStatus = conflicts > 0
