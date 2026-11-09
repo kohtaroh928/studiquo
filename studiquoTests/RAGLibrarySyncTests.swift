@@ -6,6 +6,17 @@ import SwiftData
 final class RAGLibrarySyncTests: XCTestCase {
     private var previousDisclosureDefaults: UserDefaults!
     private var oldConsent = false
+    /// Waits for `condition` against the clock, not a fixed number of yields: a loaded
+    /// CI runner can need far more than 1000 turns of the main actor before a
+    /// background task gets to run. A passing test returns as soon as it holds.
+    private func waitUntil(_ description: String, timeout: TimeInterval = 30, _ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(condition(), "Timed out waiting for: \(description)")
+    }
+
     override func setUp() {
         super.setUp()
         previousDisclosureDefaults = AIDataDisclosure.defaults
@@ -305,11 +316,11 @@ final class RAGLibrarySyncTests: XCTestCase {
         let service = RAGLibrarySyncService(client: client, defaults: UserDefaults(suiteName: UUID().uuidString)!, partition: { "owner" })
         try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [notebook])
         let upload = Task { await service.reconcile(notebooks: [notebook], context: container.mainContext) }
-        for _ in 0..<1000 { if releaseUpload != nil { break }; await Task.yield() }
+        await waitUntil("the upload to start") { releaseUpload != nil }
         guard let release = releaseUpload else { upload.cancel(); XCTFail("Upload did not begin"); return }
         notebook.isLocked = true
         service.invalidate(notebook: notebook, state: "locked")
-        for _ in 0..<1000 { if invalidations > 0 { break }; await Task.yield() }
+        await waitUntil("the invalidation to be sent") { invalidations > 0 }
         XCTAssertEqual(invalidations, 1)
         XCTAssertEqual(remoteState, "locked")
         release.resume(); await upload.value
@@ -376,7 +387,7 @@ final class RAGLibrarySyncTests: XCTestCase {
         })
         try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [notebook])
         await service.reconcile(notebooks: [notebook], context: container.mainContext)
-        for _ in 0..<1000 { if service.searchableCount == 1 { break }; await Task.yield() }
+        await waitUntil("the rate-limited upload to resume") { service.searchableCount == 1 }
         XCTAssertEqual(uploadCalls, 2); XCTAssertEqual(delays, [60])
         XCTAssertEqual(service.searchableCount, 1)
         service.setForeground(false)
@@ -425,7 +436,7 @@ final class RAGLibrarySyncTests: XCTestCase {
             delays.append(delay); currentTime = currentTime.addingTimeInterval(delay); await Task.yield()
         })
         await service.reconcile(notebooks: [], context: container.mainContext)
-        for _ in 0..<1000 { if calls == 2 && !service.busy { break }; await Task.yield() }
+        await waitUntil("both calls to finish") { calls == 2 && !service.busy }
         XCTAssertEqual(calls, 2); XCTAssertEqual(delays, [60]); XCTAssertTrue(service.enabled)
         service.setForeground(false)
     }
@@ -505,7 +516,7 @@ final class RAGLibrarySyncTests: XCTestCase {
             await withCheckedContinuation { releaseSleep = $0 }
         })
         await service.reconcile(notebooks: [], context: container.mainContext)
-        for _ in 0..<1000 { if releaseSleep != nil { break }; await Task.yield() }
+        await waitUntil("the backoff sleep to start") { releaseSleep != nil }
         guard let release = releaseSleep else { service.setForeground(false); XCTFail("Retry was not scheduled"); return }
         service.setForeground(false)
         release.resume()
