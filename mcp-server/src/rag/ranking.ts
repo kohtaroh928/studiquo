@@ -53,3 +53,17 @@ export function selectDiverse(candidates: any, groups: any = [], limit = 5, elig
   }
   return selected;
 }
+
+// The page of the candidate the reranker put first, or null when its answer is unusable or the top two scores are equal.
+export function clearRerankWinnerPage(candidates: any[], response: any): { source: string; page: number } | null {
+  if (!Array.isArray(response) || response.length !== candidates.length || !response.length) return null;
+  const seen = new Set();
+  for (const row of response) {
+    if (!Number.isInteger(row?.id) || row.id < 0 || row.id >= candidates.length || !Number.isFinite(row.score) || seen.has(row.id)) return null;
+    seen.add(row.id);
+  }
+  const ranked = [...response].sort((a, b) => b.score - a.score);
+  if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null;
+  const top = candidates[ranked[0].id];
+  return top && Number.isInteger(top.page_number) ? { source: String(top.source_id), page: top.page_number } : null;
+}
