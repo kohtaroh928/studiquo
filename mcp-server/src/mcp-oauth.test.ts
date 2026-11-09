@@ -410,3 +410,14 @@ test("an app's name is printed on the approval page as text, never as markup", a
   assert.ok(page.includes("&lt;img src=x onerror=alert(1)&gt;&quot;&#39;&amp;&lt;/p&gt;&lt;script&gt;"), "it is shown, escaped");
   assert.equal((page.match(/<script>/gi) ?? []).length, 1, "only the page's own script");
 });
+
+test("a body member of the wrong type is a 400, not a 500 (found by the Worker input fuzzing)", async () => {
+  const env = environment();
+  const poison = { toString: {} };
+  const post = (path: string, body: unknown) => fetch(env, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await post("/oauth/register", { redirect_uris: ["https://claude.example/callback"], client_name: poison })).status, 400);
+  assert.equal((await post("/oauth/pair", { id: poison, code: "x" })).status, 400);
+  assert.equal((await post("/oauth/pair", { id: "a".repeat(64), code: poison })).status, 400);
+  // A string, as before, still registers.
+  assert.equal((await post("/oauth/register", { redirect_uris: ["https://claude.example/callback"], client_name: "Claude" })).status, 201);
+});

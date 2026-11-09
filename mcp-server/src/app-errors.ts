@@ -13,7 +13,7 @@ import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, readJSONLimited } from "./http.ts";
+import { json, readJSONLimited, bodyNumber } from "./http.ts";
 import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
 import type { Env } from "./env.ts";
@@ -138,9 +138,9 @@ function normalize(input: unknown, defaults: Context, now: number) {
   const title = truncate(raw.title, 200).trim();
   if (!signature || !title) return null;
   const kind = KINDS.has(raw.kind as string) ? (raw.kind as string) : "error";
-  const count = Math.min(MAX_COUNT, Math.max(1, Math.floor(Number(raw.count)) || 1));
+  const count = Math.min(MAX_COUNT, Math.max(1, Math.floor(bodyNumber(raw.count)) || 1));
   // The device's clock can be wrong; never accept a time in the future.
-  const occurredAt = Math.min(now, Number.isFinite(Number(raw.occurredAt)) && Number(raw.occurredAt) > 0 ? Number(raw.occurredAt) : now);
+  const occurredAt = Math.min(now, Number.isFinite(bodyNumber(raw.occurredAt)) && bodyNumber(raw.occurredAt) > 0 ? bodyNumber(raw.occurredAt) : now);
   return {
     kind,
     signature,

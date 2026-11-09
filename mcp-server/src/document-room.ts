@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
+import { bodyNumber } from "./http.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData, removeParticipantData } from "./document-room-store.ts";
 
 // Mirrors chat-room.ts's ChatRoom shape closely — same Durable Object
@@ -43,15 +44,18 @@ export class DocumentRoom extends DurableObject<Env> {
     // Capped the same way ChatRoom.initialize caps its participant list —
     // a defensive bound on how much one request can write, not a design
     // limit on document size.
-    for (const block of (Array.isArray(blocks) ? blocks : []).slice(0, 2000)) {
+    for (const raw of (Array.isArray(blocks) ? blocks : []).slice(0, 2000)) {
+      // Members come from a JSON body: read them without letting a wrong type throw.
+      const block = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+      const asText = (value: unknown, fallback: string) => (typeof value === "object" && value !== null ? fallback : String(value ?? fallback));
       this.ctx.storage.sql.exec(
         "INSERT OR REPLACE INTO blocks (block_order, kind, text, list_kind, list_level, paragraph_style) VALUES (?, ?, ?, ?, ?, ?)",
-        Number(block.order) || 0,
-        String(block.kind ?? "paragraph"),
-        String(block.text ?? ""),
-        block.listKind ?? null,
-        Number(block.listLevel) || 0,
-        block.paragraphStyle ?? null,
+        bodyNumber(block.order) || 0,
+        asText(block.kind, "paragraph"),
+        asText(block.text, ""),
+        typeof block.listKind === "string" ? block.listKind : null,
+        bodyNumber(block.listLevel) || 0,
+        typeof block.paragraphStyle === "string" ? block.paragraphStyle : null,
       );
     }
     return { status: "initialized" };
