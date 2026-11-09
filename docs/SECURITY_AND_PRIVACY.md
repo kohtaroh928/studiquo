@@ -440,7 +440,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI�
 
 ### 2026-10-16のサーバーAPI診断
 
-静的な診断で見つけた指摘のうち、招待・AI・レート制限・保存領域・HTMLのヘッダ・エラー応答などの小さな修正は、2026-10-17に本番へ反映した(`api-hardening.test.js`ほか)。入口の独自ドメイン化と`workers.dev`の停止も、同日に反映した(5.0)。設計の見直しを伴う残りの項目は、運営のタスク管理(Notionの「Studiquo タスク」)で管理する。
+静的な診断で見つけた指摘のうち、招待・AI・レート制限・保存領域・HTMLのヘッダ・エラー応答などの小さな修正は、2026-10-17に本番へ反映した(`api-hardening.test.js`ほか)。入口の独自ドメイン化と`workers.dev`の停止も、同日に反映した(5.0)。設計の見直しを伴う残りの項目は、運営のタスク管理(GitHub Projectの「Studiquo タスク」。2026-10-25にNotionから移行)で管理する。
 
 課題を解消したら、コードとtestの参照を残してこの節を更新する。
 
