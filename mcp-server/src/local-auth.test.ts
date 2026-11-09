@@ -167,7 +167,9 @@ test("an upgrade doesn't overwrite a password reset that landed during the sign-
     return result;
   };
   try {
-    assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), true);
+    // The old password was right when the record was read, but the reset has
+    // landed since: it is refused (before the generation check this was true).
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
   } finally {
     hashers.pbkdf2 = original;
   }
@@ -274,8 +276,9 @@ test("a stale read of the pre-reset record cannot bring the old password back", 
     key === "account:local:person@example.com" ? (type === "json" ? JSON.parse(staleRecord) : staleRecord) : realGet(key, type)
   );
   try {
-    // The old password is accepted off the stale record (KV consistency, not new)...
-    assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), true);
+    // The stale record is recognised by its generation and refused (the generation
+    // check; before it, KV's lag let the old password in)...
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
   } finally {
     env.STUDIQUO_DATA.get = realGet;
   }
@@ -580,4 +583,99 @@ test("priority changes nothing about what a sign-in does, only whether a full qu
     assert.equal(await verifyLocalAccount(env, "person@example.com", "wrong-password", options), false);
     assert.equal(await verifyLocalAccount(env, "nobody@example.com", "wrong-password", options), false);
   }
+});
+
+// ---- L-6: a previous record still served by another location's KV ----
+
+async function staleCopyAfterReset(env: LooseEnv, email: string, oldPassword: string, newPassword: string) {
+  await upsertLocalAccount(env, email, oldPassword);
+  const oldRecord = JSON.stringify(await storedRecord(env, email));
+  await upsertLocalAccount(env, email, newPassword);
+  const newRecord = JSON.stringify(await storedRecord(env, email));
+  return { oldRecord, newRecord, key: `account:local:${email}` };
+}
+
+test("a previous record that KV still serves after a password change cannot sign in", async () => {
+  const env = environment();
+  const { oldRecord, newRecord, key } = await staleCopyAfterReset(env, "person@example.com", "old-password-1", "brand-new-password");
+  await env.STUDIQUO_DATA.put(key, oldRecord); // another location, a minute later
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "brand-new-password"), false, "it only has the old hash to compare with");
+  await env.STUDIQUO_DATA.put(key, newRecord); // the change has reached it
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "brand-new-password"), true);
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
+});
+
+test("a stale legacy record is refused too, and not upgraded", async () => {
+  const env = environment();
+  await seedLegacyAccount(env, "person@example.com", "old-password-1");
+  const stale = JSON.stringify(await storedRecord(env, "person@example.com"));
+  await upsertLocalAccount(env, "person@example.com", "brand-new-password");
+  await env.STUDIQUO_DATA.put("account:local:person@example.com", stale);
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
+  assert.equal(JSON.stringify(await storedRecord(env, "person@example.com")), stale, "a refused record is not rewritten");
+});
+
+test("an account with no remembered generation signs in as before", async () => {
+  const env = environment();
+  await seedLegacyAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), true);
+});
+
+test("a set that failed after taking a generation leaves the old password working", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "old-password-1");
+  await env.RATE_COUNTER.getByName(`account-gen:${await sha256Hex("person@example.com")}`).nextAccountGeneration();
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), true);
+});
+
+test("if the generation store can't be asked, sign-in works as it did before the check", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "old-password-1");
+  const real = env.RATE_COUNTER;
+  env.RATE_COUNTER = { getByName: () => ({ committedAccountGeneration: async () => { throw new Error("DO down"); } }) };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), true);
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "wrong-password-123"), false);
+  } finally {
+    console.error = originalError;
+    env.RATE_COUNTER = real;
+  }
+});
+
+test("two password sets at once: the older one cannot land last, and the newer password works", async () => {
+  const env = environment();
+  const stub = env.RATE_COUNTER.getByName(`account-gen:${await sha256Hex("person@example.com")}`);
+  // A takes its generation first but finishes hashing last.
+  const genA = await stub.nextAccountGeneration();
+  const genB = await stub.nextAccountGeneration();
+  const record = (gen: number) => JSON.stringify({ gen });
+  assert.equal(await stub.commitAccountRecord("account:local:person@example.com", record(genB), genB), true);
+  assert.equal(await stub.commitAccountRecord("account:local:person@example.com", record(genA), genA), false);
+  assert.deepEqual(await storedRecord(env, "person@example.com"), { gen: genB });
+});
+
+test("setting a password whose generation was overtaken fails so the caller can retry", async () => {
+  const env = environment();
+  const original = engine.argon2idAsync;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let first = true;
+  engine.argon2idAsync = (async (...args: Parameters<typeof original>) => {
+    if (first) { first = false; await gate; }
+    return original(...args);
+  }) as typeof original;
+  try {
+    const slow = upsertLocalAccount(env, "person@example.com", "slow-password-aaa");
+    await new Promise(resolve => setImmediate(resolve));
+    await upsertLocalAccount(env, "person@example.com", "fast-password-bbb");
+    release();
+    await assert.rejects(slow, /newer password/);
+  } finally {
+    engine.argon2idAsync = original;
+  }
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "fast-password-bbb"), true);
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "slow-password-aaa"), false);
 });
