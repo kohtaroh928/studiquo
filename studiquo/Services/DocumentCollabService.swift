@@ -192,11 +192,20 @@ enum DocumentCollabService {
         try await request(path: "api/document/rooms/\(roomID)/changes/\(changeID)/review", method: "POST", body: ["decision": decision])
     }
 
+    /// `path` may end in a query (`…/snapshot?since=3`). `URL.appending(path:)` would
+    /// percent-encode the `?` into the path, and the server would not find the route.
+    static func requestURL(endpoint: URL, path: String) -> URL? {
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard var components = URLComponents(url: endpoint.appending(path: String(parts[0])), resolvingAgainstBaseURL: false) else { return nil }
+        if parts.count == 2 { components.percentEncodedQuery = String(parts[1]) }
+        return components.url
+    }
+
     private static func request<Response: Decodable, Body: Encodable>(
         path: String, method: String, body: Body?
     ) async throws -> Response {
-        guard let endpoint = MCPCloudCredentials.configuredEndpoint() else { throw URLError(.badURL) }
-        var request = URLRequest(url: endpoint.appending(path: path))
+        guard let endpoint = MCPCloudCredentials.configuredEndpoint(), let url = requestURL(endpoint: endpoint, path: path) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")

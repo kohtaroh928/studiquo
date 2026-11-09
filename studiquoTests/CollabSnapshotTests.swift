@@ -263,3 +263,15 @@ final class CollabSnapshotTests: XCTestCase {
         XCTAssertEqual(b.sortedBlocks.last?.bodyData, Data([9, 8, 7]))
     }
 }
+
+final class CollabRequestURLTests: XCTestCase {
+    func testAQueryStaysAQueryAndIsNotEncodedIntoThePath() throws {
+        let endpoint = try XCTUnwrap(URL(string: "https://staging-api.studiquo.app"))
+        let url = try XCTUnwrap(DocumentCollabService.requestURL(endpoint: endpoint, path: "api/document/rooms/abc/snapshot?since=3"))
+        XCTAssertEqual(url.absoluteString, "https://staging-api.studiquo.app/api/document/rooms/abc/snapshot?since=3")
+        XCTAssertEqual(url.path, "/api/document/rooms/abc/snapshot")
+        XCTAssertEqual(url.query, "since=3")
+        let plain = try XCTUnwrap(DocumentCollabService.requestURL(endpoint: endpoint, path: "api/document/invites"))
+        XCTAssertEqual(plain.absoluteString, "https://staging-api.studiquo.app/api/document/invites")
+    }
+}
