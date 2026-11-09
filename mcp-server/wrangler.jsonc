@@ -162,6 +162,13 @@
     // installed and both sign-ins were seen to verify. Removing this line accepts
     // the sign-ins of older builds, which send none, again.
     "REQUIRE_ID_TOKEN_NONCE": "true",
+    // /mcp accepts only OAuth-paired tokens, not the app's own session token (TOKEN-1).
+    // Takes effect at the next production deploy: anyone who connected an AI app with the old
+    // pasted token must connect it again with the pairing code.
+    "MCP_REFUSE_SESSION_TOKENS": "true",
+    // Account deletion needs a sign-in from the last 10 minutes when the account has no passkey (AUTH-1).
+    // Takes effect at the next production deploy; the app build that explains it is in main.
+    "REQUIRE_RECENT_LOGIN_FOR_DELETION": "true",
     // App Attest (src/app-attest.ts): "off" (default), "log" (check and log only)
     // or "enforce". Needs the app that sends assertions to be out first; watch the
     // "app attest" log lines for "absent" before enforcing.
@@ -275,11 +282,14 @@
       ],
       "vars": {
         "DEPLOYMENT_ENVIRONMENT": "staging",
-        "RAG_ENABLED": "false",
+        // Staging is where document search is tried, so these stay on here. Any deploy without
+        // --var overrides used to turn them off and stop evaluations partway. Production keeps
+        // its own "false" values above. PDF processing still refuses without DOCLING_PROCESSOR.
+        "RAG_ENABLED": "true",
         "RAG_JUDGE": "off",
-        "RAG_AUTO_INDEX_ENABLED": "false",
-        "RAG_PDF_PROCESSING_ENABLED": "false",
-        "RAG_PDF_CLEANUP_ENABLED": "false",
+        "RAG_AUTO_INDEX_ENABLED": "true",
+        "RAG_PDF_PROCESSING_ENABLED": "true",
+        "RAG_PDF_CLEANUP_ENABLED": "true",
         "RAG_PDF_ADMISSION_POLICY": "{\"perOwnerActive\":1,\"globalActive\":1,\"globalMemoryBytes\":67108864,\"perOwnerDailyUnits\":10,\"globalDailyUnits\":20,\"reservationUnits\":1,\"perOwnerDailyRequests\":10,\"globalDailyRequests\":20}",
         "RAG_PDF_INTAKE_LIMITS": "{\"ownerRows\":10,\"globalRows\":100,\"ownerPending\":1,\"globalPending\":2}",
         // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
@@ -290,7 +300,7 @@
         "OPENAI_SOL_MODEL": "gpt-6.1-sol",
         "OPENAI_ASTRA_MODEL": "gpt-6-astra",
         "PRIVACY_RETENTION_ENABLED": "false",
-        "AI_PROVIDER_APPROVED": "false",
+        "AI_PROVIDER_APPROVED": "true",
         "ALLOW_SANDBOX_PURCHASES": "true",
         // Marks every Slack message, push, e-mail subject and admin page from this Worker
         // as staging (environment.ts). Production leaves it unset, so nothing is marked there.

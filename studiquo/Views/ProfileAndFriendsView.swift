@@ -461,12 +461,34 @@ final class FriendStore: ObservableObject {
     /// first-ever) photo is pushed to the server without re-uploading an
     /// unchanged one on every single poll.
     private let uploadedAvatarDigestKey = "studiquoUploadedAvatarDigest"
+    /// Account-scoped UserDefaults keys that must be cleared on logout or
+    /// account deletion so another user signing into the same device does
+    /// not inherit friends, archived friends, messages, or profile data.
+    nonisolated static let persistedAccountKeys: [String] = [
+        "studiquoFriendCode",
+        "studiquoFriendLinkToken",
+        "studiquoFriends",
+        "studiquoArchivedFriends",
+        "studiquoLocallyRemovedFriendCodes",
+        "studiquoLocallyRemovedFriendTimes",
+        "studiquoGroups",
+        "studiquoFriendMessages",
+        "studiquoFriendUnreadCounts",
+        "studiquoGroupUnreadCounts",
+        "studiquoSeenIncomingRequestCodes",
+        "studiquoUploadedAvatarDigest",
+        "profileName",
+        "profileOccupation",
+        "profileBio",
+        "profileImage",
+    ]
     /// The app-wide incoming-request poll (see `handle(scenePhase:)`) — owns
     /// this instead of tying it to whichever screen happens to be open, the
     /// same reasoning `FriendsHomeView`'s own `.task` used to rely on alone.
     private var incomingRequestPollTask: Task<Void, Never>?
     private var inboxPollTask: Task<Void, Never>?
     private var groupPollTask: Task<Void, Never>?
+    private var logoutObserver: NSObjectProtocol?
     /// Invalidates a group-list response that started before a successful
     /// local group mutation. Without this, the background poll can fetch an
     /// empty/pre-mutation snapshot, then arrive after create/accept and
@@ -594,12 +616,101 @@ final class FriendStore: ObservableObject {
         if let data = defaults.data(forKey: seenIncomingRequestCodesKey) {
             seenIncomingRequestCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
         }
+        logoutObserver = NotificationCenter.default.addObserver(
+            forName: .studiquoDidLogout,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            let notifiedDefaults = notification.object as? UserDefaults
+            let handleReset = { @MainActor [weak self] in
+                guard let self else { return }
+                if let notifiedDefaults, notifiedDefaults !== self.defaults {
+                    return
+                }
+                self.resetForLogout(removeAttachmentFiles: self.defaults === UserDefaults.standard)
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    handleReset()
+                }
+            } else {
+                Task { @MainActor in
+                    handleReset()
+                }
+            }
+        }
         if autoRefresh {
             Task { await refresh() }
             startIncomingRequestPolling()
             startInboxPolling()
             startGroupPolling()
         }
+    }
+
+    deinit {
+        if let logoutObserver {
+            NotificationCenter.default.removeObserver(logoutObserver)
+        }
+    }
+
+    nonisolated static func clearPersistedAccountState(
+        defaults: UserDefaults = .standard,
+        removeAttachmentFiles: Bool = false
+    ) {
+        for key in persistedAccountKeys {
+            defaults.removeObject(forKey: key)
+        }
+        guard removeAttachmentFiles else { return }
+        let fileManager = FileManager.default
+        let directories = [
+            fileManager.urls(for: .documentDirectory, in: .userDomainMask).first?
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory),
+            fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory),
+        ].compactMap { $0 }
+        for directory in directories {
+            try? fileManager.removeItem(at: directory)
+        }
+    }
+
+    func resetForLogout(removeAttachmentFiles: Bool = false) {
+        stopIncomingRequestPolling()
+        stopInboxPolling()
+        stopGroupPolling()
+        friendsGeneration += 1
+        friendsRequestSequence += 1
+        groupsGeneration += 1
+        friends = []
+        archivedFriends = []
+        messages = []
+        incomingRequests = []
+        outgoingRequests = []
+        unseenIncomingRequestCount = 0
+        seenIncomingRequestCodes = []
+        pendingRequestActions = []
+        unreadCounts = [:]
+        groupUnreadCounts = [:]
+        blockedContacts = []
+        pendingRemovalCodes = []
+        groups = []
+        groupAvatars = [:]
+        pendingGroupAvatarUploads = []
+        groupAvatarRevisions = [:]
+        incomingGroupInvites = []
+        groupMessages = [:]
+        pendingGroupActions = []
+        activeFriendID = nil
+        activeGroupRoomID = nil
+        myCode = Self.placeholderCode
+        myLinkToken = Self.placeholderCode
+        errorMessage = ""
+        blockedByMeRoomIDs = []
+        pendingBlockRoomIDs = []
+        locallyRemovedCodes = []
+        locallyRemovedTimes = [:]
+        consecutivePollFailures = [:]
+        hasNotifiedAuthExpired = false
+        Self.clearPersistedAccountState(defaults: defaults, removeAttachmentFiles: removeAttachmentFiles)
     }
 
     /// Polls for incoming friend requests for as long as this store exists
@@ -1435,7 +1546,24 @@ final class FriendStore: ObservableObject {
             guard !newOnes.isEmpty else { return }
             var current = groupMessages[roomID] ?? []
             let existingIDs = Set(current.map(\.id))
-            current.append(contentsOf: newOnes.filter { !existingIDs.contains($0.id) })
+            let sanitized = newOnes
+                .filter { !existingIDs.contains($0.id) }
+                .map { item -> FriendChatService.Message in
+                    guard !item.isMine else { return item }
+                    let cleanedText = FriendMessageAttachment.strippingLocalSourcePaths(in: item.text)
+                    guard cleanedText != item.text else { return item }
+                    return FriendChatService.Message(
+                        id: item.id,
+                        text: cleanedText,
+                        sentAt: item.sentAt,
+                        isMine: item.isMine,
+                        clientMessageID: item.clientMessageID,
+                        isCanceled: item.isCanceled,
+                        senderCode: item.senderCode,
+                        senderName: item.senderName
+                    )
+                }
+            current.append(contentsOf: sanitized)
             groupMessages[roomID] = current
             if activeGroupRoomID == roomID { await markGroupRead(roomID: roomID) }
         } catch {
@@ -2057,16 +2185,15 @@ final class FriendStore: ObservableObject {
     /// the upload itself fails, the same "can't repair, leave it" outcome
     /// `resolve` reports for a deleted in-app material.
     private func repairedFileBackedAttachment(_ attachment: FriendMessageAttachment, roomID: String) async -> FriendMessageAttachment? {
-        guard let sourcePath = attachment.sourcePath, !sourcePath.isEmpty,
-              FileManager.default.fileExists(atPath: sourcePath),
-              let data = try? Data(contentsOf: URL(fileURLWithPath: sourcePath))
+        guard let safeURL = FriendChatService.safeLocalAttachmentURL(sourcePath: attachment.sourcePath),
+              let data = try? Data(contentsOf: safeURL)
         else { return nil }
-        let contentType = UTType(filenameExtension: URL(fileURLWithPath: sourcePath).pathExtension)?.preferredMIMEType
+        let contentType = UTType(filenameExtension: safeURL.pathExtension)?.preferredMIMEType
             ?? "application/octet-stream"
         guard let remoteID = await uploadAttachment(data: data, contentType: contentType, roomID: roomID) else { return nil }
         return FriendMessageAttachment(
             id: attachment.id, title: attachment.title, kind: attachment.kind, icon: attachment.icon,
-            sourceKind: attachment.resolvedSourceKind, sourceID: remoteID, sourcePath: sourcePath, remoteRoomID: roomID
+            sourceKind: attachment.resolvedSourceKind, sourceID: remoteID, sourcePath: safeURL.path, remoteRoomID: roomID
         )
     }
 
@@ -2086,11 +2213,12 @@ final class FriendStore: ObservableObject {
         var working = messages
         for item in remote {
             guard let index = working.firstIndex(where: { $0.friendID == friend.id && $0.serverID == item.id }) else { continue }
+            let sanitizedText = item.isMine ? item.text : FriendMessageAttachment.strippingLocalSourcePaths(in: item.text)
             if item.isCanceled == true, working[index].isCanceled != true {
                 working[index].text = ""
                 working[index].isCanceled = true
-            } else if item.text != working[index].text {
-                working[index].text = item.text
+            } else if sanitizedText != working[index].text {
+                working[index].text = sanitizedText
             }
         }
         messages = working
@@ -2163,6 +2291,7 @@ final class FriendStore: ObservableObject {
         var working = messages
         var newIncomingCount = 0
         for item in remote {
+            let incomingSanitizedText = item.isMine ? item.text : FriendMessageAttachment.strippingLocalSourcePaths(in: item.text)
             // Matching by the client-generated id the message was sent with
             // is exact and order-independent, and stays authoritative even
             // for a message this device already reconciled on an earlier
@@ -2225,13 +2354,13 @@ final class FriendStore: ObservableObject {
                 if item.isCanceled == true, working[index].isCanceled != true {
                     working[index].text = ""
                     working[index].isCanceled = true
-                } else if item.isCanceled != true, item.text != working[index].text {
-                    working[index].text = item.text
+                } else if item.isCanceled != true, incomingSanitizedText != working[index].text {
+                    working[index].text = incomingSanitizedText
                 }
                 continue
             }
             working.append(FriendMessage(
-                id: UUID(), friendID: recipient.id, text: item.text,
+                id: UUID(), friendID: recipient.id, text: incomingSanitizedText,
                 sentAt: Date(timeIntervalSince1970: item.sentAt / 1_000),
                 isMine: item.isMine, isCanceled: item.isCanceled == true, serverID: item.id,
                 roomID: roomID
@@ -2287,25 +2416,39 @@ final class FriendStore: ObservableObject {
     /// grew without bound for as long as the app kept sending/receiving
     /// photos and files. Runs off the main actor since it's pure file I/O
     /// with no need to touch any published state.
-    private static func deleteLocalAttachmentFiles(for evicted: [FriendMessage]) {
+    nonisolated static func deleteLocalAttachmentFilesNow(
+        for evicted: [FriendMessage],
+        allowedRoots: [URL]? = nil
+    ) {
         guard !evicted.isEmpty else { return }
-        Task.detached(priority: .utility) {
-            let fileManager = FileManager.default
-            let cacheDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
-            let cachedFiles = (try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
-            for message in evicted {
-                for attachment in FriendMessageParts(text: message.text).attachments {
-                    if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
-                        try? fileManager.removeItem(atPath: sourcePath)
-                    }
-                    if let sourceID = attachment.resolvedSourceID {
-                        for url in cachedFiles where url.deletingPathExtension().lastPathComponent == sourceID {
-                            try? fileManager.removeItem(at: url)
-                        }
+        let fileManager = FileManager.default
+        let cacheDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+        let cachedFiles = (try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
+        for message in evicted {
+            for attachment in FriendMessageParts(text: message.text).attachments {
+                if message.isMine,
+                   let safeURL = FriendChatService.safeLocalAttachmentURL(
+                       sourcePath: attachment.sourcePath,
+                       fileManager: fileManager,
+                       allowedRoots: allowedRoots
+                   ) {
+                    try? fileManager.removeItem(at: safeURL)
+                }
+                if let sourceID = attachment.resolvedSourceID,
+                   FriendChatService.isValidPathSegment(sourceID) {
+                    for url in cachedFiles where url.deletingPathExtension().lastPathComponent == sourceID {
+                        try? fileManager.removeItem(at: url)
                     }
                 }
             }
+        }
+    }
+
+    private static func deleteLocalAttachmentFiles(for evicted: [FriendMessage]) {
+        guard !evicted.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            deleteLocalAttachmentFilesNow(for: evicted)
         }
     }
 
@@ -3959,7 +4102,7 @@ struct GroupChatView: View {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appending(path: filename)
-        guard (try? data.write(to: destination, options: [.atomic])) != nil else { return nil }
+        guard (try? data.write(to: destination, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else { return nil }
         let remoteID: String?
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
@@ -4680,7 +4823,7 @@ struct FriendChatView: View {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "\(UUID().uuidString).jpg")
         do {
-            try data.write(to: url, options: [.atomic])
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
             // Kept as a fast local path for the sender's own device; the
             // upload below is what lets the *other* participant open it.
             let (remoteID, remoteRoomID) = await uploadIfPossible(data: data, contentType: "image/jpeg")
@@ -4760,6 +4903,10 @@ struct FriendChatView: View {
                 try FileManager.default.removeItem(at: destination)
             }
             try FileManager.default.copyItem(at: sourceURL, to: destination)
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUnlessOpen],
+                ofItemAtPath: destination.path
+            )
             // Kept as a fast local path for the sender's own device; the
             // upload below is what lets the *other* participant open it.
             var remoteID: String?
@@ -5051,7 +5198,37 @@ struct FriendMessageAttachment: Identifiable, Hashable, Codable {
     /// keeps a single attachment's worst case (an all-non-ASCII name) around
     /// 1,500 characters, leaving room for a message body alongside it.
     static func boundedFilename(_ original: String, maxLength: Int = 20) -> String {
-        String(original.prefix(maxLength))
+        let sanitized = original
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+            .replacingOccurrences(of: "..", with: "_")
+            .replacingOccurrences(of: "\u{0000}", with: "")
+        let trimmed = String(sanitized.prefix(maxLength))
+        return trimmed.isEmpty ? "file" : trimmed
+    }
+
+    /// Strips any sender-local `sourcePath` from attachment payloads in an
+    /// incoming (`!isMine`) message so a remote peer cannot reference
+    /// arbitrary paths inside this device's container.
+    static func strippingLocalSourcePaths(in text: String) -> String {
+        guard text.contains("[studiquo-attachment:") else { return text }
+        return text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+            .map { line -> String in
+                guard line.hasPrefix("[studiquo-attachment:"), line.hasSuffix("]") else { return line }
+                let encoded = String(line.dropFirst("[studiquo-attachment:".count).dropLast())
+                guard let decoded = encoded.removingPercentEncoding,
+                      let data = decoded.data(using: .utf8),
+                      var payload = try? JSONDecoder().decode([String: String].self, from: data) else { return line }
+                guard let existingPath = payload["sourcePath"], !existingPath.isEmpty else { return line }
+                payload["sourcePath"] = ""
+                guard let newData = try? JSONEncoder().encode(payload),
+                      let newEncoded = String(data: newData, encoding: .utf8)?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                    return line
+                }
+                return "[studiquo-attachment:\(newEncoded)]"
+            }
+            .joined(separator: "\n")
     }
 
     var messageLine: String {

@@ -12,8 +12,8 @@ struct NotebookLockState {
     private(set) var isPDFPasswordVerified = false
     private(set) var faceIDMessage = "認証してノートを開いてください"
 
-    func requirement(isLocked: Bool, hasLockedPDF: Bool) -> Requirement {
-        if isLocked && !isFaceIDUnlocked { return .faceID }
+    func requirement(isLocked: Bool, hasLockedPDF: Bool, isSealed: Bool = false) -> Requirement {
+        if isLocked && (!isFaceIDUnlocked || isSealed) { return .faceID }
         if hasLockedPDF && !isPDFPasswordVerified { return .pdfPassword }
         return .none
     }
@@ -122,15 +122,21 @@ struct ProtectedNotebookView: View {
 /// permanently.
 struct NotebookLockGate<Content: View>: View {
     @Bindable var notebook: Notebook
+    var isUnlocked: Binding<Bool>? = nil
     @ViewBuilder var content: () -> Content
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var lockState = NotebookLockState()
     @State private var pdfPasswordEntry = ""
     @State private var pdfPasswordError: String?
     @State private var isShowingPDFPasswordPrompt = false
 
     private var requirement: NotebookLockState.Requirement {
-        lockState.requirement(isLocked: notebook.isLocked, hasLockedPDF: notebook.hasLockedPDFToUnlock)
+        lockState.requirement(
+            isLocked: notebook.isLocked,
+            hasLockedPDF: notebook.hasLockedPDFToUnlock,
+            isSealed: notebook.encryptedContent != nil
+        )
     }
     private var needsFaceID: Bool { requirement == .faceID }
     private var needsPDFPassword: Bool { requirement == .pdfPassword }
@@ -147,12 +153,29 @@ struct NotebookLockGate<Content: View>: View {
         }
         .onAppear {
             consumeImportVerification()
+            isUnlocked?.wrappedValue = !isGated
             requestUnlockIfNeeded()
+        }
+        .onDisappear {
+            isUnlocked?.wrappedValue = false
+        }
+        .onChange(of: isGated) { _, gated in
+            isUnlocked?.wrappedValue = !gated
         }
         .onChange(of: notebook.persistentModelID) { _, _ in
             lockState.notebookDidChange()
             consumeImportVerification()
+            isUnlocked?.wrappedValue = !isGated
             requestUnlockIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                lockState.notebookDidChange()
+                pdfPasswordEntry = ""
+                pdfPasswordError = nil
+                isShowingPDFPasswordPrompt = false
+                isUnlocked?.wrappedValue = false
+            }
         }
         .alert("PDFのパスワード", isPresented: $isShowingPDFPasswordPrompt) {
             SecureField("パスワード", text: $pdfPasswordEntry)

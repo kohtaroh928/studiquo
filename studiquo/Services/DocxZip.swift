@@ -91,6 +91,11 @@ enum DocxZip {
         guard offset + 30 <= bytes.count, readUInt32(bytes, offset) == 0x0403_4b50 else {
             throw ZipError.corruptEntry("local file header")
         }
+        guard compressedSize >= 0, uncompressedSize >= 0,
+              compressedSize <= maxEntryUncompressedSize,
+              uncompressedSize <= maxEntryUncompressedSize else {
+            throw ZipError.limitExceeded
+        }
         let nameLength = Int(readUInt16(bytes, offset + 26))
         let extraLength = Int(readUInt16(bytes, offset + 28))
         let dataStart = offset + 30 + nameLength + extraLength
@@ -243,6 +248,12 @@ enum DocxZip {
         guard expectedSize > 0 else { return Data() }
         guard expectedSize <= maxEntryUncompressedSize else {
             throw ZipError.decompressionFailed("declared uncompressed size (\(expectedSize) bytes) exceeds the \(maxEntryUncompressedSize)-byte limit")
+        }
+        // RFC 1951 DEFLATE's theoretical maximum compression ratio is 1032:1.
+        // Rejecting headers that claim more than that (above a 64 KB floor)
+        // prevents a tiny payload from pre-allocating a 100 MB buffer.
+        guard !data.isEmpty, expectedSize <= max(data.count * 1_032, 65_536) else {
+            throw ZipError.decompressionFailed("declared uncompressed size (\(expectedSize) bytes) is impossible for \(data.count) compressed bytes")
         }
         var output = Data(count: expectedSize)
         let resultSize = output.withUnsafeMutableBytes { outputPtr -> Int in

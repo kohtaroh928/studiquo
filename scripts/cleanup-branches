@@ -15,7 +15,20 @@ YES=0
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
 MAIN=$(dirname "$COMMON")
 
-git fetch --prune origin >/dev/null 2>&1 || echo "警告: fetchに失敗。手元のorigin/mainで判定します。"
+FETCH_OK=1
+git fetch --prune origin >/dev/null 2>&1 || FETCH_OK=0
+if [ "$FETCH_OK" = 0 ]; then
+  # 古いorigin/mainで判定したまま、取り消せないリモート削除までは進めない。
+  [ "$YES" = 1 ] && { echo "エラー: fetchに失敗したため --yes は実行しません。接続を確認してください。" >&2; exit 1; }
+  echo "警告: fetchに失敗。手元のorigin/mainで判定します。"
+fi
+
+# 同名ブランチを持つ別forkのPRを、自分のPRと取り違えないための所有者。
+OWNER=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
+if [ -z "$OWNER" ] && [ "$YES" = 1 ]; then
+  echo "エラー: リポジトリの所有者を判定できないため --yes は実行しません(gh auth status を確認)。" >&2
+  exit 1
+fi
 
 # ブランチ名 -> worktreeパス
 wt_of() {
@@ -24,7 +37,7 @@ wt_of() {
 
 for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
   [ "$b" = "main" ] && continue
-  state=$(gh pr list --state all --head "$b" --json state --jq '.[0].state' 2>/dev/null || true)
+  state=$(gh pr list --state all --head "$b" --json state,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$OWNER\")][0].state // empty" 2>/dev/null || true)
   [ "$state" = "MERGED" ] || { echo "残す  $b (PR: ${state:-なし})"; continue; }
 
   # 内容がorigin/mainに入っているか(squashマージも patch-id で判定)
@@ -38,7 +51,7 @@ for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
     if [ -n "$(git -C "$wt" status --porcelain)" ]; then echo "残す  $b (worktreeに未コミット変更あり: $wt)"; continue; fi
   fi
 
-  echo "削除  $b${wt:+ + worktree $wt}"
+  echo "削除  $b${wt:+ + worktree $wt} (先頭 $(git rev-parse --short "$b"))"
   [ "$YES" = 1 ] || continue
   [ -n "$wt" ] && git worktree remove "$wt"
   git branch -D "$b" >/dev/null

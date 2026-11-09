@@ -18,7 +18,10 @@ test("without a dedicated token the Wrangler OAuth login is refused by default",
 
 test("the OAuth login works only when it is allowed on purpose", () => {
   const env = { STUDIQUO_ALLOW_WRANGLER_OAUTH: "true" };
-  assert.equal(cloudflareToken(env, fakeFile('oauth_token = "oauth-fake"')), "oauth-fake");
+  const warnings: string[] = [];
+  assert.equal(cloudflareToken(env, fakeFile('oauth_token = "oauth-fake"'), (m) => warnings.push(m)), "oauth-fake");
+  assert.equal(warnings.length, 1, "using the broad OAuth login must warn");
+  assert.ok(!warnings[0].includes("oauth-fake"), "the warning must not contain the token");
   assert.throws(() => cloudflareToken(env, fakeFile("")), { message: "cloudflare_auth_unavailable" });
   assert.throws(() => cloudflareToken(env, () => { throw new Error("ENOENT secret/path"); }), { message: "cloudflare_auth_unavailable" });
 });

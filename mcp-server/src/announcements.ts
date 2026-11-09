@@ -16,7 +16,7 @@ import { featureDisabled } from "./features.ts";
 import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
-import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
+import { json, readJSONLimited, securityHeaders, htmlHeaders, bodyText } from "./http.ts";
 import { deviceStorageKey, loadDevices, type Device } from "./devices.ts";
 import { sendPush } from "./push.ts";
 import type { Env } from "./env.ts";
@@ -348,7 +348,7 @@ async function pushBatch(env: Env, id: string, options: {}, now: number) {
 // app's profile). Works on drafts and never touches the real push state.
 async function pushTest(env: Env, id: string, request: Request, options: {}) {
   const body = await readJSONLimited(request, 1_000);
-  const code = String(body?.friendCode ?? "").trim().toUpperCase();
+  const code = bodyText(body?.friendCode).trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
   const row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AnnouncementRow>();
   if (!row) return json({ error: "Not found." }, 404);

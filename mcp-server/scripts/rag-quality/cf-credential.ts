@@ -9,7 +9,13 @@ import { homedir } from "node:os";
 
 export type Env = Record<string, string | undefined>;
 
-export function cloudflareToken(env: Env = process.env, readAuthFile: (path: string) => string = (p) => readFileSync(p, "utf8")): string {
+const OAUTH_WARNING = "WARNING: using the Wrangler OAuth login (can deploy Workers and write D1) instead of a dedicated Workers AI token.\n";
+
+export function cloudflareToken(
+  env: Env = process.env,
+  readAuthFile: (path: string) => string = (p) => readFileSync(p, "utf8"),
+  warn: (message: string) => void = (m) => { process.stderr.write(m); },
+): string {
   const dedicated = env.CLOUDFLARE_API_TOKEN?.trim();
   if (dedicated) return dedicated;
   if (env.STUDIQUO_ALLOW_WRANGLER_OAUTH !== "true") throw new Error("dedicated_cloudflare_token_required");
@@ -21,5 +27,7 @@ export function cloudflareToken(env: Env = process.env, readAuthFile: (path: str
   }
   const oauth = text.match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1];
   if (!oauth) throw new Error("cloudflare_auth_unavailable");
+  // Never silent: this credential is far broader than the evaluation needs.
+  warn(OAUTH_WARNING);
   return oauth;
 }

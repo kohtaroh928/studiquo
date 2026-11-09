@@ -375,3 +375,53 @@ test("enforce answers 503 when storage fails, and says why a request was refused
     assert.equal((await refused!.json()).reason, "absent");
   } finally { console.log = original; }
 });
+
+// --- strictness found by the Worker input fuzzing (2026-11) -------------------------
+
+test("CBOR keeps a leading U+FEFF, and a __proto__ key stays a plain own key", () => {
+  // Written out by bytes: the test helper's text() counts characters, and U+FEFF is three bytes.
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const text = decodeCBOR(Buffer.concat([Buffer.from([0x60 + 4]), bom, Buffer.from("a")])) as string;
+  assert.equal(text, "﻿a");
+  const bomKey = Buffer.concat([Buffer.from([0x60 + 4]), bom, Buffer.from("k")]);
+  const map = decodeCBOR(Buffer.concat([Buffer.from([0xa2]), bomKey, cbor.uint(1), cbor.text("__proto__"), cbor.uint(2)])) as Record<string, number>;
+  assert.deepEqual(Object.keys(map), ["﻿k", "__proto__"]);
+  assert.equal(Object.getPrototypeOf(map), null);
+  assert.equal(map["__proto__"], 2);
+  assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  assert.throws(() => decodeCBOR(cbor.map([["a", cbor.uint(1)], ["a", cbor.uint(2)]])), /duplicate key/);
+});
+
+test("an assertion's fields must be the map's own members, not inherited through __proto__", async () => {
+  const world = makeWorld();
+  const clientData = "POST\n/api/ai/chat\n123456789012";
+  const inner = Buffer.from(world.assertion(clientData, 1));
+  // { "__proto__": { signature, authenticatorData } }: the members live one level down.
+  const wrapped = cbor.map([["__proto__", inner]]);
+  const args = { assertion: wrapped, clientData, publicKey: world.publicKey, storedCounter: 0, appId: APP_ID };
+  assert.equal(await failure(verifyAssertion(args)), "shape");
+});
+
+test("a DER signature must be exactly one SEQUENCE of two positive, minimal INTEGERs", async () => {
+  const good = Buffer.from([0x30, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07]);
+  assert.doesNotThrow(() => derSignatureToRaw(good, 4));
+  const bad = {
+    trailing: Buffer.concat([good, Buffer.from([0])]),
+    negative: Buffer.from([0x30, 0x06, 0x02, 0x01, 0x80, 0x02, 0x01, 0x07]),
+    empty: Buffer.from([0x30, 0x05, 0x02, 0x00, 0x02, 0x01, 0x07]),
+    third: Buffer.from([0x30, 0x09, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07, 0x02, 0x01, 0x01]),
+    leadingZero: Buffer.from([0x30, 0x07, 0x02, 0x02, 0x00, 0x05, 0x02, 0x01, 0x07]),
+  };
+  for (const [name, der] of Object.entries(bad)) assert.throws(() => derSignatureToRaw(der, 4), /bad signature/, name);
+  // A zero that keeps a high bit positive is required, and accepted.
+  assert.doesNotThrow(() => derSignatureToRaw(Buffer.from([0x30, 0x07, 0x02, 0x02, 0x00, 0x80, 0x02, 0x01, 0x07]), 4));
+  // The same signature with one byte added is no longer accepted by verifyAssertion.
+  const world = makeWorld();
+  const clientData = "POST\n/api/ai/chat\n123456789012";
+  const authenticatorData = Buffer.concat([sha(Buffer.from(APP_ID)), Buffer.from([0]), Buffer.from([0, 0, 0, 1])]);
+  const signature = sign("sha256", sha(authenticatorData, sha(Buffer.from(clientData))), world.device.privateKey);
+  const proof = (sig: Buffer) => cbor.map([["signature", cbor.bytes(sig)], ["authenticatorData", cbor.bytes(authenticatorData)]]);
+  const args = { assertion: proof(signature), clientData, publicKey: world.publicKey, storedCounter: 0, appId: APP_ID };
+  assert.equal(await verifyAssertion(args), 1);
+  assert.equal(await failure(verifyAssertion({ ...args, assertion: proof(Buffer.concat([signature, Buffer.from([0])])) })), "bad signature");
+});
