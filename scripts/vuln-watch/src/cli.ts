@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { buildInventory } from './inventory.ts';
+import { checkedOutDir } from './outdir.ts';
 import { createClient } from './http.ts';
 import { queryOsv, osvFindings, assetKey } from './osv.ts';
 import { queryNvd } from './nvd.ts';
@@ -147,7 +148,13 @@ async function cmdScan(args: Record<string,unknown>) {
 }
 
 function outDirOf(args: Record<string,unknown>) {
-  return typeof args.out === 'string' ? resolve(args.out) : `${toolDir}/out`;
+  if (typeof args.out !== 'string') return `${toolDir}/out`;
+  const checked = checkedOutDir(args.out, toolDir);
+  if (!checked) {
+    console.error(`--out は ${toolDir}/out か一時ディレクトリの中だけ指定できます: ${args.out}`);
+    process.exit(2);
+  }
+  return checked;
 }
 
 function statePathOf(args: Record<string,unknown>) {
@@ -287,6 +294,7 @@ function cmdSummary(args: Record<string,unknown>) {
 
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0];
+outDirOf(args); // a refused --out stops here, before anything is fetched or written
 try {
   if (cmd === 'inventory') cmdInventory(args);
   else if (cmd === 'scan') process.exitCode = await cmdScan(args);

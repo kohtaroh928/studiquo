@@ -5,4 +5,5 @@ set -eu
 
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 brew install xcodegen
+./scripts/check-xcodegen-version
 xcodegen generate
