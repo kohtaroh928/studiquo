@@ -1,3 +1,5 @@
+> タスク管理の正本は、2026-10-25からGitHub Project「Studiquo タスク」(https://github.com/users/kohtaroh928/projects/1)。以下の記録にある「Notion既存カード」「Notionを更新」は移行前の記録で、今後はGitHub Projectの既存項目を更新する(`AGENTS.md`の「GitHub Projectでのタスク管理」)。
+
 ## 2026-11-04 Codex API認可マトリクス（ローカル検証のみ）
 
 最終更新: 2026-11-04。今回: ユーザー依頼「全API認可の網羅テスト」を、`origin/main` の `31599e6` 基点の専用worktree `.worktrees/authz-matrix` / `codex/authz-matrix` で実施。RAGは既知の他アカウントdocument/source IDに対する状態・status・readiness・state変更・2形式の削除を実Worker/ローカルD1で検証した。所有者の成功対照と、他アカウントへ作用しないことを確認。RAG・認証の本体実装、feature flag、DB migrationは変更していない。過去の実API/実機評価を今回再実行したとは扱わない。
