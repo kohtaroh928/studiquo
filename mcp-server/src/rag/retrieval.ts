@@ -128,6 +128,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const referenceEligible = referenceEligibility(plan.canonicalQuery, plan);
     let selected = selectDiverse(candidates, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     let ordered = candidates;
+    let rerankTopPage: { source: string; page: number } | null = null; // the page of the chunk the reranker rated best (a clear winner only)
     const requirements = detailRequirements(plan.canonicalQuery, plan.coverageGroups);
     try {
       if (!await referencesAuthorized(env, key, candidates.map(c => ({ citation: { sourceId: c.source_id, pageNumber: c.page_number, chunkId: c.chunk_id }, sourceSnapshot: { title: c.title, source_hash: c.source_hash, context_hash: c.context_hash, folder_id: c.folder_id } })))) return emptyRetrieval("auth_failed");
@@ -161,6 +162,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
         clearTimeout(rerankTimer);
       }
       ordered = fuseRanks(candidates, result?.response);
+      rerankTopPage = clearRerankWinnerPage(candidates, result?.response);
       selected = singleRankedReference(candidates, result?.response, plan.canonicalQuery, plan, requirements) ??
         selectDiverse(ordered, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     } catch {
@@ -247,7 +249,8 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     // A comparison whose subjects could not be named ("AとBは、CとDの違い": coverageGroups is empty) is not a
     // single-subject question either. plan.multi is not used: it is set by any word such as 共通 or それぞれ.
     const singleSubject = plan.coverageGroups.length === 0 && !plan.unresolvedComparison;
-    const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0 }));
+    const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0,
+      rerankTop: rerankTopPage !== null && String(r.citation?.sourceId) === rerankTopPage.source && r.citation?.pageNumber === rerankTopPage.page }));
     if (!quantityEvidencePresent(query, ranked, { tied: singleSubject })) return emptyRetrieval("insufficient", { status: "insufficient" }, "quantity");
     // A word missing from the library is only decisive when the two searches do not agree. If the
     // semantic and the keyword search both put the same excerpt first, the word is a paraphrase
@@ -316,6 +319,20 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
   } catch {
     return emptyRetrieval("error");
   }
+}
+
+// The page of the candidate the reranker put first, or null when its answer is unusable or the top two scores are equal.
+function clearRerankWinnerPage(candidates: any[], response: any): { source: string; page: number } | null {
+  if (!Array.isArray(response) || response.length !== candidates.length || !response.length) return null;
+  const seen = new Set();
+  for (const row of response) {
+    if (!Number.isInteger(row?.id) || row.id < 0 || row.id >= candidates.length || !Number.isFinite(row.score) || seen.has(row.id)) return null;
+    seen.add(row.id);
+  }
+  const ranked = [...response].sort((a, b) => b.score - a.score);
+  if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null;
+  const top = candidates[ranked[0].id];
+  return top && Number.isInteger(top.page_number) ? { source: String(top.source_id), page: top.page_number } : null;
 }
 
 export async function retrieve(env: any, session: any, payload: any) {

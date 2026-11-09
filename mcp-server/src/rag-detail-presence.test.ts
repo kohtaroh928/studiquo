@@ -181,6 +181,23 @@ test('a subject made only of common words is tied to the top excerpt alone', () 
   assert.equal(quantityEvidencePresent(ask, [{ text: top + '最大風速は50m/sだった。', primary: true }, { text: other }], { tied: true }), true);
 });
 
+test('the page the reranker rated best is where the answer is expected, even when another excerpt is listed first', () => {
+  const ask = '2024年末時点で、携帯電話などの移動系の契約は、加入電話などの固定系の契約のおよそ何倍に達していますか。';
+  const first = '図表 契約数の推移';
+  const answer = '移動通信の契約数は固定通信の契約数の約17.3倍となっている。';
+  const tied = { tied: true };
+  // The question has no katakana or Latin subject, so only the first excerpt or the reranker page can carry the number.
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer, rerankTop: true }], tied), true);
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer }], tied), false, 'listed second and not from the reranker page');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true, rerankTop: true }, { text: answer }], tied), false, 'the reranker page carries no number');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: '契約は増加している。', rerankTop: true }], tied), false, 'it must carry the asked kind of number');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer }], { tied: false }), true, 'untied questions are unaffected');
+  // A number about another subject, next to the right excerpt, is not rescued by being nearby.
+  const named = '台風第21号の最大風速は何m/sでしたか。';
+  assert.equal(quantityEvidencePresent(named, [{ text: '台風第21号は2018年9月に上陸した。', primary: true, rerankTop: true }, { text: '台風の強さは最大風速33m/s以上で区別される。' }], tied), false);
+  assert.equal(quantityEvidencePresent(named, [{ text: '台風第21号は2018年9月に上陸した。', primary: true }, { text: '台風の強さは最大風速33m/s以上で区別される。', rerankTop: true }], tied), true, 'the reranker page is accepted');
+});
+
 test('a number on an unrelated page does not rescue a question whose own page lacks it', async () => {
   const query = 'Hurricane Karenの最大風速は何ノットでしたか。';
   const hit = await ask(numbered('Hurricane Karenは2001年9月に発生した低気圧である。', '台風の最大風速は105kt以上で猛烈な台風とされる。'), query);
