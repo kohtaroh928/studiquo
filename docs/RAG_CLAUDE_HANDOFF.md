@@ -4,6 +4,8 @@
 
 `codex/rag-auto-register-error`（commit `8e2330c`）で、既存の安全なローカライズ済み例外理由をそのまま表示するようにした。サーバー制限は迂回しない。`xcodegen generate`、`git diff --check`、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は成功。実機再現は未実施。GitHub Projectは `gh project item-list 1 --owner kohtaroh928 --format json` が `unknown owner type` で失敗し未記録。常駐processなし。次はこのブランチを確認枠で staging 実機Runし、表示された具体的な理由とWorkerリクエストを照合する。Projectの資料の更新: なし。
 
+追記: `origin/main` の最新 `e9e1f26` をマージした `5ccd4b9` で、同じ生成・関連テストを再実行して成功。確認枠は `codex/rag-auto-register-error` の `5ccd4b9` で使用中。次の一手はユーザーが `~/studiquo` の `studiquo-staging` をRunし、資料検索設定の「対象PDFの自動登録を許可」を再試行すること。実機結果が出たら札を返却し、表示内容とWorker観測を引き継ぎへ追記する。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
