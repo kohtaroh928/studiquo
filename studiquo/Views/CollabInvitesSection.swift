@@ -14,10 +14,15 @@ final class CollabInviteInbox: ObservableObject {
     @Published var notice: String?
     @Published var loadFailed = false
     private var hasLoaded = false
+    private let load: () async throws -> [DocumentCollabService.PendingInvite]
+
+    init(load: @escaping () async throws -> [DocumentCollabService.PendingInvite] = { try await DocumentCollabService.pendingInvites() }) {
+        self.load = load
+    }
 
     func reload() async {
         do {
-            invites = try await DocumentCollabService.pendingInvites()
+            invites = try await load()
             loadFailed = false
             hasLoaded = true
         } catch {
@@ -119,10 +124,21 @@ struct CollabInvitesSection: View {
             return
         }
         do {
-            let state = try await DocumentCollabService.state(roomID: invite.roomID)
-            let document = CollabInviteImporter.makeDocument(
-                roomID: invite.roomID, inviterName: invite.inviterName, state: state
-            )
+            let document: TextDocument
+            let reply = try await DocumentCollabService.snapshot(roomID: invite.roomID, since: -1)
+            if reply.revision > 0, let text = reply.snapshot, let snapshot = DocumentSnapshot.decoded(Data(text.utf8)) {
+                var assets: [String: Data] = [:]
+                for hash in Set(snapshot.blocks.compactMap(\.imageHash)) {
+                    if let data = try await DocumentCollabService.asset(roomID: invite.roomID, hash: hash) { assets[hash] = data }
+                }
+                document = CollabInviteImporter.makeDocument(
+                    roomID: invite.roomID, inviterName: invite.inviterName, snapshot: snapshot, revision: reply.revision, assets: assets
+                )
+            } else {
+                // The owner has not synced yet (an older version of the app): start from the text the room holds.
+                let state = try await DocumentCollabService.state(roomID: invite.roomID)
+                document = CollabInviteImporter.makeDocument(roomID: invite.roomID, inviterName: invite.inviterName, state: state)
+            }
             modelContext.insert(document)
             try modelContext.save()
             inbox.acceptedNotImported.removeAll { $0.roomID == invite.roomID }

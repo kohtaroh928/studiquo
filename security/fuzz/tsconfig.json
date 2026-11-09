@@ -1,0 +1,8 @@
+{
+  "extends": "../../mcp-server/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["../../mcp-server/node_modules/@types", "../../mcp-server/node_modules"]
+  },
+  "include": ["./**/*.ts"],
+  "exclude": []
+}
