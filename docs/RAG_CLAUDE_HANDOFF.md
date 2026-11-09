@@ -1,3 +1,9 @@
+## 2026-11-09 自動登録失敗の理由表示を修正
+
+ユーザー報告の「対象PDFの自動登録を許可」後の一般エラーを調査した。現在の staging Worker は版 `35aa4afd-055c-4c35-9641-5f45f3ff9592` が100%稼働し、設定ファイル上の `RAG_ENABLED`・`RAG_AUTO_INDEX_ENABLED`・`RAG_PDF_PROCESSING_ENABLED`・`RAG_PDF_CLEANUP_ENABLED`・`AI_PROVIDER_APPROVED` はすべて `true`。前回の古いローカル再試行待機を解除する修正（PR #117）も最新統合HEADに含まれる。一方、アプリ画面は `grant` のHTTP認証・レート制限・送信先停止などをすべて同じ「通信と送信許可を確認してください」に丸めており、原因を画面から区別できなかった。端末ログはCoreDevice接続タイムアウト、Workerの履歴ログは利用できず、今回の個別HTTPステータスは未確定。
+
+`codex/rag-auto-register-error`（commit `8e2330c`）で、既存の安全なローカライズ済み例外理由をそのまま表示するようにした。サーバー制限は迂回しない。`xcodegen generate`、`git diff --check`、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は成功。実機再現は未実施。GitHub Projectは `gh project item-list 1 --owner kohtaroh928 --format json` が `unknown owner type` で失敗し未記録。常駐processなし。次はこのブランチを確認枠で staging 実機Runし、表示された具体的な理由とWorkerリクエストを照合する。Projectの資料の更新: なし。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
