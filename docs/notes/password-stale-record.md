@@ -46,3 +46,9 @@
 - `app.ts` のパスワード再設定の `replacedPassword` 判定(`account:local` の存在確認)も KV の古い読み取りを使う。変更直後の別拠点でリセットすると、変更済みと判定されないことがある。L-6 とは別の既存の穴。
 - アカウント削除の `retireAccountGeneration` は `committedGen` を変えない。
 - パスワード変更後に旧セッションが約1分生きる点(セッション切り捨ての KV 伝播)は別問題。
+
+## 配備
+
+- 通常の `wrangler deploy`(全面切替)で配備する。`wrangler versions deploy` の段階配備は使わない: 新しい Worker が、まだ旧版の `RateCounter` に `commitAccountRecord` を呼ぶと、パスワード設定が 503 で失敗する(サインインは通る)。
+- DO の migration は要らない(メソッド追加のみ)。
+- 配備後の確認(ステージング): 同じメールで2つのパスワード設定を同時に送り、遅い方が 503 になること、残ったパスワードでサインインできることを実際の Durable Object で見る(blockConcurrencyWhile の直列化はテストの偽物では検証できない)。
