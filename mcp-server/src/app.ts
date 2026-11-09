@@ -45,7 +45,7 @@ import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./lo
 import { isBreachedPassword } from "./pwned-passwords.ts";
 import { recordLoginOutcome, noteSignInContext } from "./login-monitor.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.ts";
+import { json, readTextLimited, readJSONLimited, securityHeaders, bodyText, invalidBodyResponse } from "./http.ts";
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Env } from "./env.ts";
@@ -535,7 +535,7 @@ const handler = {
         if (needsPasskey) return needsPasskey;
         if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash!))) return json({ error: "Too many attempts." }, 429);
         const body = await readJSONLimited(request, 1000);
-        const issued = await issueOwnerCode(env, session.sub, String(body?.kind ?? ""));
+        const issued = await issueOwnerCode(env, session.sub, bodyText(body?.kind));
         return issued ? json(issued) : json({ error: "Unknown kind." }, 400);
       }
       if (url.pathname === "/api/mcp/connections" && request.method === "GET") {
@@ -565,7 +565,7 @@ const handler = {
         } catch {
           return json({ error: "Invalid JSON." }, 400);
         }
-        if (parsed.version !== 1 || !Array.isArray(parsed.notebooks)) {
+        if (parsed?.version !== 1 || !Array.isArray(parsed.notebooks)) {
           return json({ error: "Invalid Studiquo snapshot." }, 400);
         }
         // Under the token's hash, so it expires with the token's session. The
@@ -653,6 +653,9 @@ const handler = {
 
       return json({ error: "Not found" }, 404);
     } catch (error) {
+      // A body member of the wrong type (http.ts bodyText) is the caller's mistake, not the server's.
+      const invalidBody = invalidBodyResponse(error);
+      if (invalidBody) return invalidBody;
       console.error(JSON.stringify({ message: "request failed", error: error instanceof Error ? error.message : String(error) }));
       inBackground(ctx, raiseAlert(env, OPS_ALERTS.serverError));
       return json({ error: "Internal server error." }, 500);
