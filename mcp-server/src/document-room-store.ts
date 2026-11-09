@@ -2,6 +2,8 @@
 // can be exercised against a plain SQLite database. `sql` is a Durable Object
 // SqlStorage: `exec(query, ...bindings)` returning a cursor with `toArray()`.
 
+import { SNAPSHOT_SCHEMA, purgeSnapshotData, unlinkSnapshotAuthor } from "./document-snapshot-store.ts";
+
 export const DOCUMENT_ROOM_SCHEMA = `
   CREATE TABLE IF NOT EXISTS participants (
     user_key TEXT PRIMARY KEY,
@@ -24,7 +26,7 @@ export const DOCUMENT_ROOM_SCHEMA = `
     status TEXT NOT NULL DEFAULT 'pending',
     created_at INTEGER NOT NULL
   );
-`;
+` + SNAPSHOT_SCHEMA;
 
 // Erases the whole room (the document text, every proposal, and the member
 // list) and returns the members it had, so the caller can drop their entries
@@ -33,6 +35,7 @@ export function purgeRoomData(sql: SqlStorage) {
   const members = sql.exec("SELECT user_key FROM participants").toArray().map(row => row.user_key);
   sql.exec("DELETE FROM changes");
   sql.exec("DELETE FROM blocks");
+  purgeSnapshotData(sql);
   sql.exec("DELETE FROM participants");
   return members;
 }
@@ -47,6 +50,7 @@ export function removeParticipantData(sql: SqlStorage, userKey: string) {
   sql.exec("DELETE FROM changes WHERE author_key = ? AND status IN ('pending', 'rejected')", userKey);
   sql.exec("UPDATE changes SET author_key = '', previous_text = '' WHERE author_key = ?", userKey);
   sql.exec("DELETE FROM participants WHERE user_key = ?", userKey);
+  unlinkSnapshotAuthor(sql, userKey);
   const remaining = sql.exec("SELECT COUNT(*) AS count FROM participants").toArray()[0].count;
   if (remaining === 0) {
     purgeRoomData(sql);

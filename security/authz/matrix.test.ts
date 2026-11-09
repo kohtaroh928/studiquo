@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {runtime,hash,type Runtime,type Actor} from './runtime.ts';
+import {createHash} from 'node:crypto';
 import {routes,ROOM,UUID} from './routes.ts';
 
 let h:Runtime;
@@ -51,6 +52,9 @@ test('local real runtime is available to authenticated owner',async()=>{
   assert.equal((await h.request('/api/actions',h.actors.owner)).status,200);
 });
 
+// Image bytes are named by their SHA-256; the Worker checks the name against the data.
+const asset=(text:string)=>({data:Buffer.from(text).toString('base64'),hash:createHash('sha256').update(text).digest('hex')});
+const seededAsset=asset('seeded-image-bytes'),writtenAsset=asset('written-image-bytes');
 let sequence=0;
 async function documentFixture(){
   const id=hash(`document-fixture-${++sequence}`);
@@ -62,9 +66,10 @@ async function documentFixture(){
   await room.invite(h.actors.owner.chatKey,h.actors.removed.chatKey,'editor');
   await room.removeMember(h.actors.owner.chatKey,h.actors.removed.chatKey);
   const proposal=await room.proposeChange(h.actors.member.chatKey,0,'owner-original','member-proposed');
+  assert.equal((await room.putAsset(h.actors.owner.chatKey,seededAsset.hash,seededAsset.data)).ok,true);
   return {id,room,proposal};
 }
-const documentCases=[
+const documentCases:{name:string;method:string;path:(f:any)=>string;body:any;allowed:string[];okStatus?:(role:string)=>number;observe?:(f:any)=>Promise<unknown>}[]=[
   {name:'state',method:'GET',path:(f:any)=>`/api/document/rooms/${f.id}/state`,body:undefined,allowed:['owner','member','reviewer']},
   {name:'participants',method:'GET',path:(f:any)=>`/api/document/rooms/${f.id}/participants`,body:undefined,allowed:['owner','member','reviewer']},
   {name:'propose',method:'POST',path:(f:any)=>`/api/document/rooms/${f.id}/propose`,body:{blockOrder:0,previousText:'owner-original',newText:'candidate'},allowed:['owner','member']},
@@ -72,6 +77,13 @@ const documentCases=[
   {name:'invite',method:'POST',path:(f:any)=>`/api/document/rooms/${f.id}/invite`,body:{role:'editor'},allowed:['owner']},
   {name:'remove',method:'DELETE',path:(f:any)=>`/api/document/rooms/${f.id}/participants/${h.actors.reviewer.chatKey}`,body:undefined,allowed:['owner']},
   {name:'leave',method:'POST',path:(f:any)=>`/api/document/rooms/${f.id}/leave`,body:{},allowed:['member','reviewer']},
+  // Shared snapshot and images: every participant reads; only the owner and editors write.
+  {name:'snapshot-read',method:'GET',path:(f:any)=>`/api/document/rooms/${f.id}/snapshot`,body:undefined,allowed:['owner','member','reviewer']},
+  // An editor may write, but the first snapshot of a room is the owner's: 412 until it exists.
+  {name:'snapshot-write',method:'PUT',path:(f:any)=>`/api/document/rooms/${f.id}/snapshot`,body:{baseRevision:0,snapshot:'candidate-snapshot'},allowed:['owner','member'],okStatus:(role:string)=>role==='member'?412:200,observe:(f:any)=>f.room.getSnapshot(h.actors.owner.chatKey,-1)},
+  {name:'assets-missing',method:'POST',path:(f:any)=>`/api/document/rooms/${f.id}/assets/missing`,body:{hashes:[seededAsset.hash]},allowed:['owner','member','reviewer']},
+  {name:'asset-read',method:'GET',path:(f:any)=>`/api/document/rooms/${f.id}/assets/${seededAsset.hash}`,body:undefined,allowed:['owner','member','reviewer']},
+  {name:'asset-write',method:'PUT',path:(f:any)=>`/api/document/rooms/${f.id}/assets/${writtenAsset.hash}`,body:{data:writtenAsset.data},allowed:['owner','member'],observe:(f:any)=>f.room.missingAssets(h.actors.owner.chatKey,[writtenAsset.hash])},
 ];
 for(const c of documentCases)for(const role of ['owner','member','reviewer','outsider','removed']){
   test(`document ${c.name}: ${role}`,async()=>{
@@ -79,9 +91,11 @@ for(const c of documentCases)for(const role of ['owner','member','reviewer','out
     const before=data(await f.room.getState(h.actors.owner.chatKey));
     const members=data(await f.room.listParticipants(h.actors.owner.chatKey));
     const body=c.name==='invite'?{...c.body,code:(role==='outsider'?h.actors.removed:h.actors.outsider).code}:c.body;
+    const observedBefore=c.observe?data(await c.observe(f)):undefined;
     const response=await h.request(c.path(f),actor,c.method,body);
-    assert.equal(response.status,c.allowed.includes(role)?200:c.name==='leave'&&role==='owner'?400:403,await response.text());
+    assert.equal(response.status,c.allowed.includes(role)?(c.okStatus?.(role)??200):c.name==='leave'&&role==='owner'?400:403,await response.text());
     if(!c.allowed.includes(role)){
+      if(c.observe)assert.deepEqual(data(await c.observe(f)),observedBefore,'denied write changed the shared snapshot or images');
       assert.deepEqual(data(await f.room.getState(h.actors.owner.chatKey)),before,'denied write changed document');
       assert.deepEqual(data(await f.room.listParticipants(h.actors.owner.chatKey)),members,'denied write changed membership');
     }

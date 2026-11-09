@@ -30,6 +30,8 @@ add('session','GET',`/api/chat/groups/${ROOM}/avatar`);
 add('session','GET','/api/document/invites',...['participants','state'].map(p=>`/api/document/rooms/${ROOM}/${p}`));
 add('session','POST',...['init','invite','invite/accept','invite/decline','leave','propose','changes/1/review'].map(p=>`/api/document/rooms/${ROOM}/${p}`));
 add('session','DELETE',`/api/document/rooms/${ROOM}/participants/${ROOM}`);
+add('session','GET PUT',`/api/document/rooms/${ROOM}/snapshot`,`/api/document/rooms/${ROOM}/assets/${ROOM}`);
+add('session','POST',`/api/document/rooms/${ROOM}/assets/missing`);
 add('session','POST',...['register/options','register/verify','remove-all','reauth/options','reauth/verify'].map(p=>`/api/passkeys/${p}`));
 add('session','GET','/api/passkeys/status');
 add('session','GET POST','/api/rag/consent',`/api/rag/documents/${ROOM}/state`,'/api/rag/pdf/consent');

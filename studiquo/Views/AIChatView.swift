@@ -833,8 +833,6 @@ struct AIChatPane: View {
                         onSelectThread(thread)
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: "message")
-                                .foregroundStyle(.secondary)
                             Text(thread.title)
                                 .lineLimit(1)
                             Spacer(minLength: 0)

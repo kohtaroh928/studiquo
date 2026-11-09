@@ -300,3 +300,39 @@ test('a result that keeps an excerpt although a word of the question is in no re
   assert.equal(plain.status, 'grounded');
   assert.equal(plain.termAbsentKept, false);
 });
+
+test('retrieve promotes a clear reranker winner for a quantity question only when the winner page carries the asked subject terms', async () => {
+  const tweakReranker = (env: any) => {
+    env.AI.run = async (model: string, input: any) => {
+      if (model.includes('reranker')) {
+        return {
+          response: input.contexts.map((ctx: any, id: number) => ({
+            id,
+            score: String(ctx?.text ?? ctx).includes('約17.3倍') ? 0.95 : 0.10,
+          })),
+        };
+      }
+      return { data: input.text.map(() => Array(1024).fill(0.1)) };
+    };
+  };
+
+  // Page 1 wins both vector and keyword order, while Page 2 is the clear reranker winner (0.95 vs 0.10) and holds the asked quantity.
+  const groundedPages = numbered(
+    '台風の被害額について述べる。台風の被害額は何倍かという議論がある。',
+    '近年の被害規模は過去の通常の約17.3倍であった。',
+  );
+  const grounded = await ask(groundedPages, '台風の被害額は何倍でしたか。', 'synthetic-user', tweakReranker);
+  assert.equal(grounded.status, 'grounded');
+  assert.ok(grounded.citations.some((c: any) => c.pageNumber === 2));
+
+  // When the question names a specific subject (Hurricane Karen) that only Page 1 mentions and Page 2 lacks,
+  // rerankTop is not trusted to supply the quantity from Page 2.
+  const mismatchedSubjectPages = numbered(
+    'Hurricane Karenの被害額について述べる。Hurricane Karenの被害額は何倍かという議論がある。',
+    '近年のハリケーンの被害規模は過去の通常の約17.3倍であった。',
+  );
+  const rejected = await ask(mismatchedSubjectPages, 'Hurricane Karenの被害額は何倍でしたか。', 'synthetic-user', tweakReranker);
+  assert.equal(rejected.status, 'insufficient');
+  assert.equal(rejected.detail, 'quantity');
+  assert.deepEqual(rejected.citations, []);
+});
