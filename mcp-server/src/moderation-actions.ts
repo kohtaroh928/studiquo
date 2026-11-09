@@ -7,6 +7,7 @@
 //   GET  /api/admin/accounts/suspended
 //   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
+import { recordRevocation } from "./revocation-log.ts";
 import { json, readJSONLimited, bodyText } from "./http.ts";
 import { auditAdmin } from "./audit.ts";
 import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.ts";
@@ -112,6 +113,7 @@ export async function handleModerationActions(url: URL, request: Request, env: E
     await env.STUDIQUO_DATA.put(`${PREFIXES[scope]}${found.identityHash}`, JSON.stringify({
       at: Date.now(), reportID, // who did it is in the audit log, not here
     }));
+    await recordRevocation(env, "suspension-set", `${PREFIXES[scope]}${found.identityHash}`);
     await resolveReport(env, reportID, scope === "chat" ? "チャットを停止" : "アカウントを停止");
     return json({ suspended: true, scope, suspensionID: found.identityHash });
   }
@@ -128,7 +130,10 @@ export async function handleModerationActions(url: URL, request: Request, env: E
     if (!Object.hasOwn(PREFIXES, body?.scope)) return json({ error: "scope must be account or chat." }, 400);
     const scopes = [body.scope];
     await auditAdmin(env, request, "account.unsuspend", id.slice(0, 16), scopes.join(","));
-    for (const scope of scopes) await env.STUDIQUO_DATA.delete(`${PREFIXES[scope]}${id}`);
+    for (const scope of scopes) {
+      await env.STUDIQUO_DATA.delete(`${PREFIXES[scope]}${id}`);
+      await recordRevocation(env, "suspension-cleared", `${PREFIXES[scope]}${id}`);
+    }
     return json({ suspended: false });
   }
 
