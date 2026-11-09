@@ -3,6 +3,7 @@
 // what lets requireRealSession() below refuse a token a client invented on
 // its own in the same "<issued-at epoch>.<random>" shape, rather than
 // trusting the token's own embedded timestamp as proof it's genuine.
+import { recordRevocation } from "./revocation-log.ts";
 import { sha256Hex } from "./auth.ts";
 import { VALIDITY_SECONDS } from "./token.ts";
 import { sessionTokenAcceptable, signSessionToken } from "./token-signature.ts";
@@ -101,6 +102,8 @@ export async function mintSession(env: Env, identityKey: string, _suppliedByTheA
       status: "active", reregisteredAt: Date.now(), generation: generationOf(deletionState) + 1,
       ...(cleared ? {} : { pendingCustomerClear: hashes }),
     }));
+    // After the write, so a failed write never leaves a re-registration on record that did not happen.
+    await recordRevocation(env, "account-reregistered", await sha256Hex(identityKey));
   } else if (deletionState?.status === "active" && Array.isArray(deletionState.pendingCustomerClear)) {
     if (await clearDeletedCustomerRecords(env, deletionState.pendingCustomerClear)) {
       await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: deletionState.reregisteredAt, generation: generationOf(deletionState) }));
@@ -263,7 +266,9 @@ export function sessionIsBeforeCutoff(session: Pick<SessionRecord, "issuedAt" | 
 export async function revokeSessionsIssuedBefore(env: Env, identityKey: string, now = Date.now()) {
   const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(identityKey)}`, "json");
   if (state?.status === "deleting" || state?.status === "deleted") return;
-  await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
+  const hash = await sha256Hex(identityKey);
+  await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${hash}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
+  await recordRevocation(env, "session-cutoff", hash, String(now));
 }
 
 /**
