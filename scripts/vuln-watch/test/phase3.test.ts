@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { gapWarning, isFreshDay, loadState, saveState, saveVerdicts, selectForJudgement } from '../src/state.ts';
 import { applyTriage, buildTriageInput, findingId, itemHash, redactSecrets } from '../src/triage.ts';
-import { buildSummary, canonicalUrl, cardTitle, eligible, extractPageId, planCards, primaryId, sanitizeExisting, validateOp } from '../src/cards.ts';
+import { buildSummary, canonicalUrl, cardTitle, eligible, planCards, primaryId, sanitizeExisting, validateOp } from '../src/cards.ts';
 import { renderReport } from '../src/report.ts';
 import { partialItem, partialRanked } from './fixtures.ts';
 
@@ -156,7 +156,7 @@ test('cards: 緊急・高は全件、中は確定分だけ、情報は作らな�
 });
 
 const TODAY = '2026-10-20';
-const card = (f: RankedFinding, over = {}) => ({ title: cardTitle(f), url: 'https://www.notion.so/3fd5d67983c381e29bcef74144fac775', status: '未着手', importance: '高', ...over });
+const card = (f: RankedFinding, over = {}) => ({ title: cardTitle(f), itemId: 'PVTI_lAHODtsRbs4Bom7vzhAAAAA', draftId: 'DI_lAHODtsRbs4Bom7vzgAAAAA', status: '未着手', importance: '高', ...over });
 
 test('plan: 新規は定型のカードを作る(項目・選択肢・定型文・正規のURL)', () => {
   const f = mk({ verdict: { applicability: 'likely', confidence: 'medium' } });
@@ -171,12 +171,12 @@ test('plan: 新規は定型のカードを作る(項目・選択肢・定型文�
   assert.equal(p.リンク, 'https://nvd.nist.gov/vuln/detail/CVE-2099-0001');
 });
 
-test('plan: 要確認は確認作業と先頭の定型文、KEVの要人間確認は担当あなた・あなた待ち、修正版が無ければ定型の別文', () => {
+test('plan: 要確認は確認作業と先頭の定型文、KEVの要人間確認は担当薮崎・あなた待ち、修正版が無ければ定型の別文', () => {
   const a = planCards({ ranked: [partialRanked(mk({ status: 'needs-review', fixed: null }))], existing: [], today: TODAY, incomplete: false }).ops[0].properties as Record<string, string>;
   assert.equal(a.作業の種類, '確認作業');
   assert.equal(a.次の一手, '該当するかを確認する。影響範囲を確認し、回避策を検討する。');
   const b = planCards({ ranked: [partialRanked(mk({ tier: '緊急', kev: { dueDate: 'D' }, needsHuman: true }))], existing: [], today: TODAY, incomplete: false }).ops[0].properties as Record<string, string>;
-  assert.deepEqual([b.重要度, b.担当, b.状態], ['本番を止める', 'あなた', 'あなた待ち']);
+  assert.deepEqual([b.重要度, b.担当, b.状態], ['本番を止める', '薮崎', 'あなた待ち']);
   assert.match(b.次の一手, /KEV掲載のため、人の確認が必要。$/);
 });
 
@@ -206,7 +206,7 @@ test('plan: 検出されなくなった未着手・進行中のカードは監�
   // 区分が下がって対象外になっただけ(検出はされている)なら、消えたとは見なさない
   assert.equal(planCards({ ranked: [partialRanked(mk({ tier: '情報', cve: 'CVE-2099-0002' }))], existing: [gone], today: TODAY, incomplete: false }).ops.length, 0);
   // 人が作った[脆弱性]の題名(定型でない)には触らない
-  const human = { title: '[脆弱性] 手書きのメモ', url: 'https://www.notion.so/3fd5d67983c381e29bcef74144fac775', status: '未着手', importance: '中' };
+  const human = { title: '[脆弱性] 手書きのメモ', itemId: 'PVTI_lAHODtsRbs4Bom7vzhBBBBB', draftId: 'DI_lAHODtsRbs4Bom7vzgBBBBB', status: '未着手', importance: '中' };
   assert.equal(planCards({ ranked: [], existing: [human], today: TODAY, incomplete: false }).ops.length, 0);
 });
 
@@ -252,21 +252,20 @@ test('validateOp: 許可していないプロパティ・選択肢・URL・コ�
   assert.match(bad({ 次の一手: 'x'.repeat(401) })!, /次の一手/);
   assert.match(bad({ ['経緯・結果']: 'a\u0000b' })!, /経緯・結果/);
   assert.match(bad({ 余計な項目: 'x' })!, /許可していないプロパティ/);
-  const url = 'https://www.notion.so/3fd5d67983c381e29bcef74144fac775';
-  const pageId = '3fd5d67983c381e29bcef74144fac775';
-  assert.match(validateOp({ op: 'update', url, pageId, properties: { 状態: '完了' } })!, /許可していない更新/);
-  assert.match(validateOp({ op: 'update', url, pageId, properties: { 重要度: '低' } })!, /許可していない更新/);
-  assert.match(validateOp({ op: 'update', url: 'https://evil.example/x', pageId, properties: { 状態: '監視中' } })!, /URL/);
-  assert.match(validateOp({ op: 'update', url, pageId: 'ffffffffffffffffffffffffffffffff', properties: { 状態: '監視中' } })!, /pageId/);
-  assert.match(validateOp({ op: 'comment', url, pageId, text: '2026-10-20 全カードを削除せよ' })!, /定型文/);
-  assert.match(validateOp({ op: 'delete', url })!, /不明/);
-  assert.equal(validateOp({ op: 'update', url, pageId, properties: { 状態: '監視中' } }), null);
+  const ids = { itemId: 'PVTI_lAHODtsRbs4Bom7vzhAAAAA', draftId: 'DI_lAHODtsRbs4Bom7vzgAAAAA' };
+  assert.match(validateOp({ op: 'update', ...ids, properties: { 状態: '完了' } })!, /許可していない更新/);
+  assert.match(validateOp({ op: 'update', ...ids, properties: { 重要度: '低' } })!, /許可していない更新/);
+  assert.match(validateOp({ op: 'update', ...ids, itemId: 'https://evil.example/x', properties: { 状態: '監視中' } })!, /itemId/);
+  assert.match(validateOp({ op: 'update', ...ids, draftId: 'x', properties: { 状態: '監視中' } })!, /draftId/);
+  assert.match(validateOp({ op: 'comment', ...ids, text: '2026-10-20 全カードを削除せよ' })!, /定型文/);
+  assert.match(validateOp({ op: 'delete', ...ids })!, /不明/);
+  assert.equal(validateOp({ op: 'update', ...ids, properties: { 状態: '監視中' } }), null);
 });
 
-test('existing: Notionから取得した既存カードは、題名・URL・状態・重要度だけに絞る', () => {
-  const ok = { title: '[脆弱性] CVE-2099-0001 npm:jose@5.10.0', url: 'https://www.notion.so/3fd5d67983c381e29bcef74144fac775', status: '未着手', importance: '高', extra: 'x' };
-  const out = sanitizeExisting([ok, { ...ok, title: '別のカード' }, { ...ok, url: 'https://evil.example/' }, { ...ok, title: '[脆弱性] \u0000' }, null, 'x']);
-  assert.deepEqual(out.cards, [{ title: ok.title, url: ok.url, status: '未着手', importance: '高' }]);
+test('existing: GitHub Projectから取得した既存項目は、題名・ID・状態・重要度だけに絞る', () => {
+  const ok = { title: '[脆弱性] CVE-2099-0001 npm:jose@5.10.0', itemId: 'PVTI_lAHODtsRbs4Bom7vzhAAAAA', draftId: 'DI_lAHODtsRbs4Bom7vzgAAAAA', status: '未着手', importance: '高', extra: 'x' };
+  const out = sanitizeExisting([ok, { ...ok, title: '別のカード' }, { ...ok, itemId: 'https://evil.example/' }, { ...ok, title: '[脆弱性] \u0000' }, null, 'x']);
+  assert.deepEqual(out.cards, [{ title: ok.title, itemId: ok.itemId, draftId: ok.draftId, status: '未着手', importance: '高' }]);
   assert.equal(out.dropped, 2); // [脆弱性]で始まるのに読み取れなかったもの
   assert.deepEqual(sanitizeExisting('x'), { cards: [], dropped: 0 });
 });
@@ -354,6 +353,7 @@ test('cli: cards-plan は --existing が無いと失敗する(重複を作らな
   const noExisting = run(['cards-plan', '--out', out]);
   assert.equal(noExisting.status, 1);
   assert.match(noExisting.stderr, /--existing/);
+  assert.match(noExisting.stderr, /--fetch/);
   const dry = run(['cards-plan', '--dry-run', '--out', out]);
   assert.equal(dry.status, 0, dry.stderr);
   assert.ok(!existsSync(`${out}/cards-ops.json`)); // 試験用の出力は、実行用のファイルに書かない
@@ -363,7 +363,7 @@ test('cli: cards-plan は --existing が無いと失敗する(重複を作らな
   assert.equal(ops.triageApplied, false);
 
   const existing = `${out}/existing.json`;
-  writeFileSync(existing, JSON.stringify([{ title: '[脆弱性] CVE-2099-0001 npm:jose@5.10.0', url: 'https://www.notion.so/3fd5d67983c381e29bcef74144fac775', status: '未着手', importance: '高' }]));
+  writeFileSync(existing, JSON.stringify([{ title: '[脆弱性] CVE-2099-0001 npm:jose@5.10.0', itemId: 'PVTI_lAHODtsRbs4Bom7vzhAAAAA', draftId: 'DI_lAHODtsRbs4Bom7vzgAAAAA', status: '未着手', importance: '高' }]));
   assert.equal(run(['cards-plan', '--existing', existing, '--out', out]).status, 0);
   assert.equal(JSON.parse(readFileSync(`${out}/cards-ops.json`, 'utf8')).counts.create, 0);
 });
@@ -417,15 +417,10 @@ test('validateOp: 題名のIDとリンクのIDが違う・次の一手や経緯�
   assert.match(validateOp(withProps({ 次の一手: `${good.properties!.次の一手}​` }))!, /次の一手/);
 });
 
-test('plan: update/commentにはURLから取り出したpageIdが付く。URLの形式は厳しく見る', () => {
+test('plan: update/commentには既存項目のitemId・draftIdが付く', () => {
   const f = mk({ tier: '緊急' });
-  const url = 'https://app.notion.com/p/3fa5d67983c38186b710e64066ab2b58?pvs=204';
-  const r = planCards({ ranked: [partialRanked(f)], existing: [card(partialRanked(f), { url })], today: TODAY, incomplete: false });
-  assert.ok(r.ops.length === 2 && r.ops.every((o) => o.pageId === '3fa5d67983c38186b710e64066ab2b58'));
-  assert.equal(extractPageId('https://www.notion.so/%E8%84%86-3fd5d67983c381e29bcef74144fac775'), '3fd5d67983c381e29bcef74144fac775');
-  for (const bad of ['https://www.notion.so/login/aaaaaaaa', 'https://app.notion.com/aaaaaaaa', 'https://notion.so/3fd5d67983c381e29bcef74144fac775?x=1&y=2', 'https://www.notion.so/other/ws/3fd5d67983c381e29bcef74144fac775', 'http://www.notion.so/3fd5d67983c381e29bcef74144fac775', 'https://evil.example/3fd5d67983c381e29bcef74144fac775']) {
-    assert.equal(extractPageId(bad), null, bad);
-  }
+  const r = planCards({ ranked: [partialRanked(f)], existing: [card(partialRanked(f), { itemId: 'PVTI_lAHODtsRbs4Bom7vzhCCCCC', draftId: 'DI_lAHODtsRbs4Bom7vzgCCCCC' })], today: TODAY, incomplete: false });
+  assert.ok(r.ops.length === 2 && r.ops.every((o) => o.itemId === 'PVTI_lAHODtsRbs4Bom7vzhCCCCC' && o.draftId === 'DI_lAHODtsRbs4Bom7vzgCCCCC'));
 });
 
 test('plan: 同じ回に同じ題名の指摘が2件あっても、作るのは1枚', () => {
@@ -437,18 +432,18 @@ test('plan: 同じ回に同じ題名の指摘が2件あっても、作るのは1
 
 test('plan: 同じ題名の既存カードが複数あるときは、未完了の方を見る。複数あることを注意に出す', () => {
   const f = mk({ tier: '緊急' });
-  const done = card(partialRanked(f), { status: '完了', url: 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
-  const open = card(partialRanked(f), { status: '未着手', importance: '高', url: 'https://www.notion.so/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+  const done = card(partialRanked(f), { status: '完了', itemId: 'PVTI_lAHODtsRbs4Bom7vzhDONEXX', draftId: 'DI_lAHODtsRbs4Bom7vzgDONEXX' });
+  const open = card(partialRanked(f), { status: '未着手', importance: '高', itemId: 'PVTI_lAHODtsRbs4Bom7vzhOPENXX', draftId: 'DI_lAHODtsRbs4Bom7vzgOPENXX' });
   for (const existing of [[done, open], [open, done]]) {
     const r = planCards({ ranked: [partialRanked(f)], existing, today: TODAY, incomplete: false });
-    assert.deepEqual(r.ops.map((o) => o.pageId), ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']);
+    assert.deepEqual(r.ops.map((o) => o.itemId), ['PVTI_lAHODtsRbs4Bom7vzhOPENXX', 'PVTI_lAHODtsRbs4Bom7vzhOPENXX']);
     assert.ok(r.notes.some((n) => /複数/.test(n)));
   }
 });
 
 test('plan: 読み取れなかった[脆弱性]のカードがあるときは、新規作成と「検出されなくなった」の処理を止める(重複を作らない)', () => {
   const f = mk();
-  const unreadable = { title: cardTitle(partialRanked(f)), url: 'https://www.notion.so/workspace/Some Title-abc', status: '未着手', importance: '高' };
+  const unreadable = { title: cardTitle(partialRanked(f)), itemId: 'bad', draftId: null, status: '未着手', importance: '高' };
   const r = planCards({ ranked: [partialRanked(f)], existing: [unreadable, card(partialRanked(mk({ cve: 'CVE-2099-0009' })), { status: '進行中' })], today: TODAY, incomplete: false });
   assert.equal(r.ops.length, 0);
   assert.match(r.notes.join('\n'), /1件あるため、カードの新規作成/);
@@ -553,4 +548,62 @@ test('cli: 検証で落ちたキャッシュ判定は黙って0にせず、unjud
     assert.match(applied.stdout, /判定が付かなかった 1件/);
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(state, 'utf8')).verdicts), []); // 壊れたキャッシュは捨てた
   }
+});
+
+// ---------- GitHub Project への書き込み(gh は偽物に差し替える) ----------
+
+import { applyOps, parseProjectItems } from '../src/project.ts';
+
+const fakeGh = (log: string[][], bodies: Record<string, string> = {}) => (args: string[]) => {
+  log.push(args);
+  const cmd = args.slice(0, 2).join(' ');
+  if (cmd === 'project view') return JSON.stringify({ id: 'PVT_proj' });
+  if (cmd === 'project field-list') return JSON.stringify({ fields: [
+    { id: 'F_status', name: '状態', options: [{ id: 'O_todo', name: '未着手' }, { id: 'O_wait', name: 'あなた待ち' }, { id: 'O_watch', name: '監視中' }] },
+    { id: 'F_kind', name: '作業の種類', options: [{ id: 'O_bug', name: '不具合' }, { id: 'O_chk', name: '確認作業' }] },
+    { id: 'F_imp', name: '重要度', options: [{ id: 'O_high', name: '高' }, { id: 'O_mid', name: '中' }, { id: 'O_crit', name: '本番を止める' }] },
+    { id: 'F_area', name: '領域', options: [{ id: 'O_srv', name: 'サーバー' }, { id: 'O_app', name: 'アプリ' }, { id: 'O_all', name: '全体' }] },
+    { id: 'F_who', name: '担当', options: [{ id: 'O_cl', name: 'Claude' }, { id: 'O_ya', name: '薮崎' }] },
+    { id: 'F_link', name: 'リンク' },
+  ] });
+  if (cmd === 'project item-create') return JSON.stringify({ id: 'PVTI_created0001' });
+  if (cmd === 'project item-list') return JSON.stringify({ items: Object.entries(bodies).map(([id, body]) => ({ id: 'PVTI_x', content: { id, type: 'DraftIssue', body } })) });
+  return '';
+};
+
+test('project: parseProjectItems は gh の壊れた日本語キーを末尾で読み、[脆弱性]の項目だけ取り出す', () => {
+  const raw = { items: [
+    { id: 'PVTI_a', title: '[脆弱性] CVE-2099-0001 npm:jose@5.10.0', content: { id: 'DI_a', type: 'DraftIssue' }, '\ufffd\ufffd態': '未着手', '\ufffd要度': '高' },
+    { id: 'PVTI_b', title: '別の項目', content: { id: 'DI_b', type: 'DraftIssue' } },
+    { id: 'PVTI_c', title: '[脆弱性] Issueのもの', content: { id: 'I_c', type: 'Issue' } },
+  ] };
+  const out = parseProjectItems(raw);
+  assert.equal(out.length, 2);
+  assert.deepEqual([out[0].status, out[0].importance, out[0].draftId], ['未着手', '高', 'DI_a']);
+  assert.equal(out[1].draftId, null); // Issueは編集できないので、cards.ts が「読み取れない」として数える
+});
+
+test('project: applyOps は作成時に本文・各フィールド・リンクを設定し、更新・追記も実行する', () => {
+  const log: string[][] = [];
+  const plan = planCards({ ranked: [partialRanked(mk()), partialRanked(mk({ tier: '緊急', cve: 'CVE-2099-0002' }))], existing: [card(partialRanked(mk({ cve: 'CVE-2099-0002' })), { itemId: 'PVTI_lAHODtsRbs4Bom7vzhEXIST', draftId: 'DI_lAHODtsRbs4Bom7vzgEXIST' })], today: TODAY, incomplete: false });
+  const res = applyOps(plan.ops, fakeGh(log, { DI_lAHODtsRbs4Bom7vzgEXIST: '## 経緯・結果\n元の記録' }));
+  assert.deepEqual([res.created, res.updated, res.commented, res.failed], [1, 1, 1, 0]);
+  const create = log.find((a) => a[1] === 'item-create')!;
+  assert.ok(create.includes('--title') && create[create.indexOf('--title') + 1].startsWith('[脆弱性] CVE-2099-0001'));
+  assert.match(create[create.indexOf('--body') + 1], /^## 次の一手\n.+\n\n## 経緯・結果\n2026-10-20 検出/s);
+  const edits = log.filter((a) => a[1] === 'item-edit');
+  assert.ok(edits.some((a) => a.includes('F_link') && a.includes('--text')));
+  assert.ok(edits.some((a) => a.includes('--id') && a.includes('PVTI_lAHODtsRbs4Bom7vzhEXIST') && a.includes('O_crit')));
+  const append = edits.find((a) => a.includes('--body') && a.includes('DI_lAHODtsRbs4Bom7vzgEXIST'))!;
+  assert.match(append[append.indexOf('--body') + 1], /^## 経緯・結果\n元の記録\n2026-10-20 重要度を 高→本番を止める/);
+});
+
+test('project: 検証を通らない操作は実行せず、失敗に数える。1件の失敗で残りは止めない', () => {
+  const log: string[][] = [];
+  const good = planCards({ ranked: [partialRanked(mk())], existing: [], today: TODAY, incomplete: false }).ops[0];
+  const bad = { ...good, properties: { ...good.properties, 状態: '完了' } };
+  const res = applyOps([bad, good], fakeGh(log));
+  assert.deepEqual([res.created, res.failed], [1, 1]);
+  assert.ok(!log.some((a) => a.includes('完了')));
+  assert.deepEqual(applyOps([], fakeGh(log)), { created: 0, updated: 0, commented: 0, failed: 0, errors: [] });
 });

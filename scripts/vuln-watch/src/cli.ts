@@ -5,7 +5,8 @@ import type { Finding, Kev, RankedFinding, State, TriageItem } from './types.ts'
 //   node src/cli.ts scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>] [--state <path>] [--inventory <path>] [--cache <dir>]   収集→照合→採点→機械判定のレポート
 //   node src/cli.ts triage-pack [--fresh] [--out <dir>]        判定に回す指摘を triage-input.json に出す(scanも出す)。月曜と --fresh はキャッシュを使わない
 //   node src/cli.ts triage-apply [--verdicts <file> | --no-reply] [--out <dir>]   エージェントの返信(ファイルか標準入力)を検証して反映
-//   node src/cli.ts cards-plan --existing <file> [--dry-run] [--out <dir>]   Notionカードの操作リスト cards-ops.json を作る
+//   node src/cli.ts cards-plan (--fetch | --existing <file> | --dry-run) [--out <dir>]   GitHub Projectの操作リスト cards-ops.json を作る(--fetch は gh で既存項目を取得)
+//   node src/cli.ts cards-apply [--out <dir>]   cards-ops.json を gh project で実行し、結果を cards-applied.json に書く
 //   node src/cli.ts summary [--created n --updated n --commented n --failed n]   固定書式の要約と通知文を出す
 // 共通: --state <path>、--inventory <path>、--cache <dir> で実行時データの場所を変えられる(無人実行・試験用)
 // 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった / 4=その両方
@@ -23,6 +24,7 @@ import { queryJvn } from './jvn.ts';
 import { applyTriage, buildTriageInput, findingId, parseVerdicts } from './triage.ts';
 import { gapWarning, isFreshDay, loadState, markNew, saveState, saveVerdicts, selectForJudgement } from './state.ts';
 import { buildSummary, planCards } from './cards.ts';
+import { applyOps, fetchExisting } from './project.ts';
 import { fetchKev, fetchEpss } from './signals.ts';
 import { mergeFindings, rank } from './score.ts';
 import { renderReport } from './report.ts';
@@ -134,7 +136,7 @@ async function cmdScan(args: Record<string,unknown>) {
 
   const outDir = outDirOf(args);
   mkdirSync(outDir, { recursive: true });
-  clearStale(outDir, ['triage-result.json', 'cards-existing.json', 'cards-ops.json', 'cards-ops.dry.json', 'summary.txt']);
+  clearStale(outDir, ['triage-result.json', 'cards-existing.json', 'cards-ops.json', 'cards-ops.dry.json', 'cards-applied.json', 'summary.txt']);
   const run = { schema: 2, generatedAt, inventory: items, unmatchable, warnings, sourceErrors, ranked };
   writeFileSync(`${outDir}/latest.json`, JSON.stringify(run, null, 2));
   const counts = writeTriageFiles(outDir, ranked, generatedAt, state, now, Boolean(args.fresh) || isFreshDay(now));
@@ -260,11 +262,12 @@ function cmdCardsPlan(args: Record<string,unknown>) {
   const run = readJson(`${outDir}/latest.json`);
   const result = readSameRun(`${outDir}/triage-result.json`, run.generatedAt);
   // 既存カードを取得できていないまま計画すると、重複を作ってしまう
-  if (typeof args.existing !== 'string' && !args['dry-run']) throw new Error('--existing(Notionから取得した既存カード)が必要です。試すだけなら --dry-run を付けてください。');
-  const existing = typeof args.existing === 'string' ? readJson(args.existing) : [];
+  if (typeof args.existing !== 'string' && !args.fetch && !args['dry-run']) throw new Error('--fetch か --existing(GitHub Projectから取得した既存項目)が必要です。試すだけなら --dry-run を付けてください。');
+  const existing = args.fetch ? fetchExisting() : typeof args.existing === 'string' ? readJson(args.existing) : [];
+  if (args.fetch) writeFileSync(`${outDir}/cards-existing.json`, JSON.stringify(existing, null, 2));
   const plan = planCards({ ranked: result?.ranked ?? run.ranked, existing, today: new Date().toLocaleDateString('sv-SE'), incomplete: run.sourceErrors.length > 0 });
   // --dry-run は既存カードを知らずに計画するため、実行用の cards-ops.json には書かない
-  const dryRun = Boolean(args['dry-run']) && typeof args.existing !== 'string';
+  const dryRun = Boolean(args['dry-run']) && typeof args.existing !== 'string' && !args.fetch;
   const file = dryRun ? 'cards-ops.dry.json' : 'cards-ops.json';
   writeFileSync(`${outDir}/${file}`, JSON.stringify({ generatedAt: run.generatedAt, dryRun, incomplete: run.sourceErrors.length > 0, triageApplied: Boolean(result), ...plan }, null, 2));
   console.log(`カード計画: 作成 ${plan.counts.create} / 更新 ${plan.counts.update} / コメント ${plan.counts.comment} / 見送り ${plan.skipped.length} → ${outDir}/${file}${dryRun ? '(試験用。実行しない)' : ''}`);
@@ -272,12 +275,26 @@ function cmdCardsPlan(args: Record<string,unknown>) {
   for (const n of plan.notes) console.warn(`  注意: ${n}`);
 }
 
+function cmdCardsApply(args: Record<string,unknown>) {
+  const outDir = outDirOf(args);
+  clearStale(outDir, ['cards-applied.json']);
+  const run = readJson(`${outDir}/latest.json`);
+  const plan = readSameRun(`${outDir}/cards-ops.json`, run.generatedAt);
+  if (!plan || plan.dryRun) throw new Error('今回の実行用の cards-ops.json がありません(cards-plan --fetch を先に実行してください)。');
+  const res = applyOps(plan.ops ?? []);
+  writeFileSync(`${outDir}/cards-applied.json`, JSON.stringify({ generatedAt: run.generatedAt, ...res }, null, 2));
+  console.log(`カード実行: 作成 ${res.created} / 更新 ${res.updated} / 追記 ${res.commented} / 失敗 ${res.failed}`);
+  for (const e of res.errors) console.warn(`  失敗: ${e}`);
+  return res.failed ? 2 : 0;
+}
+
 function cmdSummary(args: Record<string,unknown>) {
   const outDir = outDirOf(args);
   const run = readJson(`${outDir}/latest.json`);
   const result = readSameRun(`${outDir}/triage-result.json`, run.generatedAt);
   const plan = readSameRun(`${outDir}/cards-ops.json`, run.generatedAt);
-  const num = (k: string) => (typeof args[k] === 'string' && /^\d{1,3}$/.test(args[k]) ? Number(args[k]) : undefined);
+  const applied = readSameRun(`${outDir}/cards-applied.json`, run.generatedAt);
+  const num = (k: string) => (typeof args[k] === 'string' && /^\d{1,3}$/.test(args[k]) ? Number(args[k]) : typeof applied?.[k] === 'number' ? Math.min(999, applied[k]) : undefined);
   const { text, notify } = buildSummary({
     ranked: result?.ranked ?? run.ranked,
     run,
@@ -301,9 +318,10 @@ try {
   else if (cmd === 'triage-pack') cmdTriagePack(args);
   else if (cmd === 'triage-apply') process.exitCode = cmdTriageApply(args);
   else if (cmd === 'cards-plan') cmdCardsPlan(args);
+  else if (cmd === 'cards-apply') process.exitCode = cmdCardsApply(args);
   else if (cmd === 'summary') cmdSummary(args);
   else {
-    console.error('使い方: cli.ts inventory [--inventory file] | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] [--state file] [--inventory file] [--cache dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --existing file | summary');
+    console.error('使い方: cli.ts inventory [--inventory file] | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] [--state file] [--inventory file] [--cache dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --fetch | cards-apply | summary');
     process.exitCode = 1;
   }
 } catch (e) {
