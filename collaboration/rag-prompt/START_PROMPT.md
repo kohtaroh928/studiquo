@@ -4,4 +4,4 @@ StudiquoのRAGで、プロンプト候補と回答品質評価を担当してく
 
 最初の課題はPROPOSAL.mdの回答漏れ改善です。candidatesのexampleは未評価のサンプルです。独自候補を一つ作り、Node 24でworkspace.mjs checkとnode --testを実行してください。固定6ケース×2styleの準備だけでは回答精度を証明できません。質問・根拠・生成設定を変えずに比較する設計と、原子的な採点項目を示してください。未使用20問・goldは見て調整せず、本番promptやAPIキー/認証/課金、凍結資料を変更しないでください。
 
-API生成、有料評価、push/merge/deploy、設定変更は勝手に行わないでください。完了時はこのフォルダのHANDOFF.mdへ実行した確認、未実施、次の一手とNotion記録の有無を書いてください。共通RAG_CLAUDE_HANDOFF.mdは統合担当が集約します。
+API生成、有料評価、push/merge/deploy、設定変更は勝手に行わないでください。完了時はこのフォルダのHANDOFF.mdへ実行した確認、未実施、次の一手とGitHub Project「Studiquo タスク」への記録の有無を書いてください。共通RAG_CLAUDE_HANDOFF.mdは統合担当が集約します。
