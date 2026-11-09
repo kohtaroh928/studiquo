@@ -1236,3 +1236,25 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
     assert.equal(await realGet(key), null, key);
   }
 });
+
+test("退会の完了・再登録・セッション失効はrevocation_logに追記され、書き込みの失敗は退会を止めない", async () => {
+  const env = environment();
+  const canonical = "email:log@example.com";
+  await seedLinked(env, canonical, "log@example.com", [{ provider: "email", sub: "log@example.com" }]);
+  await env.STUDIQUO_DATA.put(`account:local:log@example.com`, "{}");
+  const calls = recordD1(env);
+  await deleteAccount(env, canonical);
+  const inserts = () => calls.filter(call => call.sql.includes("INSERT INTO revocation_log")).map(call => call.args.slice(1));
+  assert.deepEqual(inserts(), [["account-deleted", hash(canonical), ""]]);
+  await mintSession(env, canonical, "q".repeat(40));
+  assert.deepEqual(inserts().at(-1), ["account-reregistered", hash(canonical), ""]);
+  const { revokeSessionsIssuedBefore } = await import("./session.ts");
+  await revokeSessionsIssuedBefore(env, canonical, 1234);
+  assert.deepEqual(inserts().at(-1), ["session-cutoff", hash(canonical), "1234"]);
+
+  const failing = environment();
+  await seedLinked(failing, canonical, "log@example.com", [{ provider: "email", sub: "log@example.com" }]);
+  const original = failing.ADMIN_DB.prepare;
+  failing.ADMIN_DB.prepare = (sql: string) => sql.includes("revocation_log") ? ({ bind: () => ({ async run() { throw new Error("injected"); } }) }) : original(sql);
+  assert.equal((await deleteAccount(failing, canonical)).deleted, true);
+});

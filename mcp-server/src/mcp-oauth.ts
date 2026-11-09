@@ -1,3 +1,4 @@
+import { recordRevocation } from "./revocation-log.ts";
 import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
 import { json, readJSONLimited, readTextLimited, bodyText } from "./http.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
@@ -279,7 +280,9 @@ export async function listConnections(env: Env, sub: string) {
  */
 export async function revokeAllConnections(env: Env, subs: Iterable<unknown> | null | undefined) {
   for (const sub of new Set(Array.isArray(subs) ? subs : [subs])) {
-    for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
+    const connections = await listConnections(env, sub);
+    for (const connection of connections) await revokeConnection(env, sub, connection.id);
+    if (connections.length > 0) await recordRevocation(env, "connections-revoked", await sha256Hex(sub));
   }
 }
 
