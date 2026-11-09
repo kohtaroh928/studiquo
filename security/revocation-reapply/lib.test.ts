@@ -39,3 +39,17 @@ test('revoked connections are removed by prefix; garbage values are ignored', ()
   assert.deepEqual(plan.removePrefix, ['mcp:grant:aa:']);
   assert.deepEqual(plan.put, []);
 });
+
+test('rows sharing the same millisecond timestamp are ordered by id so the later id wins', () => {
+  const sameAt = 5000;
+  // Provided out of id order: id=2 (re-registered) must win over id=1 (deleted), and id=4 (cleared) over id=3 (suspended)
+  const plan = planReapply([
+    { id: 2, at: sameAt, kind: 'account-reregistered', subject: 'aa' },
+    { id: 1, at: sameAt, kind: 'account-deleted', subject: 'aa' },
+    { id: 4, at: sameAt, kind: 'suspension-cleared', subject: 'account-suspended:bb' },
+    { id: 3, at: sameAt, kind: 'suspension-set', subject: 'account-suspended:bb' },
+  ], NOW);
+  assert.deepEqual(plan.heldAccounts, []);
+  assert.deepEqual(plan.remove, ['account-suspended:bb']);
+  assert.deepEqual(plan.put, []);
+});

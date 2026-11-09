@@ -4,6 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { runPrivacyRetention } from "./privacy-retention.ts";
 import { deleteAccount } from "./account-deletion.ts";
+import { revokeAllConnections } from "./mcp-oauth.ts";
 import { sha256Hex } from "./auth.ts";
 import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
@@ -235,4 +236,97 @@ test("a suspended account's session is refused everywhere except where leaving n
   assert.equal(await realSession(env, again!), null);
   values.delete(await suspensionKey("apple-s"));
   assert.equal((await realSession(env, again!))?.sub, "apple-s");
+});
+
+test("suspending and unsuspending an account appends suspension-set and suspension-cleared to revocation_log", async () => {
+  const values = new Map<string, string>();
+  const env = environment({
+    STUDIQUO_DATA: {
+      async get(key: string, type?: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+    },
+  });
+  const targetHash = await sha256Hex("chat-account:apple-suspended-user");
+  const reportID = seedChatReport(env, { reported: "sender-suspended" });
+  values.set("chat-identity-of:sender-suspended", targetHash);
+
+  const suspendRes = await call(env, "/api/admin/accounts/suspend", {
+    method: "POST",
+    body: { reportID, scope: "account" },
+  });
+  assert.equal(suspendRes.status, 200);
+
+  const unsuspendRes = await call(env, "/api/admin/accounts/unsuspend", {
+    method: "POST",
+    body: { suspensionID: targetHash, scope: "account" },
+  });
+  assert.equal(unsuspendRes.status, 200);
+
+  const expectedSubject = await suspensionKey("apple-suspended-user");
+  const revRows = env._db.prepare("SELECT kind, subject FROM revocation_log WHERE subject = ? ORDER BY id").all(expectedSubject) as Record<string, any>[];
+  assert.deepEqual(revRows.map(r => ({ kind: r.kind, subject: r.subject })), [
+    { kind: "suspension-set", subject: expectedSubject },
+    { kind: "suspension-cleared", subject: expectedSubject },
+  ]);
+});
+
+test("revokeAllConnections appends connections-revoked only for identities that had active MCP connections", async () => {
+  const values = new Map<string, string>();
+  const env = environment({
+    STUDIQUO_DATA: {
+      async get(key: string, type?: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: string }) {
+        return { keys: [...values.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true };
+      },
+    },
+  });
+  const subWithConn = "apple-with-mcp";
+  const subWithoutConn = "apple-no-mcp";
+  const hashWithConn = await sha256Hex(subWithConn);
+  const hashWithoutConn = await sha256Hex(subWithoutConn);
+  const grantId = "c".repeat(64);
+
+  values.set(`mcp:grant:${hashWithConn}:${grantId}`, JSON.stringify({
+    clientName: "Claude", kind: "read", createdAt: 1000, nonce: "n1",
+  }));
+
+  await revokeAllConnections(env, [subWithConn, subWithoutConn]);
+
+  const rows = env._db.prepare("SELECT kind, subject FROM revocation_log ORDER BY id").all() as Record<string, any>[];
+  assert.deepEqual(rows.map(r => ({ kind: r.kind, subject: r.subject })), [
+    { kind: "connections-revoked", subject: hashWithConn },
+  ]);
+  assert.ok(!rows.some(r => r.subject === hashWithoutConn));
+  assert.equal(values.has(`mcp:grant:${hashWithConn}:${grantId}`), false);
+});
+
+test("deleteAccount does not record account-deleted in revocation_log for an alias already reclaimed by a new account", async () => {
+  const values = new Map<string, string>();
+  const env = environment({
+    STUDIQUO_DATA: {
+      async get(key: string, type?: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: string }) {
+        return { keys: [...values.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true };
+      },
+    },
+  });
+  const primary = "apple-leaving";
+  const reclaimedAlias = "local:reclaimed@example.test";
+  values.set(`identity-canonical:${primary}`, primary);
+  values.set(`identity-aliases:${primary}`, JSON.stringify([reclaimedAlias]));
+  // Reclaimed by a fresh sign-up before deletion finished: its canonical points to itself, not `primary`.
+  values.set(`identity-canonical:${reclaimedAlias}`, reclaimedAlias);
+
+  await deleteAccount(env, primary);
+
+  const primaryHash = await sha256Hex(primary);
+  const reclaimedHash = await sha256Hex(reclaimedAlias);
+  const deletedRows = env._db.prepare("SELECT subject FROM revocation_log WHERE kind = 'account-deleted'").all() as Record<string, any>[];
+  assert.ok(deletedRows.some(r => r.subject === primaryHash), "primary deleted identity is logged");
+  assert.ok(!deletedRows.some(r => r.subject === reclaimedHash), "reclaimed alias must not be logged as deleted");
 });
