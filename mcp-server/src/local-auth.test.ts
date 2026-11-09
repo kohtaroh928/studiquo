@@ -155,7 +155,7 @@ test("a wrong password never upgrades or alters a legacy record", async () => {
   assert.equal(JSON.stringify(await storedRecord(env, "person@example.com")), before);
 });
 
-test("an upgrade doesn't overwrite a password reset that landed during the sign-in", async () => {
+test("a password reset that landed during the sign-in refuses the old password and is not overwritten", async () => {
   const env = environment();
   await seedLegacyAccount(env, "person@example.com", "old-password-1");
 
@@ -173,6 +173,7 @@ test("an upgrade doesn't overwrite a password reset that landed during the sign-
   } finally {
     hashers.pbkdf2 = original;
   }
+  assert.equal((await storedRecord(env, "person@example.com")).algo, "argon2id", "the reset's record is still the one stored");
   assert.equal(await verifyLocalAccount(env, "person@example.com", "brand-new-password"), true);
   assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
 });
