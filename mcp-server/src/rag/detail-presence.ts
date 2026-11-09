@@ -56,7 +56,9 @@ const ANY_NUMBER = new RegExp(NUMBER, 'u');
 
 const fold = (text: unknown) => String(text).normalize('NFKC').toLowerCase();
 
-export type Excerpt = { text: string; primary?: boolean };
+/** `rerankTop` marks an excerpt from the page of the excerpt the reranker rated best. That is not always the first
+ * excerpt: the order is the reranker fused with the search rank, and a page is cut into several excerpts. */
+export type Excerpt = { text: string; primary?: boolean; rerankTop?: boolean };
 
 // Words that are unit names, not what the question is about.
 const UNIT_WORDS = new Set(['hpa', 'kt', 'knot', 'km', 'kg', 'cm', 'mm']);
@@ -85,7 +87,7 @@ function subjectTokens(query: unknown) {
 export function quantityEvidencePresent(query: unknown, evidence: string | Excerpt[], options: { tied?: boolean } = {}) {
   const ask = fold(query);
   const excerpts: Excerpt[] = typeof evidence === 'string' ? [{ text: evidence, primary: true }] : evidence;
-  const folded = excerpts.map(e => ({ text: fold(withTableUnits(fold(e.text))), primary: !!e.primary }));
+  const folded = excerpts.map(e => ({ text: fold(withTableUnits(fold(e.text))), primary: !!e.primary, rerankTop: !!e.rerankTop }));
   if (priceRatioEvidence(ask, folded.map(e => e.text))) return true;
   const asked = ASKED_UNITS.filter(u => u.ask.test(ask));
   if (asked.length) {
@@ -93,7 +95,13 @@ export function quantityEvidencePresent(query: unknown, evidence: string | Excer
     if (!carrying.length) return false;
     if (!options.tied) return true;
     const subjects = subjectTokens(query);
-    return carrying.some(e => e.primary || subjects.some(t => e.text.includes(t)));
+    // Where the answer is expected is the first excerpt, or the page the reranker rated best. For a question whose subject
+    // has no katakana or Latin word, only these can carry the number: the answer was refused when it sat on the page the
+    // reranker chose but the fused order put another page first ("約17.3倍" was on page 81, the reranker's page; the
+    // fused first excerpt was from page 82). The neighbouring pages are not included: a number about another subject
+    // next to the right page must not stand in. Only for a question that names no katakana or Latin subject: with one,
+    // the subject must be in the excerpt, wherever the reranker's page is.
+    return carrying.some(e => e.primary || (!subjects.length && e.rerankTop) || subjects.some(t => e.text.includes(t)));
   }
   if (ASKED_QUANTITY.test(ask)) return folded.some(e => ANY_NUMBER.test(e.text));
   return true;
