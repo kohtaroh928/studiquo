@@ -47,6 +47,107 @@ final class CollabInviteImporterTests: XCTestCase {
         XCTAssertTrue(document.title.contains("田中"))
         XCTAssertFalse(CollabInviteImporter.title(inviterName: nil).isEmpty)
     }
+
+    @MainActor
+    func testSnapshotImportUsesSnapshotTitleWhenPresentAndInviterFallbackWhenBlank() {
+        installInMemoryCollabState()
+        let body = DocumentBody.encode(NSAttributedString(string: "共有本文", attributes: DocumentBody.defaultAttributes()))
+        let imageBytes = Data([0x10, 0x20, 0x30])
+        let hash = DocumentSnapshotCodec.sha256Hex(imageBytes)
+        let snapshotWithTitle = DocumentSnapshot(
+            title: "共同レポート", pageSize: "a4", columnCount: 2,
+            header: .init(body: body, showsPageNumber: true),
+            footer: nil,
+            blocks: [
+                .init(id: "b1", kind: "paragraph", body: body, imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+                .init(id: "b2", kind: "image", body: nil, imageHash: hash, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+            ]
+        )
+        let doc = CollabInviteImporter.makeDocument(
+            roomID: "room-snap", inviterName: "佐藤",
+            snapshot: snapshotWithTitle, revision: 4, assets: [hash: imageBytes]
+        )
+        XCTAssertEqual(doc.title, "共同レポート")
+        XCTAssertEqual(doc.collabRoomID, "room-snap")
+        XCTAssertEqual(doc.collabRevision, 4)
+        XCTAssertNotNil(doc.collabBaseSnapshot)
+        XCTAssertEqual(doc.sortedBlocks.count, 2)
+        XCTAssertEqual(doc.sortedBlocks[1].bodyData, imageBytes)
+        XCTAssertEqual(doc.header?.showsPageNumber, true)
+        XCTAssertEqual(CollabInviteImporter.title(inviterName: "佐藤"), L("佐藤さんの共有文書"))
+        XCTAssertEqual(CollabInviteImporter.title(inviterName: "   "), L("共有された文書"))
+    }
+
+    @MainActor
+    func testRevisionZeroFallbackImportsLegacyStateAndUpgradesInPlaceWhenOwnerPushesSnapshot() async throws {
+        installInMemoryCollabState()
+        final class UpgradeRoom: DocumentSnapshotClient {
+            var revision = 0
+            var snapshotText: String?
+            var assets: [String: Data] = [:]
+            var editorsMustWait = true
+
+            func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
+                if revision == 0 { return .init(revision: 0, snapshot: nil, unchanged: nil) }
+                if since == revision { return .init(revision: revision, snapshot: nil, unchanged: true) }
+                return .init(revision: revision, snapshot: snapshotText, unchanged: nil)
+            }
+            func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+                if editorsMustWait { throw DocumentCollabService.RoomNotReady() }
+                guard baseRevision == revision else { throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
+                revision += 1
+                snapshotText = snapshot
+                return revision
+            }
+            func missingAssets(roomID: String, hashes: [String]) async throws -> [String] { hashes.filter { assets[$0] == nil } }
+            func putAsset(roomID: String, hash: String, data: Data) async throws { assets[hash] = data }
+            func asset(roomID: String, hash: String) async throws -> Data? { assets[hash] }
+        }
+
+        let room = UpgradeRoom()
+        let invited = CollabInviteImporter.makeDocument(roomID: "room-zero", inviterName: "鈴木", state: state())
+        XCTAssertEqual(invited.collabRevision, 0)
+        XCTAssertNil(invited.collabBaseSnapshot)
+
+        let waiting = try await CollabSyncEngine.sync(
+            document: invited, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(waiting, .upToDate)
+        XCTAssertEqual(room.revision, 0)
+
+        let ownerDoc = TextDocument(title: "オーナー確定版")
+        let ownerPara = DocumentBlock(order: 0, kind: .paragraph)
+        ownerPara.bodyData = DocumentBody.encode(NSAttributedString(string: "オーナー本文", attributes: DocumentBody.defaultAttributes()))
+        ownerPara.document = ownerDoc
+        let ownerTable = DocumentBlock.makeTable(order: 1, rows: 1, columns: 2)
+        ownerTable.sortedTableRows[0].sortedCells[0].text = "表セル"
+        ownerTable.document = ownerDoc
+        ownerDoc.blocks = [ownerPara, ownerTable]
+        ownerDoc.isMigratedToBlocks = true
+        ownerDoc.collabRoomID = "room-zero"
+
+        room.editorsMustWait = false
+        let ownerPush = try await CollabSyncEngine.sync(
+            document: ownerDoc, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(ownerPush, .pushed)
+        XCTAssertEqual(room.revision, 1)
+
+        // Reset invited document to base-less state as imported at revision 0 before owner pushed
+        invited.collabRevision = 0
+        invited.collabBaseSnapshot = nil
+        invited.blocks = []
+        let editorPull = try await CollabSyncEngine.sync(
+            document: invited, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(editorPull, .pulled(conflicts: 0))
+        XCTAssertEqual(invited.collabRevision, 1)
+        XCTAssertEqual(invited.title, "オーナー確定版")
+        XCTAssertEqual(invited.sortedBlocks.map(\.kind), [.paragraph, .table])
+    }
 }
 
 final class CollabRemoteChangeTests: XCTestCase {
