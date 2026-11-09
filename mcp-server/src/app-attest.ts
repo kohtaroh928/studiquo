@@ -124,7 +124,7 @@ export function decodeCBOR(bytes: Bytes): CborValue {
       case 0: return argument(info);
       case 1: return -1 - argument(info);
       case 2: return take(argument(info)).slice();
-      case 3: return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(take(argument(info)));
+      case 3: return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(take(argument(info)));
       case 4: {
         const count = argument(info);
         if (count > bytes.length) throw new Error("cbor: bad count");
@@ -133,11 +133,15 @@ export function decodeCBOR(bytes: Bytes): CborValue {
       case 5: {
         const count = argument(info);
         if (count > bytes.length) throw new Error("cbor: bad count");
-        const map: Record<string, CborValue> = {};
+        // No prototype, and keys defined as own data properties: a "__proto__" key
+        // is kept as a plain key, and a member that is missing cannot be read
+        // from an inherited property.
+        const map: Record<string, CborValue> = Object.create(null);
         for (let i = 0; i < count; i++) {
           const key = read(depth + 1);
           if (typeof key !== "string") throw new Error("cbor: non-text key");
-          map[key] = read(depth + 1);
+          if (Object.hasOwn(map, key)) throw new Error("cbor: duplicate key");
+          Object.defineProperty(map, key, { value: read(depth + 1), writable: true, enumerable: true, configurable: true });
         }
         return map;
       }
@@ -261,10 +265,18 @@ export function parseCertificate(der: Bytes) {
 // r||s that WebCrypto wants.
 export function derSignatureToRaw(der: Bytes, size: number) {
   const sequence = readTLV(der, 0);
-  const [r, s] = childrenOf(der, sequence);
-  if (sequence.tag !== 0x30 || r?.tag !== 0x02 || s?.tag !== 0x02) throw new Error("bad signature");
+  // The SEQUENCE must be the whole input, with exactly two INTEGERs in it.
+  if (sequence.tag !== 0x30 || sequence.end !== der.length) throw new Error("bad signature");
+  const children = childrenOf(der, sequence);
+  if (children.length !== 2) throw new Error("bad signature");
+  const [r, s] = children;
+  if (r.tag !== 0x02 || s.tag !== 0x02) throw new Error("bad signature");
   const fit = (integer: DerNode) => {
     let value = integer.content;
+    // A positive, minimal INTEGER: not empty, high bit clear, and a leading
+    // zero only where it keeps a set high bit in the next byte positive.
+    if (value.length === 0 || (value[0] & 0x80)) throw new Error("bad signature");
+    if (value.length > 1 && value[0] === 0 && !(value[1] & 0x80)) throw new Error("bad signature");
     while (value.length > size && value[0] === 0) value = value.subarray(1);
     if (value.length > size) throw new Error("bad signature");
     const out = new Uint8Array(size);
