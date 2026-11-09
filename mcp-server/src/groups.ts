@@ -1,6 +1,6 @@
 import { blockedBetween } from "./block-check.ts";
 import { checkRateLimit } from "./rate-limit.ts";
-import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared, bodyText } from "./http.ts";
 import { sendPush } from "./push.ts";
 import type { Env } from "./env.ts";
 import type { ChatUser, StoredImage } from "./records.ts";
@@ -36,18 +36,18 @@ const GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const GROUP_CODE_LENGTH = 10;
 
 function parseGroupName(body: { name: unknown; }) {
-  const name = String(body?.name ?? "").trim().slice(0, MAX_GROUP_NAME_LENGTH);
+  const name = bodyText(body?.name).trim().slice(0, MAX_GROUP_NAME_LENGTH);
   return name || null;
 }
 
 function parseMemberCodes(body: { memberCodes: unknown; }) {
   const raw = Array.isArray(body?.memberCodes) ? body.memberCodes : [];
-  const codes: string[] = [...new Set<string>(raw.map((item: unknown) => String(item ?? "").trim().toUpperCase()))];
+  const codes: string[] = [...new Set<string>(raw.map((item: unknown) => bodyText(item).trim().toUpperCase()))];
   return codes.every(code => FRIEND_CODE_PATTERN.test(code)) ? codes : null;
 }
 
 function parseFriendCode(body: { code: unknown; }) {
-  const code = String(body?.code ?? "").trim().toUpperCase();
+  const code = bodyText(body?.code).trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
@@ -361,8 +361,8 @@ export async function handleGroupRoutes(url: URL, request: Request, env: Env, ke
       throw error;
     }
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
-    const contentType = String(body?.contentType ?? "");
-    const data = String(body?.data ?? "");
+    const contentType = bodyText(body?.contentType);
+    const data = bodyText(body?.data);
     if (!["image/jpeg", "image/png"].includes(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }

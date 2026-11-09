@@ -238,6 +238,7 @@ enum PasskeyHTTPClient {
             if PasskeyReauth.isRequired(status: status, body: data) {
                 throw PasskeyError.reauthRequired
             }
+            if PasskeyResetHold.isActive(status: status, body: data) { throw PasskeyError.resetHold }
             if PasskeyEmailCode.isRequired(status: status, body: data) { throw PasskeyError.emailCodeRequired }
             if status == 401, path.hasSuffix("email-code/confirm") { throw PasskeyError.wrongEmailCode }
             throw PasskeyError.serverRejected
@@ -264,6 +265,15 @@ enum PasskeyEmailCode {
     }
 }
 
+/// The server answers 403 with `code: "passkey_reset_hold"` for 48 hours after a password reset
+/// removed the account's passkeys: no passkey is added during that time either.
+enum PasskeyResetHold {
+    static func isActive(status: Int?, body: Data) -> Bool {
+        struct Body: Decodable { let code: String? }
+        return status == 403 && (try? JSONDecoder().decode(Body.self, from: body))?.code == "passkey_reset_hold"
+    }
+}
+
 enum PasskeyError: LocalizedError {
     case invalidResponse, notVerified, serverRejected
     /// The mailbox has to be confirmed with a code before the first passkey.
@@ -274,9 +284,12 @@ enum PasskeyError: LocalizedError {
     case reauthRequired
     /// The person dismissed the Face ID / passkey sheet.
     case cancelled
+    /// A password reset just removed the passkeys; a new one can be added after the wait.
+    case resetHold
     var errorDescription: String? {
         switch self {
         case .cancelled: "パスキーの確認をキャンセルしました。"
+        case .resetHold: "パスワードの再設定でパスキーを削除したため、安全のため、再設定から48時間はパスキーを追加できません。時間をおいて、もう一度お試しください。"
         case .emailCodeRequired: "メールで届いたコードの確認が必要です。"
         case .wrongEmailCode: "コードが違うか、期限が切れています。コードを再送してお試しください。"
         case .reauthRequired: "パスキーでの確認が必要です。"

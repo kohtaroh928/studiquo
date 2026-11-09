@@ -253,6 +253,8 @@ struct NoteEditorView: View {
     @State private var primaryOverrideNotebook: Notebook?
     @State private var primaryFlashcardDeck: FlashcardDeck?
     @State private var secondaryNotebook: Notebook?
+    @State private var isPrimaryNotebookUnlocked = false
+    @State private var isSecondaryNotebookUnlocked = false
     @State private var splitMode: SplitMode = .single
     /// The layout as of the last recorded step; see `recordPaneLayoutChange`.
     @State private var lastPaneLayout: PaneLayout?
@@ -690,7 +692,21 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = initialFlashcardDeck
             }
         }
-        .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
+        .onChange(of: splitMode) { _, mode in
+            splitState.isSplit = mode != .single
+            if mode == .single {
+                isSecondaryNotebookUnlocked = false
+                sealNotebooksNoLongerDisplayed()
+            }
+        }
+        .onChange(of: primaryOverrideNotebook?.persistentModelID) { _, _ in
+            isPrimaryNotebookUnlocked = false
+            sealNotebooksNoLongerDisplayed()
+        }
+        .onChange(of: secondaryNotebook?.persistentModelID) { _, _ in
+            isSecondaryNotebookUnlocked = false
+            sealNotebooksNoLongerDisplayed()
+        }
         .onChange(of: currentPaneLayout.key) { _, _ in recordPaneLayoutChange() }
         // A file opened in place is closed when the secondary pane is switched
         // to another kind of content; only a switch *to* something counts, so
@@ -710,13 +726,64 @@ struct NoteEditorView: View {
                 // after the app is backgrounded (and its image request is
                 // cancelled when the viewer leaves the hierarchy).
                 selectedPhotoStudyAssetID = nil
-                if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
-                NotebookBackupService.saveAutomaticBackup(for: notebook)
+                isPrimaryNotebookUnlocked = false
+                isSecondaryNotebookUnlocked = false
+                lockAllOpenNotebooks()
             }
         }
         .onDisappear {
-            if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
-            NotebookBackupService.saveAutomaticBackup(for: notebook)
+            isPrimaryNotebookUnlocked = false
+            isSecondaryNotebookUnlocked = false
+            lockAllOpenNotebooks()
+        }
+    }
+
+    private func sealNotebooksNoLongerDisplayed() {
+        var unlockedVisible: [Notebook] = []
+        if isPrimaryNotebookUnlocked, paneShowsNote(.primary) {
+            unlockedVisible.append(displayedPrimaryNotebook)
+        }
+        if splitMode != .single, isSecondaryNotebookUnlocked, paneShowsNote(.secondary), let sec = secondaryNotebook {
+            unlockedVisible.append(sec)
+        }
+        var seen = Set<PersistentIdentifier>()
+        var lockedAny = false
+        let candidates = [notebook, primaryOverrideNotebook, secondaryNotebook].compactMap { $0 }
+            + notebooks.filter { $0.isLocked && $0.encryptedContent == nil }
+        for candidate in candidates {
+            guard seen.insert(candidate.persistentModelID).inserted else { continue }
+            let stillOpen = unlockedVisible.contains { $0.persistentModelID == candidate.persistentModelID }
+            guard !stillOpen else { continue }
+            if candidate.isLocked {
+                _ = NotebookEncryptionService.lock(candidate)
+                lockedAny = true
+            }
+            NotebookBackupService.saveAutomaticBackup(for: candidate)
+        }
+        if lockedAny {
+            NoteActionHistory.shared.clearAll()
+            DrawingHistoryStore.shared.clearAll()
+            Task { await NoteImageCache.shared.removeAll() }
+        }
+    }
+
+    private func lockAllOpenNotebooks() {
+        var seen = Set<PersistentIdentifier>()
+        var lockedAny = false
+        let candidates = [notebook, primaryOverrideNotebook, secondaryNotebook].compactMap { $0 }
+            + notebooks.filter { $0.isLocked && $0.encryptedContent == nil }
+        for candidate in candidates {
+            guard seen.insert(candidate.persistentModelID).inserted else { continue }
+            if candidate.isLocked {
+                _ = NotebookEncryptionService.lock(candidate)
+                lockedAny = true
+            }
+            NotebookBackupService.saveAutomaticBackup(for: candidate)
+        }
+        if lockedAny {
+            NoteActionHistory.shared.clearAll()
+            DrawingHistoryStore.shared.clearAll()
+            Task { await NoteImageCache.shared.removeAll() }
         }
     }
 
@@ -1678,7 +1745,7 @@ struct NoteEditorView: View {
                             // keeps the toolbar, tab bar, and everything else
                             // around it looking like a normal note screen
                             // while this one pane is locked.
-                            NotebookLockGate(notebook: displayedPrimaryNotebook) {
+                            NotebookLockGate(notebook: displayedPrimaryNotebook, isUnlocked: $isPrimaryNotebookUnlocked) {
                                 primaryNotebookPane
                             }
                         }
@@ -1780,7 +1847,7 @@ struct NoteEditorView: View {
                         // for (and already gated via `ProtectedNotebookView`
                         // before mounting), so it always needs its own
                         // `NotebookLockGate`.
-                        NotebookLockGate(notebook: secondaryNotebook) {
+                        NotebookLockGate(notebook: secondaryNotebook, isUnlocked: $isSecondaryNotebookUnlocked) {
                             NotebookPaneView(
                                 notebook: secondaryNotebook,
                                 currentPageIndex: $secondaryPageIndex,
@@ -1897,19 +1964,21 @@ struct NoteEditorView: View {
                     .background(Theme.Palette.canvas)
                 }
             case .notebook(let notebook):
-                NotebookPaneView(
-                    notebook: notebook,
-                    currentPageIndex: pane == .primary
-                        ? $primaryTemporaryChatMaterialPageIndex
-                        : $secondaryTemporaryChatMaterialPageIndex,
-                    showsTitle: false,
-                    usesDarkPageDisplay: usesDarkPageDisplay,
-                    onRequestAddPage: {},
-                    onSummarizeCurrentPDFPage: {},
-                    onSummarizeAllPDFPages: {},
-                    onQuickAddPage: {},
-                    onQuickAddPageAtTop: {}
-                )
+                NotebookLockGate(notebook: notebook) {
+                    NotebookPaneView(
+                        notebook: notebook,
+                        currentPageIndex: pane == .primary
+                            ? $primaryTemporaryChatMaterialPageIndex
+                            : $secondaryTemporaryChatMaterialPageIndex,
+                        showsTitle: false,
+                        usesDarkPageDisplay: usesDarkPageDisplay,
+                        onRequestAddPage: {},
+                        onSummarizeCurrentPDFPage: {},
+                        onSummarizeAllPDFPages: {},
+                        onQuickAddPage: {},
+                        onQuickAddPageAtTop: {}
+                    )
+                }
             case .flashcardDeck(let deck):
                 FlashcardPaneView(deck: deck, onHome: {})
             case .document(let document):
@@ -2866,7 +2935,7 @@ struct NoteEditorView: View {
 
     private func friendMessageAttachmentOptions() -> [FriendMessageAttachment] {
         var options: [FriendMessageAttachment] = []
-        options.append(contentsOf: notebooks.filter { !$0.isTrashed }.map {
+        options.append(contentsOf: notebooks.filter { !$0.isTrashed && !$0.isLocked && !$0.hasLockedPDFToUnlock && !$0.hasEncryptedPages }.map {
             FriendMessageAttachment(
                 id: "notebook-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
@@ -2923,7 +2992,7 @@ struct NoteEditorView: View {
             .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appending(path: "\(UUID().uuidString)-\(FriendMessageAttachment.boundedFilename(attachment.title)).pdf")
-        guard (try? pdfData.write(to: destination, options: [.atomic])) != nil else { return attachment }
+        guard (try? pdfData.write(to: destination, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else { return attachment }
 
         var remoteID: String?
         var remoteRoomID: String?
@@ -2951,7 +3020,11 @@ struct NoteEditorView: View {
         switch parts[0] {
         case "notebook":
             guard let notebook = notebooks.first(where: {
-                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+                String(describing: $0.persistentModelID) == parts[1]
+                    && !$0.isTrashed
+                    && !$0.isLocked
+                    && !$0.hasLockedPDFToUnlock
+                    && !$0.hasEncryptedPages
             }) else { return nil }
             return FriendMessageAttachment(
                 id: "notebook-\(String(describing: notebook.persistentModelID))",
@@ -2991,12 +3064,9 @@ struct NoteEditorView: View {
     }
 
     private func openFriendAttachment(_ attachment: FriendMessageAttachment, target: ActivePane) {
-        if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
-            let url = URL(filePath: sourcePath)
-            if FileManager.default.fileExists(atPath: url.path) {
-                setTemporaryChatMaterial(.file(url), in: target)
-                return
-            }
+        if let url = FriendChatService.safeLocalAttachmentURL(sourcePath: attachment.sourcePath) {
+            setTemporaryChatMaterial(.file(url), in: target)
+            return
         }
 
         guard let sourceKind = attachment.resolvedSourceKind,
@@ -3016,26 +3086,24 @@ struct NoteEditorView: View {
     private func downloadAndPreviewFriendAttachment(sourceKind: String, sourceID: String, roomID: String, title: String, target: ActivePane) {
         isDownloadingFriendAttachment = true
         Task {
-            guard let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
+            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard let destination = FriendChatService.safeCachedAttachmentDestination(
+                directory: directory,
+                sourceKind: sourceKind,
+                sourceID: sourceID,
+                title: title
+            ),
+            let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
                 await MainActor.run {
                     isDownloadingFriendAttachment = false
                     friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
                 }
                 return
             }
-            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let ext: String
-            if sourceKind == "photo" {
-                ext = "jpg"
-            } else {
-                let titleExtension = (title as NSString).pathExtension
-                ext = titleExtension.isEmpty ? (sourceKind == "pdf" ? "pdf" : "dat") : titleExtension
-            }
-            let destination = directory.appending(path: "\(sourceID).\(ext)")
             if !FileManager.default.fileExists(atPath: destination.path) {
-                guard (try? data.write(to: destination, options: [.atomic])) != nil else {
+                guard (try? data.write(to: destination, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else {
                     await MainActor.run {
                         isDownloadingFriendAttachment = false
                         friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
@@ -3129,7 +3197,8 @@ struct NoteEditorView: View {
         switch kind {
         case "notebook":
             guard let notebook = notebooks.first(where: {
-                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
+                String(describing: $0.persistentModelID) == rawID
+                    && !$0.isTrashed && !$0.isLocked && !$0.hasLockedPDFToUnlock && !$0.hasEncryptedPages
             }) else { return nil }
             return .notebook(notebook)
         case "deck", "flashcards":
@@ -3324,7 +3393,9 @@ struct NoteEditorView: View {
     /// it once the page has been through text recognition; typed elements are
     /// always available.
     private func aiChatNoteContext() -> String {
-        guard let page = drawingHistoryPage ?? currentPrimaryPage else { return "" }
+        guard let page = drawingHistoryPage ?? currentPrimaryPage,
+              let owner = page.notebook,
+              !owner.hasEncryptedPages else { return "" }
         var parts: [String] = []
         let recognized = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !recognized.isEmpty { parts.append(recognized) }
@@ -3893,23 +3964,31 @@ struct NoteEditorView: View {
         return paneShowsNote(otherPane) ? otherPane : nil
     }
 
+    private func isNotebookUnlockedInPane(_ target: Notebook, isGateUnlocked: Bool) -> Bool {
+        if target.isLocked && target.encryptedContent != nil { return false }
+        if target.isLocked || target.hasLockedPDFToUnlock { return isGateUnlocked }
+        return true
+    }
+
     private func paneShowsNote(_ pane: ActivePane) -> Bool {
         if pane == .secondary {
-            return splitMode != .single
-                && secondaryNotebook != nil
-                && secondaryFlashcardDeck == nil
-                && !secondaryShowsWeb
-                && !secondaryShowsAIChat
-                && photoStudyPane != .secondary
-                && aiSwapPane != .secondary
+            guard splitMode != .single,
+                  let secondaryNotebook,
+                  secondaryFlashcardDeck == nil,
+                  !secondaryShowsWeb,
+                  !secondaryShowsAIChat,
+                  photoStudyPane != .secondary,
+                  aiSwapPane != .secondary else { return false }
+            return isNotebookUnlockedInPane(secondaryNotebook, isGateUnlocked: isSecondaryNotebookUnlocked)
         }
-        return primaryFlashcardDeck == nil
-            && !primaryShowsWeb
-            && !primaryShowsAIChat
-            && primaryChatTarget == nil
-            && primaryTemporaryChatMaterial == nil
-            && photoStudyPane != .primary
-            && aiSwapPane != .primary
+        guard primaryFlashcardDeck == nil,
+              !primaryShowsWeb,
+              !primaryShowsAIChat,
+              primaryChatTarget == nil,
+              primaryTemporaryChatMaterial == nil,
+              photoStudyPane != .primary,
+              aiSwapPane != .primary else { return false }
+        return isNotebookUnlockedInPane(displayedPrimaryNotebook, isGateUnlocked: isPrimaryNotebookUnlocked)
     }
 
     /// The pane the insertion tools (photo, text, shapes...) act on: the only
@@ -3961,7 +4040,9 @@ struct NoteEditorView: View {
 
     private func deleteCurrentPage() {
         let target = activeNotebook
-        guard target.sortedPages.count > 1, let page = activePage else { return }
+        guard target.encryptedContent == nil,
+              target.sortedPages.count > 1,
+              let page = activePage else { return }
         let deletedIndex = noteToolPane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
         recordPageRemoval(page, in: target)
@@ -4005,6 +4086,7 @@ struct NoteEditorView: View {
     }
 
     private func requestPageAddition(to target: Notebook) {
+        guard target.encryptedContent == nil else { return }
         notebookPendingNewPage = target
     }
 
@@ -4012,6 +4094,7 @@ struct NoteEditorView: View {
     /// template — matching GoodNotes' pull-past-the-bottom gesture, which
     /// never interrupts with a style picker.
     private func quickAddPage(to target: Notebook) {
+        guard target.encryptedContent == nil else { return }
         let newPage = NotePage(order: target.sortedPages.count)
         newPage.pageTemplate = target.sortedPages.last?.pageTemplate ?? .blank
         newPage.notebook = target
@@ -4032,6 +4115,7 @@ struct NoteEditorView: View {
     /// the bottom: prepends a blank page and shifts every existing page's
     /// order down by one to make room for it at the front.
     private func quickAddPageAtTop(to target: Notebook) {
+        guard target.encryptedContent == nil else { return }
         let template = target.sortedPages.first?.pageTemplate ?? .blank
         for page in target.sortedPages { page.order += 1 }
         let newPage = NotePage(order: 0)
@@ -4065,7 +4149,10 @@ struct NoteEditorView: View {
     }
 
     private func addPendingPage(template: PageTemplate, paperColorHex: String) {
-        guard let target = notebookPendingNewPage else { return }
+        guard let target = notebookPendingNewPage, target.encryptedContent == nil else {
+            notebookPendingNewPage = nil
+            return
+        }
         let newPage = NotePage(order: target.sortedPages.count)
         newPage.pageTemplate = template
         newPage.paperColorHex = paperColorHex
@@ -4164,12 +4251,13 @@ struct NoteEditorView: View {
     /// nothing. The last activated page is checked against the notebooks on
     /// screen so a page left over from a previously open note is ignored.
     private var drawingHistoryPage: NotePage? {
+        guard noteToolPane != nil else { return nil }
         if let lastActivePage,
-           lastActivePage.notebook === displayedPrimaryNotebook
-            || lastActivePage.notebook === secondaryNotebook {
+           (lastActivePage.notebook === displayedPrimaryNotebook && paneShowsNote(.primary))
+            || (lastActivePage.notebook === secondaryNotebook && paneShowsNote(.secondary)) {
             return lastActivePage
         }
-        return activePage ?? currentPrimaryPage
+        return currentPrimaryPage
     }
 
     /// Every undo/redo carries a fresh id so the shared history can tell one
@@ -7250,6 +7338,15 @@ final class DrawingHistoryStore {
             undoDates[evicted] = nil
             redoDates[evicted] = nil
         }
+    }
+
+    func clearAll() {
+        undoStacks.removeAll()
+        redoStacks.removeAll()
+        recency.removeAll()
+        undoDates.removeAll()
+        redoDates.removeAll()
+        lastHandledRequest = nil
     }
 }
 

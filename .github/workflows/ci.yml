@@ -127,7 +127,7 @@ jobs:
       - name: Install gitleaks (checked against a fixed SHA-256)
         run: |
           set -euo pipefail
-          curl --proto "=https" --tlsv1.2 -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --proto "=https" --tlsv1.2 -sSfL --retry 8 --retry-delay 20 --retry-all-errors -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP/bin" gitleaks
@@ -136,7 +136,7 @@ jobs:
       - name: Install trufflehog (checked against a fixed SHA-256)
         run: |
           set -euo pipefail
-          curl --proto "=https" --tlsv1.2 -sSfL -o trufflehog.tar.gz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+          curl --proto "=https" --tlsv1.2 -sSfL --retry 8 --retry-delay 20 --retry-all-errors -o trufflehog.tar.gz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
           echo "${TRUFFLEHOG_SHA256}  trufflehog.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf trufflehog.tar.gz -C "$RUNNER_TEMP/bin" trufflehog

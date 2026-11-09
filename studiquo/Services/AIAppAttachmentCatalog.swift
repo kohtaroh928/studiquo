@@ -73,7 +73,7 @@ enum AIAppAttachmentCatalog {
         textDocuments: [TextDocument]
     ) -> [AppAttachmentOption] {
         let noteOptions = notebooks
-            .filter { !$0.isTrashed }
+            .filter { !$0.isTrashed && !$0.isLocked && !$0.hasLockedPDFToUnlock && !$0.hasEncryptedPages }
             .compactMap { notebookAttachmentOption($0) }
         let deckOptions = flashcardDecks
             .filter { !$0.isTrashed }
@@ -85,6 +85,9 @@ enum AIAppAttachmentCatalog {
     }
 
     static func notebookAttachmentOption(_ notebook: Notebook) -> AppAttachmentOption? {
+        guard !notebook.isTrashed, !notebook.isLocked, !notebook.hasLockedPDFToUnlock, !notebook.hasEncryptedPages else {
+            return nil
+        }
         let pdfText = readablePDFText(in: notebook)
         let noteText = pdfText.isEmpty ? readableNotebookText(in: notebook) : pdfText
         let contextText = noteText.isEmpty

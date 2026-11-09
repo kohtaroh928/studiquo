@@ -103,6 +103,10 @@ enum PDFPasswordService {
             throw ServiceError.notProtected
         }
 
+        guard document.numberOfPages <= ImportLimits.maxPDFPages else {
+            throw ServiceError.cannotRead
+        }
+
         try? FileManager.default.removeItem(at: destination)
         guard let context = CGContext(destination as CFURL, mediaBox: nil, nil) else {
             throw ServiceError.writeFailed
@@ -122,6 +126,10 @@ enum PDFPasswordService {
             context.endPage()
         }
         context.closePDF()
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: destination.path
+        )
         return destination
     }
 

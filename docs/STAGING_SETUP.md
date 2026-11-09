@@ -424,7 +424,7 @@ npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップ
 
 - [ ] `npx tsc --noEmit`・`npm test`が通る(作業の完了時点で通過済み)。
 - [ ] `wrangler deploy --env staging --dry-run`の出力で、`STUDIQUO_DATA`・`ADMIN_DB`がステージングのID、`ENVIRONMENT_LABEL`が`staging`、本番のID(`e1171479…`、`fb64e302…`)が出ていない。
-- [ ] **配備のときは、前回の配備(RAG有効・判定shadow)と同じ`--var`の上書きを付ける。** 設定ファイルの値は`RAG_ENABLED: "false"`などなので、付けないとRAGが無効に戻る。
+- [ ] 配備の前後で`npx wrangler versions view <版> --env staging`の変数を比べ、意図しない差がないことを確かめる。RAGと`AI_PROVIDER_APPROVED`は設定ファイルで`true`になっているので、上書きなしの配備でも止まらない(2026-11-05に変更。それ以前は配備のたびに`false`へ戻り、評価が中断していた)。判定器の`RAG_JUDGE`は既定の`off`なので、`shadow`で観測する間は`--var RAG_JUDGE:shadow`を付ける。`PAYWALL_ENABLED`と`AI_LIMITS`は設定ファイルになく、使うときだけ`--var`で渡す。
 - [ ] 10.2の宛先を確認(または、新しいテスト用Webhookに入れ替え)した。
 - [ ] 秘密を設定した(10.3〜10.5)。名前は`npx wrangler secret list --env staging`で確認できる(値は出ない)。
 - [ ] ロールバック: 設定ファイルの変更は`ENVIRONMENT_LABEL`の1行だけ。戻すときは、前の版を`wrangler rollback --env staging`、または、このブランチの前の版から再配備する。秘密は`wrangler secret delete <名前> --env staging`で消せる。本番には何も触れていない。

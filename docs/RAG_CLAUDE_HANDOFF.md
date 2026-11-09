@@ -48,6 +48,14 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 
 追加調査で、ステージングWorkerは2026-11-03 20:19の版114（`4c27225a`）に切り替わっており、`RAG_ENABLED`、`RAG_AUTO_INDEX_ENABLED`、`RAG_PDF_PROCESSING_ENABLED`、`RAG_PDF_CLEANUP_ENABLED`、`AI_PROVIDER_APPROVED` がすべて `false` だった。これが「対象PDFの自動登録」ボタンが無効になった直接原因。ユーザー依頼の実資料評価を継続するため、`--env staging --keep-vars` と同じ5フラグを明示した版115（`35aa4afd-055c-4c35-9641-5f45f3ff9592`）を配備し、5フラグがすべて `true` であることを読み取り確認した。本番、D1、Vectorizeの内容は変更していない。次はアプリを再起動または当該設定画面を開き直して利用可能性を再取得し、同意要求を実機で確認する。GitHub Projectへの今回の記録は未実施。
 
+## 2026-11-03 自動登録の再現確認（継続調査）
+
+確認枠は `codex/xcode-issues` の `158b891` で、PR #111 の修正コミット `48d319e` を祖先として含む。Xcode が開いているプロジェクトも `/Users/yabukohtarohgmail.com/studiquo/studiquo.xcodeproj` であることを確認した。したがって、前回の「対象外の資料にもRAG IDを書き込み、SwiftData保存で失敗し得る」修正は今回の実機ビルドに入っている。
+
+ユーザーが「対象PDFの自動登録を許可」を再度押下した時点で、正しい staging Worker の tail を監視した。RAG の consent 要求および 4xx/5xx は観測されなかった。画面は引き続き一般的な通信エラーを表示したため、今回の失敗は `GrantError.localPersistence`（これは端末の資料情報を保存できない文言になる）ではない。`grant` の `context.save()` より前には `flushInvalidations()` があり、保存済みの `controlRetryAfter` が未来ならローカルで 429 を投げ、ネットワーク送信をしない。これが現在の最有力経路である。ただし端末内の永続状態・例外値を直接取得していないため、現時点で唯一の確定原因とは断定しない。
+
+今回、コード・Worker・D1・Vectorize・本番設定は変更していない。常駐 tail は停止済み。次の一手は、端末側で実際に投げた例外または保存済み retry 状態を可観測にして確定すること。その上で、明示的な手動許可が古いローカルretryで無期限に一般エラーへ落ちない最小修正と回帰テストを実装し、確認枠で再確認する。GitHub Projectへの今回の記録は未実施。
+
 ## 2026-11-02 staging 実経路独立評価を開始
 
 ユーザーが実WorkerのD1/Vectorize、PDF取込み、iPad、最終回答までを通した独立評価を依頼し、staging用iPadが利用可能であることを確認した。`origin/main`（`c3ce941`）から専用worktree `codex/rag-e2e-evaluation` を作成。現行staging版112（`ad285b04-55d2-489a-8ad5-990a33deddb4`）を読み取り、stagingのD1 `studiquo-admin-staging` とVectorize `studiquo-rag-v1-staging`、staging App ID/URLを確認。本番IDは配備dry-runに出ず、dry-runは成功した（専用worktreeでは`npm ci`が必要だった。依存監査は既知のmoderate 2件・high 1件を表示したが、今回変更していない）。
@@ -57,6 +65,12 @@ codex/rag-citation-popupでRAGCitationLinksに資料ページのsheet表示を�
 追記: iPadで「対象PDFの自動登録を許可」を3回再現し、いずれも「自動登録を開始できませんでした。通信と送信許可を確認してください。」となった。RAGテーブル5種のstaging D1存在を読み取り確認。正しいstaging Workerへtailを接続し、最終再現はRAG URLと4xx/5xxに絞って確認したが、**RAGエンドポイントへのリクエストは0件**。したがってWorker/D1/Vectorize/外部送信許可ではなく、アプリ送信前の失敗。`RAGLibrarySyncService.grant`は最初の登録ではnetwork前に、各Notebook/FolderへRAG IDを設定して`try context.save()`する。画面はこの例外を固定の通信エラー文へ丸めるため、ここが最有力（または保存直前のローカルguard）である。アプリの端末ログ/詳細エラー表示を追加しない限り、どのSwiftData保存条件かは未確定。今回の診断でコード修正なし、常駐processなし。次はユーザーの明示依頼後に、送信前失敗を可観測にする最小修正と回帰テストを実装し、再度実機確認する。GitHub Project記録は未実施。
 
 追記2: ユーザーの修正依頼を受け、`codex/rag-auto-register-fix`で最小修正を実装し、コミット`234e7fd`に保存した。`grant`が全Notebook/Folderを無差別に変更して保存していた処理を、選択スコープ内かつRAG対象のPDFだけに限定する`prepareIdentities`へ置換した。SwiftDataの保存失敗は専用`GrantError.localPersistence`に変換し、画面では通信・送信許可ではなく「この端末の資料情報を保存できなかった」旨を表示する。対象外（ロック済み・ゴミ箱）のPDFへIDを書き込まない回帰テストを追加。`git diff --check`は成功。差分の独立レビューでは重大な問題なし（対象外資料の変更防止と既存スコープ判定を確認）、ただしSwiftDataが実際に保存失敗する端末状態を作るテストは未実施。iPadシミュレータでのテストは、専用worktreeにgit管理外の`Staging.local.xcconfig`（RevenueCat公開キー）が存在しないためビルド前に停止し、テスト未実施。キーの複製・表示はしていない。実機確認枠は`antigravity/ios-security-audit`が使用中で、メインチェックアウトにも未コミットの`studiquo/Localizable.xcstrings`があるため、札を奪わず待機。次は確認枠が戻りメインの変更が整理された後に、このコミットを`studiquo-staging`でRunして自動登録を再試行する。Workerへの再配備は不要（アプリ側のみ）。GitHub Project記録は未実施。
+
+## 2026-11-02 実資料・本番相当評価の現状照合
+
+ユーザー照会に対して評価記録を照合した。実資料の検索評価は実施済みだが、現在のRAGについて実運用の全経路（本番WorkerのD1/Vectorize、PDF取り込み、iPad、最終回答）を通した総合精度を測ったものではない。主な最新の未調整評価は、気象教材30問で答えありの必要根拠取得22/24（91.7%）、答えなしの出典抑制は修正後6/6、別の地理教材44問で判定on時の全根拠取得27/29（93.1%）・答えなし出典抑制15/15である。後者はローカルFTS5/厳密cosine代替＋実Workers AIで、最終回答生成・実Vectorize/D1・iPadは未検証。最終回答については、実資料由来の答えなし9問で本番`handleAI`＋実OpenAIを用いた小規模probeが9/9で「資料にない」と回答し、捏造0件だった一方、無関係な出典表示は9/9（31件）に残った。判定しきい値は事前登録の未使用119問で、答えあり誤停止0/74、答えなしで従来通過した15問の新規停止12/15（80%）、判定失敗2/92（2.2%）だった。今後はステージングshadowの観測と、実Worker/実Vectorize/D1/PDF/iPad/最終回答を含む独立評価が必要。今回の変更は引き継ぎ記録のみで、実装・設定・配備・API実行なし。GitHub Project記録は未実施（本件は読み取り照会）。
+
+追記: ユーザーが一続きの独立評価の実施を依頼。`full`手順として既存の`RAG_JUDGE_GENERALIZATION_PLAN.md`・staging/PDF/iPad経路を再調査した。過去のiPad staging 20問（off→shadow）は完了しているが、現行コードでの残り55問はstaging設定が別配備で戻ったため未実施。再開では公開・ライセンス確認済み資料のみを用い、staging限定、judgeはoff/shadowのみ（on・本番は対象外）、コード/閾値/質問を凍結し、配備前後の変数・ロールバック版を記録する。実機での資料取込み、同意、索引完了、質問入力はユーザー操作が必要。現在のstaging版を`wrangler versions list --env staging`で読み取り確認しようとしたが、版情報は得られず（wrangler 4.156.1起動のみ）；配備や設定変更は未実行。次はユーザーのiPad準備の可否を確認後、staging preflight・必要なら明示済み範囲のstaging配備・観測を行う。GitHub Project記録は未実施（評価開始前）。
 
 最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
