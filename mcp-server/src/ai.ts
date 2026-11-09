@@ -24,7 +24,7 @@ import { ragStop, type RagStop } from "./rag/stop-policy.ts";
 import { filterReply } from "./rag/output-filter.ts";
 import { groundingCheck } from "./rag/grounding-check.ts";
 import type { SessionRecord } from "./records.ts";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
+import { json, readJSONLimited as readJSONLimitedShared, bodyText, invalidBodyResponse } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
 import { sendPush } from "./push.ts";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.ts";
@@ -292,7 +292,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
   const requestedImages = Array.isArray(payload?.images)
-    ? payload.images.map((image: unknown) => String(image ?? "")).filter(Boolean).slice(0, 4)
+    ? payload.images.map((image: unknown) => bodyText(image)).filter(Boolean).slice(0, 4)
     : [];
   const images = requestedImages.filter(isPNGBase64);
   const requiresImage = payload?.requiresImage === true;
@@ -315,11 +315,11 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   // `chatMaxChars` — and in what the plan can pay for on this model, so a long
   // conversation keeps working with less history rather than failing (AI-2).
   const limits = aiLimits(env);
-  const context = String(payload?.noteContext ?? "").trim().slice(0, 8000);
+  const context = bodyText(payload?.noteContext).trim().slice(0, 8000);
   const sendable = Math.min(limits.input.chatMaxChars, affordableInputChars(plan, "chat", requestedModel || DEFAULT_MODEL, limits));
   const recentTurns = fitChatTurns<{ role: string; text: string }>(turns.slice(-20).map((turn: { role: string; text: unknown; }) => ({
     role: turn?.role === "assistant" ? "assistant" : "user",
-    text: String(turn?.text ?? "").slice(0, 20_000),
+    text: bodyText(turn?.text).slice(0, 20_000),
   })), context.length + images.length * limits.input.imageChars, sendable);
 
   const baseInputChars = inputSize(limits, [...recentTurns.map(turn => turn.text), context], images.length);
@@ -759,9 +759,9 @@ const GRADE_SCHEMA = structuredOutputJSONSchema("grade");
 
 async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
-  const question = String(payload?.question ?? "").trim().slice(0, 20_000);
-  const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
-  const questionImage = String(payload?.questionImageBase64 ?? "");
+  const question = bodyText(payload?.question).trim().slice(0, 20_000);
+  const modelAnswer = bodyText(payload?.modelAnswer).trim().slice(0, 30_000);
+  const questionImage = bodyText(payload?.questionImageBase64);
   // A picture of the exercise, its typed text or a model answer is enough to
   // build a scheme from; with none there is nothing to mark against.
   if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer && !question)) {
@@ -948,10 +948,10 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
 
 async function handleGrade(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
-  const question = String(payload?.question ?? "").trim().slice(0, 20_000);
-  const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
-  const image = String(payload?.imageBase64 ?? "");
-  const questionImage = String(payload?.questionImageBase64 ?? "");
+  const question = bodyText(payload?.question).trim().slice(0, 20_000);
+  const answerText = bodyText(payload?.answerText).trim().slice(0, 30_000);
+  const image = bodyText(payload?.imageBase64);
+  const questionImage = bodyText(payload?.questionImageBase64);
   const rawCriteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
   // The answer may be a photograph of handwriting or typed out in the chat.
   if ((image && !isPNGBase64(image)) || (questionImage && !isPNGBase64(questionImage))) {
@@ -1039,9 +1039,9 @@ const REVIEW_SCHEMA = structuredOutputJSONSchema("review");
 
 async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
-  const question = String(payload?.question ?? "").trim().slice(0, 4_000);
+  const question = bodyText(payload?.question).trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
-  const context = String(payload?.context ?? "").trim().slice(0, 4_000);
+  const context = bodyText(payload?.context).trim().slice(0, 4_000);
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
@@ -1122,6 +1122,9 @@ export async function handleAI(url: URL, request: Request, env: Env, key: string
     const account = await accountCounterKey(session?.sub, key);
     return await handler(request, env, key, ctx, effectivePlan, account, session);
   } catch (error) {
+    // A body member of the wrong type is the caller's 400, not a provider failure.
+    const invalidBody = invalidBodyResponse(error);
+    if (invalidBody) return invalidBody;
     // Without this, a missing OPENAI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
     console.error(JSON.stringify({ message: "AI request failed", error: error instanceof Error ? error.message : String(error) }));

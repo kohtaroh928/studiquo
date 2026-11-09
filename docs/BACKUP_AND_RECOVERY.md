@@ -1,6 +1,6 @@
 # バックアップと復元
 
-D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手順。**目標の決定と復元の訓練は未了**(末尾の「訓練の記録」が空の間は、復元できるとは言わない)。Cloudflareの機能と保持期間は契約プランで変わるので、数字は**責任者が最新の公式案内で確認して**記入する。
+D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手順。**目標の決定は未了**。復元の訓練は、手元のMiniflareで2026-11-05に実施した(§5)。Cloudflareの本物のD1・KV・DOでの訓練は未実施で、できるとは言わない。Cloudflareの機能と保持期間は契約プランで変わるので、数字は**責任者が最新の公式案内で確認して**記入する。
 
 ## 1. 何があって、失うとどうなるか
 
@@ -11,7 +11,7 @@ D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手
 | DO `ChatRoom` | チャットのメッセージ・添付 | 会話の履歴が消える | 失えない(利用者のデータ)。ただし端末側に残らない |
 | DO `UserRegistry` | アカウントの安定ID(ライブラリID)、フレンドコード | 端末の資料とアカウントの対応が壊れる、フレンドコードが変わる | 失えない |
 | DO `DocumentRoom` | 共同編集の部屋の状態 | 共同編集中の状態が消える(未リリース機能) | 現状は失ってよい。リリース後は失えない |
-| DO `RateCounter` | レート制限・AIのクレジット・ログイン待機・アカウント世代 | 制限が一時的にリセットされる。**アカウントの世代カウンタが戻ると、古いトークンや削除済みのIDが復活しうる** | レート制限は失ってよい。**世代カウンタは失えない**(下の注意) |
+| DO `RateCounter` | レート制限・AIのクレジット・ログイン待機 | 制限が一時的にリセットされる | 失ってよい |
 | 利用者の端末 | ノート・PDF・手書き(正本はSwiftData、iCloud同期あり) | 利用者のデータが消える | 失えない。サーバーのバックアップの対象外(サーバーに平文で置かない設計) |
 
 ## 2. 目標(案。責任者が決める)
@@ -26,12 +26,12 @@ D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手
 ## 3. 方法
 
 ### D1
-- **Time Travel**(任意の時点へ戻す。保持期間はプランで異なる。公式の案内で確認する): `npx wrangler d1 time-travel info studiquo-admin` で復元できる範囲を見る。復元は `... restore studiquo-admin --timestamp=<ISO8601>`(実行は責任者の承認)。
+- **Time Travel**(任意の時点へ戻す。公式の案内で確認済み(2026-11-05): 有料プラン30日・無料プラン7日。復元はその場で上書きする破壊的操作で、実行中のクエリは中断される。復元は「戻す前の状態」のbookmarkを返すので、それで取り消せる。[公式](https://developers.cloudflare.com/d1/reference/time-travel/)): `npx wrangler d1 time-travel info studiquo-admin` で復元できる範囲を見る。復元は `... restore studiquo-admin --timestamp=<ISO8601>`(実行は責任者の承認)。
 - **手動エクスポート**: `npx wrangler d1 export studiquo-admin --remote --output=<安全な場所>/studiquo-admin-YYYYMMDD.sql`。**個人情報を含む**ので、アクセス制限した保管先に置き、Gitに入れない。頻度の案: 週1回と、migrationの前。
 - migrationの前には必ずエクスポートを取る(`docs/DATA_AND_MIGRATIONS.md`)。
 
 ### KV
-- Cloudflareに、KVのスナップショットや時点復元の機能は**無い(または限られる)**。失えないものは、**書き出して別に保管する**必要がある。
+- Cloudflareの公式案内に、KVのスナップショットや時点復元の機能は**見つからなかった**(2026-11-05。存在しないと断定はしない)。失えないものは、**書き出して別に保管する**必要がある。
 - コードが書くKVの接頭辞(`STUDIQUO_DATA.put`、2026-10-21時点)を分類する:
   - **失えない**: `account:`(`account:local:`にパスワードのハッシュ、`account:google:`等)、`passkeys:credential:`・`passkeys:user:`・`passkey-valid-from:`・`passkey-recovery:`、`identity-canonical:`・`email-accounts:`・`email-account-owner:`(ログインの別名とメールの所有)、`chat:user:`・`chat:code:`・`chat:devices:`・`chat:device-owner:`・`chat:avatar:`・`chat:group-avatar:`(フレンド・グループ・端末)、`account-deletion:`(**削除マーカー。戻すと退会が取り消される**)、`privacy-rc-delete:`(外部の削除予約)、`mcp:grant:`・`mcp:client:`(MCP接続の承認)、`doc-invite:`。
   - **失ってよい(再ログイン・再同期で戻る)**: `session:`・`session-refreshed:`、`mcp:access:`・`mcp:refresh:`・`mcp:refresh-used:`・`mcp:code:`・`mcp:auth:`・`mcp:token-index:`、`passkeys:challenge:`・`passkey-reauth:`・`passkey-email-proof:`、`snapshot:`・`actions:`、`chat:linktoken:`、`issue-report:`・`issue-report-screenshot:`(D1と対。90日で消す)。
@@ -41,7 +41,7 @@ D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手
 
 ### Durable Objects
 - ChatRoom・UserRegistry・RateCounter・DocumentRoomは、コードの中に、バックアップの仕組みは**無い**。
-- `wrangler.jsonc`の`migrations`で、ChatRoom・UserRegistry・DocumentRoom・RateCounter・MCPInboxはすべて**SQLiteストレージ版**(`new_sqlite_classes`)と確認した。SQLite版のDOには、Cloudflareの時点復元(Point-in-time recovery)の機能がある可能性がある。**使い方と保持期間は公式の案内で確認する(未確認)**。
+- `wrangler.jsonc`の`migrations`で、ChatRoom・UserRegistry・DocumentRoom・RateCounter・MCPInboxはすべて**SQLiteストレージ版**(`new_sqlite_classes`)と確認した。SQLite版のDOには時点復元がある(公式で確認済み、2026-11-05): 30日前まで、**オブジェクト1つずつ**(`getCurrentBookmark`・`getBookmarkForTime`・`onNextSessionRestoreBookmark`)。全オブジェクトを一度に戻す手段は案内に無い。手元の開発環境では動かない。この仕組みを呼ぶコードはこのリポジトリに**無い**。[公式](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
 - 決めること: ChatRoomを定期的にエクスポートする仕組みを作るか、時点復元に頼るか、失う可能性を利用規約・プライバシーポリシーに書いて受け入れるか。
 
 ## 4. 復元してはいけないもの(復元で事故が起きる)
@@ -49,9 +49,25 @@ D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手
 `docs/DATA_AND_MIGRATIONS.md` に従い、**古い状態へ戻すと、次が復活する**:
 - 失効したトークン・セッション(失効の印が消えると、盗まれたトークンが再び使える)。
 - 退会したアカウント(削除マーカーが消えると、アカウントが生き返る。利用者は削除済みだと思っている=プライバシー上の事故)。
-- 世代カウンタが戻ると、古いパスワードや削除済みのIDが復活しうる。
+- 再登録の世代カウンタ(`account-deletion:`の`generation`)は**KVにある**(コードで確認: `session.ts`の`generationOf`)。KVを戻すと世代が戻り、退会前の状態と区別できなくなる。
 
 復元の手順には、**復元の直後に、失効一覧と削除マーカーを復元前の最新の状態で上書きする**(または、復元した時点以降に起きた退会・失効を再適用する)ステップが必要。そのための記録(退会・失効の発生ログ)をどこに残すかは**未決**。
+
+### 訓練で確かめた「復活」(2026-11-05、手元のMiniflare)
+
+実際のWorkerのコードを、保存先ごとに「バックアップ時点」へ戻して確かめた。手順は`cd mcp-server && npm run security:restore-drill`(結果は`security-reports/restore-drill/`、Git管理外)。
+
+| 戻したもの | 復活したもの |
+|---|---|
+| KV(どの戻し方でも) | ログアウト・パスワード再設定で無効にしたセッション/旧パスワード、解除したMCP連携、使用済みの更新トークン、退会したアカウント(旧パスワードでサインインできる)、アカウント停止・チャット停止、取り消したチャット |
+| D1 | 終了した購読(有料プラン)が復活する |
+| DO | 取り消したチャットが復活する |
+| どれも | 戻した時点より後の作業(新規登録・メッセージ・購入)は消える |
+
+- **KVからセッション・トークン・コード・スナップショットを除いて書き戻しても**、アカウントとパスワードのハッシュは戻るので、退会済みアカウントと再設定前のパスワードは復活する。「ログインを失わせない代わりに、失効を守る」ことにはならない。
+- **復元前のKVが読めるとき**は、復元後に、復元前の状態を上書きし、復元で増えたキー(`may-lose`以外)を消せば、訓練の全項目で復活が無くなった(`security/restore-drill/lib.ts`の`planReconcile`)。復元の前に、必ず現在のKVを書き出しておくこと。
+- **KVが全損して読めないとき**は、この方法は使えない。バックアップ以降の退会・失効の記録がKVの外に無いため、書き戻すと復活する。対策には、**退会・失効の記録(ハッシュのみ)をKV以外に残す仕組み**が要る。2026-11-09に責任者がD1の追記専用の表で残す方針を決め、実装した(`mcp-server/migrations/0034_revocation_log.sql`、`src/revocation-log.ts`。退会の完了・再登録・セッションの失効・停止と解除・連携アプリの解除を、ハッシュだけで追記する。書き込みが失敗しても本体の操作は止めない)。KV復元後は、`wrangler d1 execute <db> --remote --json --command "SELECT id, at, kind, subject, value FROM revocation_log ORDER BY id"`の出力を`node security/revocation-reapply/run.ts <file> <バックアップの時刻(epoch ms)>`に渡すと(その時刻より後の記録だけを再適用する)、再適用の計画(KVの書き込み・削除)が出る。**未了**: migrationの本番・ステージング適用、計画の自動適用(今は人が確認して適用)、退会済みアカウントは「deleting」で閉じるだけでデータの消去は別途(ログにはハッシュしか無い)、D1とKVを同時に失う場合は守れない。
+- DOとD1は、キーごとの差分で直せない。D1を戻すときは購読をRevenueCatの状態で再確認し、DOを戻すときは取り消し済みのチャットの扱いを決める。
 
 ## 5. 復元の訓練(ステージングで1回行う。未了)
 
@@ -66,7 +82,7 @@ D1・KV・Durable Objects(DO)の何を失ってよいか、目標、復元の手
 
 | 日付 | 対象 | かかった時間 | 結果 | 手順の修正 |
 |---|---|---|---|---|
-| (未実施) | | | | |
+| 2026-11-05 | 手元のMiniflare(本物のD1・KV・DOではない) | 全体で約15秒(KV・D1・DOの全7通りと、KV書き出し復元4通り) | 上の表のとおり。復元前の状態を読めるKVでは`planReconcile`で復活なし | 復元前の書き出しを必須にした。Cloudflare上の訓練は未実施 |
 
 ## 6. 未決・未了(GitHub Project)
 

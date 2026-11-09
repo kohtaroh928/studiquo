@@ -8,15 +8,11 @@ import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, readJSONLimited } from "./http.ts";
+import { json, readJSONLimited, bodyText } from "./http.ts";
 import { confirmVerificationCode, sendVerificationCode } from "./email-verification.ts";
 import { mintSession, hasRealSession, realSession } from "./session.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
-import {
-  REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
-  passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,
-  listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
-} from "./passkey-policy.ts";
+import { REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys, listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice, refuseDuringPasskeyResetHold } from "./passkey-policy.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { PasskeyChallenge, PasskeyRecord } from "./records.ts";
@@ -190,7 +186,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     if (auth.response) return auth.response;
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
-    const email = String((await body(request))?.email ?? "").trim().toLowerCase();
+    const email = bodyText((await body(request))?.email).trim().toLowerCase();
     if (email.length > 254 || !email.includes("@")) return json({ error: "Invalid request." }, 400);
     // Only the account's own address: this must not mail arbitrary people.
     if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== auth.session.sub) {
@@ -216,8 +212,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     const payload = await body(request);
-    const email = String(payload?.email ?? "").trim().toLowerCase();
-    const code = String(payload?.code ?? "");
+    const email = bodyText(payload?.email).trim().toLowerCase();
+    const code = bodyText(payload?.code);
     if (email.length > 254 || !email.includes("@") || !code) return json({ error: "Invalid request." }, 400);
     if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== auth.session.sub) {
       return json({ error: "This e-mail address does not belong to the signed-in account." }, 403);
@@ -235,7 +231,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
   if (url.pathname === "/api/passkeys/register/options" && request.method === "POST") {
     const token = bearerToken(request);
     const payload = await body(request);
-    const email = String(payload?.email ?? "").trim().toLowerCase();
+    const email = bodyText(payload?.email).trim().toLowerCase();
     if (!token || email.length > 254 || !email.includes("@")) return json({ error: "Invalid request." }, 400);
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
     const session = await realSession(env, token);
@@ -244,6 +240,12 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, userKey);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     if (await isRevoked(env, userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    // While the wait after a password reset runs, no passkey is added either: the reset removed the
+    // account's passkeys, so "an established passkey is needed to add one" (below) no longer protects it,
+    // and a passkey registered with a stolen mailbox code would be the thief's way back in. Checked before
+    // the mailbox code is asked for, so the owner is not sent for a code and then refused.
+    const onHold = await refuseDuringPasskeyResetHold(env, session.sub);
+    if (onHold) return onHold;
     // Signing in with this passkey later is treated as proof of THIS e-mail
     // (mintPasskeySession), so the address must already belong to the account
     // that is registering it. A session for any account used to be enough to
@@ -291,14 +293,18 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
       if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     }
     const payload = await body(request);
-    const transaction = String(payload?.transaction ?? "");
+    const transaction = bodyText(payload?.transaction);
     const pending = await env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json");
     if (!token || !pending || pending.kind !== "registration" || pending.userKey !== await sha256Hex(token)) {
       return json({ error: "Registration expired." }, 400);
     }
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-    if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    const registering = await realSession(env, token);
+    if (!registering) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     if (await isRevoked(env, pending.userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    // Again here: the hold may have started after the options were issued (a reset in another session).
+    const holdOnVerify = await refuseDuringPasskeyResetHold(env, registering.sub);
+    if (holdOnVerify) return holdOnVerify;
     if (!(await claimChallenge(env, transaction))) return json({ error: "Registration expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     await env.STUDIQUO_DATA.delete(emailProofKey(pending.userKey));
@@ -366,8 +372,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
     const payload = await body(request);
-    const transaction = String(payload?.transaction ?? "");
-    const credentialID = String(payload?.credential?.id ?? "");
+    const transaction = bodyText(payload?.transaction);
+    const credentialID = bodyText(payload?.credential?.id);
     const [pending, record] = await Promise.all([
       env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json"),
       env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${credentialID}`, "json"),
@@ -457,7 +463,7 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     const payload = await body(request);
-    const action = String(payload?.action ?? "");
+    const action = bodyText(payload?.action);
     if (!REAUTH_ACTIONS.includes(action)) return json({ error: "Invalid action." }, 400);
     const ids = await listEstablishedPasskeys(env, auth.session.sub, null);
     if (ids.length === 0) return json({ error: "No passkey is registered." }, 404);
@@ -480,8 +486,8 @@ export async function handlePasskeys(url: URL, request: Request, env: Env) {
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     const payload = await body(request);
-    const transaction = String(payload?.transaction ?? "");
-    const credentialID = String(payload?.credential?.id ?? "");
+    const transaction = bodyText(payload?.transaction);
+    const credentialID = bodyText(payload?.credential?.id);
     const [pending, record] = await Promise.all([
       env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json"),
       env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${credentialID}`, "json"),

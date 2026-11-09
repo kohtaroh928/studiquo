@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { quantityEvidencePresent, distinctiveTerms, distinctiveLatinTerms, termsMissingFrom, withoutTerms } from './rag/detail-presence.ts';
 import { retrieve } from './rag/retrieval.ts';
+import { clearRerankWinnerPage } from './rag/ranking.ts';
 import { EMPTY_DETAILS } from './rag/contract.ts';
 import { indexSource, accountKey } from './rag/storage.ts';
 import { qualityEnvironment, qualitySource } from './rag-quality-fixture.ts';
@@ -179,6 +180,42 @@ test('a subject made only of common words is tied to the top excerpt alone', () 
   const other = '台風の強さは最大風速33m/s以上で区別される。';
   assert.equal(quantityEvidencePresent(ask, [{ text: top, primary: true }, { text: other }], { tied: true }), false);
   assert.equal(quantityEvidencePresent(ask, [{ text: top + '最大風速は50m/sだった。', primary: true }, { text: other }], { tied: true }), true);
+});
+
+test('the page the reranker rated best is where the answer is expected, even when another excerpt is listed first', () => {
+  const ask = '2024年末時点で、携帯電話などの移動系の契約は、加入電話などの固定系の契約のおよそ何倍に達していますか。';
+  const first = '図表 契約数の推移';
+  const answer = '移動通信の契約数は固定通信の契約数の約17.3倍となっている。';
+  const tied = { tied: true };
+  // The question has no katakana or Latin subject, so only the first excerpt or the reranker page can carry the number.
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer, rerankTop: true }], tied), true);
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer }], tied), false, 'listed second and not from the reranker page');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true, rerankTop: true }, { text: answer }], tied), false, 'the reranker page carries no number');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: '契約は増加している。', rerankTop: true }], tied), false, 'it must carry the asked kind of number');
+  assert.equal(quantityEvidencePresent(ask, [{ text: first, primary: true }, { text: answer }], { tied: false }), true, 'untied questions are unaffected');
+  // A number about another subject, next to the right excerpt, is not rescued by being nearby.
+  const named = '台風第21号の最大風速は何m/sでしたか。';
+  assert.equal(quantityEvidencePresent(named, [{ text: '台風第21号は2018年9月に上陸した。', primary: true, rerankTop: true }, { text: '台風の強さは最大風速33m/s以上で区別される。' }], tied), false);
+  assert.equal(quantityEvidencePresent(named, [{ text: '台風第21号は2018年9月に上陸した。', primary: true }, { text: '台風の強さは最大風速33m/s以上で区別される。', rerankTop: true }], tied), true, 'the reranker page is accepted');
+  // A question with a katakana or Latin subject keeps needing it in the excerpt, even on the reranker's page.
+  const karen = 'Hurricane Karenの最大風速は何ノットでしたか。';
+  assert.equal(quantityEvidencePresent(karen, [{ text: 'Hurricane Karenは2001年9月に発生した。', primary: true }, { text: '台風の最大風速は105kt以上で猛烈な台風とされる。', rerankTop: true }], tied), false);
+  assert.equal(quantityEvidencePresent(karen, [{ text: 'Hurricane Karenは2001年9月に発生した。', primary: true }, { text: 'Karenの最大風速は80ノットだった。', rerankTop: true }], tied), true);
+});
+
+test('the reranker winner is a page only when the reranker answered clearly', () => {
+  const candidates = [{ chunk_id: 'a', source_id: 's1', page_number: 4 }, { chunk_id: 'b', source_id: 's1', page_number: 81 }, { chunk_id: 'c', source_id: 's2', page_number: 7 }];
+  const scores = (...v: number[]) => v.map((score, id) => ({ id, score }));
+  assert.deepEqual(clearRerankWinnerPage(candidates, scores(0.2, 0.9, 0.4)), { source: 's1', page: 81 });
+  assert.deepEqual(clearRerankWinnerPage(candidates, scores(0.2, 0.4, 0.9)), { source: 's2', page: 7 });
+  assert.equal(clearRerankWinnerPage(candidates, scores(0.2, 0.9, 0.9)), null, 'the top two scores tie');
+  assert.equal(clearRerankWinnerPage(candidates, scores(0.2, 0.9)), null, 'the response does not match the candidates');
+  assert.equal(clearRerankWinnerPage(candidates, undefined), null);
+  assert.equal(clearRerankWinnerPage(candidates, []), null);
+  assert.equal(clearRerankWinnerPage(candidates, [{ id: 0, score: 0.1 }, { id: 0, score: 0.9 }, { id: 2, score: 0.3 }]), null, 'a duplicated id');
+  assert.equal(clearRerankWinnerPage(candidates, [{ id: 0, score: 0.1 }, { id: 1, score: Number.NaN }, { id: 2, score: 0.3 }]), null, 'a score that is not a number');
+  assert.equal(clearRerankWinnerPage(candidates, [{ id: 0, score: 0.1 }, { id: 7, score: 0.9 }, { id: 2, score: 0.3 }]), null, 'an id out of range');
+  assert.equal(clearRerankWinnerPage([{ chunk_id: 'x', source_id: 's', page_number: null }], [{ id: 0, score: 1 }]), null, 'no page number');
 });
 
 test('a number on an unrelated page does not rescue a question whose own page lacks it', async () => {

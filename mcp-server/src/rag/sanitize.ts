@@ -2,7 +2,9 @@
 // bidirectional controls, Unicode tag characters (U+E0000 block, used to hide
 // whole sentences), soft hyphens, BOM, C0/C1 controls, and the blank "fillers"
 // (Hangul, Khmer, Braille, combining grapheme joiner) that carry no visible mark.
-// Newline, tab and carriage return stay.
+// Newline, tab and carriage return stay. A PDF's object placeholder (U+FFFC, one per image or
+// shape in the page text) goes too, along with a line that holds nothing else: left blank, that
+// line would read as a paragraph break through the middle of a table or a sentence.
 //
 // Some invisible characters are also part of ordinary writing, so they are removed
 // only where they carry no meaning:
@@ -17,6 +19,8 @@
 // This hides nothing from the model on purpose; it only stops a document from
 // carrying text the owner never saw. Returns the count, never the characters.
 const HIDDEN = /[\p{Cf}\p{Cc}ㅤᅟᅠ⠀͏ﾠ឴឵]/gu;
+const OBJECT_PLACEHOLDER = /\uFFFC/gu;
+const OBJECT_LINE = /^[ \t\uFFFC]*\uFFFC[ \t\uFFFC]*(?:\r?\n|$)/gmu;
 const KEEP = new Set(["\n", "\t", "\r", "‌", "‍"]);
 const SELECTOR_RUN = /\p{Variation_Selector}{2,}/gu;
 const SELECTOR_AFTER_NON_HAN = /(?<!\p{Script=Han})[\u{E0100}-\u{E01EF}]/gu;
@@ -40,9 +44,9 @@ const ZWNJ_OUTSIDE_SCRIPTS = new RegExp(`\\u200C(?![${JOINING}])|(?<![${JOINING}
 const SPECIAL_SPACE = /[   -   ]/gu;
 
 export function stripInvisible(value: any) {
-  const text = String(value ?? "");
   let removed = 0;
   const drop = (match: any) => { removed += Array.from(match).length; return ""; };
+  const text = String(value ?? "").replace(OBJECT_LINE, (line: any) => { removed += (line.match(OBJECT_PLACEHOLDER) ?? []).length; return ""; }).replace(OBJECT_PLACEHOLDER, drop);
   // Variant-form selectors are kept only while they stay rare among the Han characters;
   // a message can be written one byte per character in them (about eight bits each).
   const han = (text.match(/\p{Script=Han}/gu) ?? []).length;

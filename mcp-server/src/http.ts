@@ -105,6 +105,47 @@ export async function readJSONLimited(request: Request, maximumBytes: number): P
 }
 
 /**
+ * Thrown by `bodyText` for a JSON body member that should be text but is an
+ * object or array. The router answers it with 400 (`invalidBodyResponse`),
+ * not the 500 such a body used to become.
+ */
+export class InvalidBodyError extends Error {
+  constructor() {
+    super("A request body member has the wrong type.");
+    this.name = "InvalidBodyError";
+  }
+}
+
+/**
+ * A member of a JSON request body that the route reads as text. A string is
+ * returned as it is, and a number or boolean as String() writes it (what these
+ * routes have always accepted); absent (undefined or null) gives `fallback`.
+ * An object or array throws InvalidBodyError: it is not text the client meant,
+ * and String() on one with its own "toString" member ({"toString":{}}) throws
+ * a TypeError, which reached the client as a 500 on routes anyone can call.
+ */
+export function bodyText<F extends string | null = string>(value: unknown, fallback: F = "" as F): string | F {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  throw new InvalidBodyError();
+}
+
+/**
+ * Number() of a JSON body member, as the routes read numbers: a number, numeric
+ * string, boolean or null/undefined converts as Number() does; an object or
+ * array gives NaN instead of throwing (Number({"toString":{}}) is a TypeError).
+ */
+export function bodyNumber(value: unknown): number {
+  return value !== null && typeof value === "object" ? NaN : Number(value);
+}
+
+/** The 400 for an InvalidBodyError, for a catch-all that would otherwise answer 500; null for any other error. */
+export function invalidBodyResponse(error: unknown): Response | null {
+  return error instanceof InvalidBodyError ? json({ error: "Invalid request." }, 400) : null;
+}
+
+/**
  * Whether `value` is well-formed standard base64 (what `atob` accepts). Stored
  * photos are decoded when they are served, so one that is not would make every
  * later download of it fail with a 500.

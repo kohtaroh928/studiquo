@@ -78,6 +78,7 @@ enum NotebookBackupService {
     }
 
     static func export(_ notebook: Notebook) -> URL? {
+        guard !notebook.isLocked, !notebook.hasLockedPDFToUnlock, !notebook.hasEncryptedPages else { return nil }
         let archive = makeArchive(notebook)
         guard let data = try? JSONEncoder().encode(archive) else { return nil }
         let safeName = notebook.title.replacingOccurrences(of: "/", with: "-")
@@ -95,7 +96,7 @@ enum NotebookBackupService {
     /// encrypted before writing; that's a smaller risk than silently
     /// defeating the lock.
     static func saveAutomaticBackup(for notebook: Notebook) {
-        guard !notebook.isLocked else { return }
+        guard !notebook.isLocked, !notebook.hasLockedPDFToUnlock, !notebook.hasEncryptedPages else { return }
         guard let data = try? JSONEncoder().encode(makeArchive(notebook)) else { return }
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -144,7 +145,8 @@ enum NotebookBackupService {
               let urls = try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
         return urls.compactMap { url in
             guard let data = try? Data(contentsOf: url),
-                  let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
+                  let archive = try? JSONDecoder().decode(Archive.self, from: data),
+              archive.pages.count <= ImportLimits.maxBackupPages else { return nil }
             return AutomaticBackup(url: url, title: archive.title, date: archive.createdAt ?? modificationDate(url))
         }
         .sorted { $0.date > $1.date }
@@ -159,10 +161,16 @@ enum NotebookBackupService {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) == nil,
               let data = try? Data(contentsOf: url),
-              let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
+              let archive = try? JSONDecoder().decode(Archive.self, from: data),
+              archive.pages.count <= ImportLimits.maxBackupPages else { return nil }
         let notebook = Notebook(title: archive.title)
         notebook.folderName = archive.folderName
         notebook.tagsText = archive.tagsText
+        // The relationship arrays are filled locally and assigned once. `addPage`/`addElement` read and
+        // write the whole relationship on every call, so 4,000 pages took 9 seconds (growth with the
+        // square of the count).
+        var restoredPages: [NotePage] = []
+        restoredPages.reserveCapacity(archive.pages.count)
         for (index, storedPage) in archive.pages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: storedPage.backgroundImageData, pageWidth: storedPage.width, pageHeight: storedPage.height)
             page.drawingData = storedPage.drawingData
@@ -176,17 +184,19 @@ enum NotebookBackupService {
             page.flashcardAnswer = storedPage.flashcardAnswer ?? ""
             page.flashcardMastery = storedPage.flashcardMastery ?? 0
             page.flashcardReviewCount = storedPage.flashcardReviewCount ?? 0
+            var restoredElements: [PageElement] = []
+            restoredElements.reserveCapacity(storedPage.elements.count)
             for storedElement in storedPage.elements {
                 guard let kind = PageElementKind(rawValue: storedElement.kind) else { continue }
                 let element = PageElement(kind: kind, text: storedElement.text, imageData: storedElement.imageData, centerX: storedElement.centerX, centerY: storedElement.centerY, width: storedElement.width, height: storedElement.height, rotation: storedElement.rotation, colorHex: storedElement.colorHex, lineWidth: storedElement.lineWidth ?? 3)
                 element.isLocked = storedElement.isLocked
                 element.layerIndex = storedElement.layerIndex
-                element.page = page
-                page.addElement(element)
+                restoredElements.append(element)
             }
-            page.notebook = notebook
-            notebook.addPage(page)
+            page.elements = restoredElements.isEmpty ? nil : restoredElements
+            restoredPages.append(page)
         }
+        notebook.pages = restoredPages.isEmpty ? nil : restoredPages
         notebook.refreshLibraryMetadata()
         return notebook.sortedPages.isEmpty ? nil : notebook
     }
