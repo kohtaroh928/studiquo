@@ -196,6 +196,7 @@ struct TextDocumentView: View {
     @State private var isCollabSyncing = false
     @State private var collabReadOnly = false
     @State private var collabStatus: String?
+    @State private var collabTrace: [String] = []
     @State private var showsCollabSheet = false
     @State private var showsInsertEquationSheet = false
     @State private var equationDraft = ""
@@ -395,7 +396,7 @@ struct TextDocumentView: View {
             }
             .accessibilityLabel("共同編集")
             .sheet(isPresented: $showsCollabSheet) {
-                CollabSheet(document: document, status: collabStatus, readOnly: collabReadOnly, onChange: { try? modelContext.save() }, onSyncNow: { await syncCollabOnce() })
+                CollabSheet(document: document, status: collabStatus, trace: collabTrace, readOnly: collabReadOnly, onChange: { try? modelContext.save() }, onSyncNow: { await syncCollabOnce() })
             }
 
             Menu {
@@ -967,8 +968,10 @@ struct TextDocumentView: View {
                     attributedText.string == marker.live && DocumentSnapshotCodec.make(from: document).snapshot == marker.snapshot
                 },
                 didApply: { reloadAfterRemoteApply() },
-                save: { try? modelContext.save() }
+                save: { try? modelContext.save() },
+                trace: { collabTrace = Array((collabTrace + [$0]).suffix(6)) }
             )
+            collabTrace.append("結果: \(outcome)")
             switch outcome {
             case .upToDate: collabStatus = L("同期済み")
             case .skipped: collabStatus = L("入力中のため、次の同期で反映します")
@@ -984,6 +987,7 @@ struct TextDocumentView: View {
             collabReadOnly = true
             collabStatus = L("この文書は閲覧のみです(レビュアー)")
         } catch {
+            collabTrace.append("エラー: \(error)")
             collabStatus = L("同期できません。通信環境を確認してください")
         }
     }
@@ -2821,6 +2825,7 @@ private struct ChangeHistorySheet: View {
 private struct CollabSheet: View {
     @Bindable var document: TextDocument
     let status: String?
+    let trace: [String]
     let readOnly: Bool
     let onChange: () -> Void
     let onSyncNow: () async -> Void
@@ -2931,6 +2936,9 @@ private struct CollabSheet: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if let status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(Array(trace.suffix(5).enumerated()), id: \.offset) { _, line in
+                    Text(line).font(.caption2.monospaced()).foregroundStyle(.tertiary)
                 }
             }
         }

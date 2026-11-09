@@ -62,7 +62,8 @@ enum CollabSyncEngine {
         flush: () -> Void,
         stillCurrent: () -> Bool,
         didApply: () -> Void,
-        save: () -> Void
+        save: () -> Void,
+        trace: (String) -> Void = { _ in }
     ) async throws -> Outcome {
         guard let roomID = document.collabRoomID else { return .upToDate }
         flush()
@@ -72,11 +73,13 @@ enum CollabSyncEngine {
             let (local, localAssets) = DocumentSnapshotCodec.make(from: document)
             let base = DocumentSnapshot.decoded(document.collabBaseSnapshot)
             let reply = try await client.snapshot(roomID: roomID, since: document.collabRevision)
-            guard stillCurrent() else { return .skipped }
+            trace("取得 版=\(reply.revision) 手元=\(document.collabRevision) 書込=\(canWrite)")
+            guard stillCurrent() else { trace("中断: 取得中に本文が変わった"); return .skipped }
 
             // The room has no snapshot yet: the owner's (or an editor's) version becomes it.
             if reply.revision == 0 {
-                guard canWrite else { return .upToDate }
+                guard canWrite else { trace("書込権限なし"); return .upToDate }
+                trace("最初の送信")
                 switch try await push(local, assets: localAssets, base: 0, roomID: roomID, client: client, document: document, save: save) {
                 case .done: return .pushed
                 case .conflict: continue
