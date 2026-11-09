@@ -49,6 +49,11 @@ enum CollabInviteImporter {
         let whole = DocumentBlockText.joinedText(of: blocks)
         document.bodyData = DocumentBody.encode(whole)
         document.plainText = whole.string
+        for block in state.blocks {
+            if block.kind == "header" || block.kind == "footer", !block.text.isEmpty {
+                document.headerFooter(block.kind == "header" ? .header : .footer).text = block.text
+            }
+        }
         document.collabRoomID = roomID
         return document
     }

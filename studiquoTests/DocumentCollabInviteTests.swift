@@ -48,3 +48,62 @@ final class CollabInviteImporterTests: XCTestCase {
         XCTAssertFalse(CollabInviteImporter.title(inviterName: nil).isEmpty)
     }
 }
+
+final class CollabRemoteChangeTests: XCTestCase {
+    func testHeaderAndFooterUseReservedOrdersThatRoundTrip() {
+        XCTAssertEqual(DocumentCollabService.blockOrder(forTarget: "header"), DocumentCollabService.headerBlockOrder)
+        XCTAssertEqual(DocumentCollabService.blockOrder(forTarget: "footer"), DocumentCollabService.footerBlockOrder)
+        XCTAssertNil(DocumentCollabService.blockOrder(forTarget: nil))
+        XCTAssertEqual(DocumentCollabService.target(forBlockOrder: DocumentCollabService.headerBlockOrder), "header")
+        XCTAssertEqual(DocumentCollabService.target(forBlockOrder: DocumentCollabService.footerBlockOrder), "footer")
+        XCTAssertNil(DocumentCollabService.target(forBlockOrder: 3))
+    }
+
+    func testAcceptingARemoteHeaderChangeWritesTheHeader() {
+        let document = TextDocument(title: "d")
+        let record = DocumentChangeRecord(author: "a", kind: .edit, previousText: "", newText: "新しいヘッダー", anchorBlock: nil)
+        record.collabTarget = "header"
+        record.isRemote = true
+        record.applyRemoteChange(to: document)
+        XCTAssertEqual(document.header?.text, "新しいヘッダー")
+        XCTAssertNil(document.footer)
+    }
+
+    func testAcceptingARemoteParagraphChangeWritesThatBlockOnly() {
+        let document = TextDocument(title: "d")
+        let block = DocumentBlock(order: 0)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: "古い"))
+        block.document = document
+        document.blocks = [block]
+        let record = DocumentChangeRecord(author: "a", kind: .edit, previousText: "古い", newText: "新しい", anchorBlock: block)
+        record.isRemote = true
+        record.applyRemoteChange(to: document)
+        XCTAssertEqual(DocumentBody.decode(block.bodyData).string, "新しい")
+    }
+
+    func testALocalChangeIsNotReappliedAndRejectingARemoteOneRevertsNothing() {
+        let document = TextDocument(title: "d")
+        let block = DocumentBlock(order: 0)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: "今"))
+        let local = DocumentChangeRecord(author: "a", kind: .edit, previousText: "前", newText: "後", anchorBlock: block)
+        local.applyRemoteChange(to: document)
+        XCTAssertEqual(DocumentBody.decode(block.bodyData).string, "今")
+        let remote = DocumentChangeRecord(author: "a", kind: .edit, previousText: "前", newText: "後", anchorBlock: block)
+        remote.isRemote = true
+        remote.reject()
+        XCTAssertEqual(DocumentBody.decode(block.bodyData).string, "今")
+        XCTAssertEqual(remote.status, .rejected)
+    }
+
+    func testImportedDocumentCarriesTheRoomsHeaderAndFooter() {
+        let state = DocumentCollabService.RoomState(blocks: [
+            .init(order: 0, kind: "paragraph", text: "本文", listKind: nil, listLevel: 0, paragraphStyle: nil),
+            .init(order: DocumentCollabService.headerBlockOrder, kind: "header", text: "ヘッダー", listKind: nil, listLevel: 0, paragraphStyle: nil),
+            .init(order: DocumentCollabService.footerBlockOrder, kind: "footer", text: "", listKind: nil, listLevel: 0, paragraphStyle: nil),
+        ], pendingChanges: [])
+        let document = CollabInviteImporter.makeDocument(roomID: "r", inviterName: nil, state: state)
+        XCTAssertEqual(document.header?.text, "ヘッダー")
+        XCTAssertNil(document.footer)
+        XCTAssertEqual(document.sortedBlocks.count, 1)
+    }
+}

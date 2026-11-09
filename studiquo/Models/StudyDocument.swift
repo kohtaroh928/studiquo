@@ -713,6 +713,15 @@ final class DocumentChangeRecord {
     /// remote participant's pending change is pulled down and mirrored here
     /// so it shows up in the same change-history UI.
     var collabChangeID: Int?
+    /// Which part of the document a collaboration change targets: nil for a
+    /// paragraph (`anchorBlock`), or "header" / "footer". The room keeps those
+    /// two under reserved block orders (`DocumentCollabService.headerBlockOrder`).
+    var collabTarget: String?
+    /// True for a change another participant proposed and this device mirrored
+    /// from the room. Its text is not in this document yet; accepting it
+    /// applies it (see `applyRemoteChange`). A change made on this device is
+    /// already applied locally when it is recorded.
+    var isRemote: Bool = false
 
     init(author: String, kind: DocumentChangeKind, previousText: String, newText: String, anchorBlock: DocumentBlock?) {
         self.author = author
@@ -736,8 +745,25 @@ final class DocumentChangeRecord {
     /// Restores `anchorBlock`'s text to `previousText` and marks this
     /// `.rejected`. A no-op (still marks `.rejected`) if `anchorBlock` no
     /// longer exists — there's nothing left to revert.
+    /// Puts a remote change's text into `document`: the header or footer, or
+    /// the paragraph it was made to. A no-op for a local record, and for a
+    /// paragraph change whose block no longer exists.
+    func applyRemoteChange(to document: TextDocument) {
+        guard isRemote else { return }
+        switch collabTarget {
+        case "header": document.headerFooter(.header).text = newText
+        case "footer": document.headerFooter(.footer).text = newText
+        default:
+            anchorBlock?.bodyData = DocumentBody.encode(
+                NSAttributedString(string: newText, attributes: DocumentBody.defaultAttributes())
+            )
+        }
+        document.updatedAt = .now
+    }
+
     func reject() {
-        if let anchorBlock {
+        // A remote change was never applied here, so there is nothing to revert.
+        if !isRemote, let anchorBlock {
             anchorBlock.bodyData = DocumentBody.encode(
                 NSAttributedString(string: previousText, attributes: DocumentBody.defaultAttributes())
             )
