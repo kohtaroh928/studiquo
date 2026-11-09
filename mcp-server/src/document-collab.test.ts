@@ -1204,3 +1204,24 @@ test("images the new snapshot no longer names are dropped; a just-uploaded one i
   assert.equal(await has(dropped), 200, "uploaded a moment ago: kept during the grace period");
   assert.equal(await has(keep), 200);
 });
+
+test("missingAssets deduplicates, drops non-hex hashes, caps at 200, and rejects non-string elements", async () => {
+  const { env, tokens } = await roomWith(["editor"]);
+  const valid200 = Array.from({ length: 200 }, (_, i) => i.toString(16).padStart(64, "0"));
+  const tooMany205 = [...valid200, valid200[0], "not-a-hash", "UPPER".padStart(64, "0"), "f".repeat(64)];
+
+  const cappedMissing = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/assets/missing`, { method: "POST", token: tokens.editor, body: { hashes: tooMany205 } }),
+    env, noopCtx
+  );
+  assert.equal(cappedMissing.status, 200);
+  const body = await cappedMissing.json();
+  assert.equal(body.missing.length, 200);
+  assert.deepEqual(body.missing, valid200);
+
+  const nonStringMissing = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/assets/missing`, { method: "POST", token: tokens.editor, body: { hashes: [123] } }),
+    env, noopCtx
+  );
+  assert.equal(nonStringMissing.status, 400);
+});
