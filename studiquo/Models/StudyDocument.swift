@@ -65,6 +65,11 @@ final class TextDocument {
     /// local-only. A 64-hex-character string minted client-side by whoever
     /// first turns collaboration on for this document.
     var collabRoomID: String?
+    /// The room revision this document was last in step with, and the snapshot
+    /// of that moment — the common ancestor a sync merges both sides against.
+    /// Zero / nil until the first sync (see `CollabSyncEngine`).
+    var collabRevision: Int = 0
+    @Attribute(.externalStorage) var collabBaseSnapshot: Data?
 
     init(title: String = "無題の文書") {
         self.title = title
@@ -295,6 +300,10 @@ final class DocumentBlock {
     @Relationship(inverse: \DocumentChangeRecord.anchorBlock)
     var anchoredChangeRecords: [DocumentChangeRecord]?
     var document: TextDocument?
+    /// A stable identity for this block across devices in a shared document
+    /// (the room's snapshot names blocks by it). Assigned the first time the
+    /// document is synced; carried over when the editor rebuilds a paragraph.
+    var collabID: String?
 
     init(order: Int, kind: DocumentBlockKind = .paragraph) {
         self.order = order
@@ -1080,6 +1089,11 @@ extension TextDocument {
         let newRun = DocumentBlockText.makeParagraphBlocks(from: text)
         for block in newRun { block.document = self }
         DocumentBlockText.carryOverListMetadata(from: oldRun, to: newRun)
+        // The editor hands back fresh blocks; a shared document's sync identity
+        // must survive that, matched by position within the run.
+        for (index, block) in newRun.enumerated() where index < oldRun.count {
+            block.collabID = oldRun[index].collabID
+        }
         all.replaceSubrange(startIndex...endIndex, with: newRun)
         for (index, block) in all.enumerated() { block.order = index }
         blocks = all

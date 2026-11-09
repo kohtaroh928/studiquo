@@ -116,6 +116,57 @@ enum DocumentCollabService {
         try await request(path: "api/document/rooms/\(roomID)/invite/decline", method: "POST", body: [String: String]())
     }
 
+    // MARK: Whole-document sync
+
+    struct SnapshotReply: Codable {
+        let revision: Int
+        let snapshot: String?
+        let unchanged: Bool?
+    }
+    struct RevisionReply: Codable { let revision: Int }
+    struct MissingReply: Codable { let missing: [String] }
+    struct AssetReply: Codable { let data: String }
+    /// The room has moved on since the revision this device last saw.
+    struct RevisionConflict: Error { let currentRevision: Int }
+
+    static func snapshot(roomID: String, since: Int) async throws -> SnapshotReply {
+        try await request(path: "api/document/rooms/\(roomID)/snapshot?since=\(since)", method: "GET", body: Optional<String>.none)
+    }
+
+    static func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
+        struct Body: Encodable { let baseRevision: Int; let snapshot: String }
+        do {
+            let reply: RevisionReply = try await request(
+                path: "api/document/rooms/\(roomID)/snapshot", method: "PUT", body: Body(baseRevision: baseRevision, snapshot: snapshot)
+            )
+            return reply.revision
+        } catch let error as ServerError where error.status == 409 {
+            throw RevisionConflict(currentRevision: -1)
+        }
+    }
+
+    static func missingAssets(roomID: String, hashes: [String]) async throws -> [String] {
+        let reply: MissingReply = try await request(
+            path: "api/document/rooms/\(roomID)/assets/missing", method: "POST", body: ["hashes": hashes]
+        )
+        return reply.missing
+    }
+
+    static func putAsset(roomID: String, hash: String, data: Data) async throws {
+        let _: [String: String] = try await request(
+            path: "api/document/rooms/\(roomID)/assets/\(hash)", method: "PUT", body: ["data": data.base64EncodedString()]
+        )
+    }
+
+    static func asset(roomID: String, hash: String) async throws -> Data? {
+        do {
+            let reply: AssetReply = try await request(path: "api/document/rooms/\(roomID)/assets/\(hash)", method: "GET", body: Optional<String>.none)
+            return Data(base64Encoded: reply.data)
+        } catch let error as ServerError where error.status == 404 {
+            return nil
+        }
+    }
+
     static func participants(roomID: String) async throws -> [Participant] {
         try await request(path: "api/document/rooms/\(roomID)/participants", method: "GET", body: Optional<String>.none)
     }

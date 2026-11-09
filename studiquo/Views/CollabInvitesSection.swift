@@ -119,10 +119,21 @@ struct CollabInvitesSection: View {
             return
         }
         do {
-            let state = try await DocumentCollabService.state(roomID: invite.roomID)
-            let document = CollabInviteImporter.makeDocument(
-                roomID: invite.roomID, inviterName: invite.inviterName, state: state
-            )
+            let document: TextDocument
+            let reply = try await DocumentCollabService.snapshot(roomID: invite.roomID, since: -1)
+            if reply.revision > 0, let text = reply.snapshot, let snapshot = DocumentSnapshot.decoded(Data(text.utf8)) {
+                var assets: [String: Data] = [:]
+                for hash in Set(snapshot.blocks.compactMap(\.imageHash)) {
+                    if let data = try await DocumentCollabService.asset(roomID: invite.roomID, hash: hash) { assets[hash] = data }
+                }
+                document = CollabInviteImporter.makeDocument(
+                    roomID: invite.roomID, inviterName: invite.inviterName, snapshot: snapshot, revision: reply.revision, assets: assets
+                )
+            } else {
+                // The owner has not synced yet (an older version of the app): start from the text the room holds.
+                let state = try await DocumentCollabService.state(roomID: invite.roomID)
+                document = CollabInviteImporter.makeDocument(roomID: invite.roomID, inviterName: invite.inviterName, state: state)
+            }
             modelContext.insert(document)
             try modelContext.save()
             inbox.acceptedNotImported.removeAll { $0.roomID == invite.roomID }
