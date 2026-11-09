@@ -33,19 +33,19 @@ struct LiveDocumentSnapshotClient: DocumentSnapshotClient {
 /// editor text and the document's content. `updatedAt` is deliberately not part
 /// of it — every autosave bumps it, which once made nearly every round look
 /// "edited" and be dropped, so nothing was ever sent.
-struct CollabEditFingerprint: Equatable {
+struct CollabEditMarker: Equatable {
     /// The editor's whole live text with its formatting, not just the characters:
     /// a bold applied while the network call ran must count as an edit too.
     var live: NSAttributedString
     var snapshot: DocumentSnapshot
 
-    static func == (lhs: CollabEditFingerprint, rhs: CollabEditFingerprint) -> Bool {
+    static func == (lhs: CollabEditMarker, rhs: CollabEditMarker) -> Bool {
         lhs.live.isEqual(to: rhs.live) && lhs.snapshot == rhs.snapshot
     }
 
     @MainActor
-    static func capture(of document: TextDocument, live: NSAttributedString) -> CollabEditFingerprint {
-        CollabEditFingerprint(live: live, snapshot: DocumentSnapshotCodec.make(from: document).snapshot)
+    static func capture(of document: TextDocument, live: NSAttributedString) -> CollabEditMarker {
+        CollabEditMarker(live: live, snapshot: DocumentSnapshotCodec.make(from: document).snapshot)
     }
 }
 
