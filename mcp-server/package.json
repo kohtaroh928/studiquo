@@ -16,6 +16,7 @@
     "security:dast": "node ../security/dast/run.ts",
     "security:dast:contracts": "node ../security/dast/run.ts --contracts-only",
     "security:dast:test": "node --test ../security/dast/*.test.ts",
+    "security:authz": "node --test --test-timeout=120000 ../security/authz/*.test.ts",
     "security:fuzz": "node ../security/fuzz/run.ts --enforce",
     "security:fuzz:test": "node --test ../security/fuzz/*.test.ts",
     "security:fuzz:typecheck": "tsc -p ../security/fuzz/tsconfig.json",

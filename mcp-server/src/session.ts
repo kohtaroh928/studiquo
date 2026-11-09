@@ -120,10 +120,11 @@ export async function mintSession(env: Env, identityKey: string, _suppliedByTheA
   // Read first: an ordinary sign-in has no job, and must not pay for a write.
   if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
   const key = await sha256Hex(token);
+  const issuedAtMs = Date.now(); // one reading, so a new login's origin equals its issue time
   await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({
-    sub: identityKey, issuedAt, issuedAtMs: Date.now(),
+    sub: identityKey, issuedAt, issuedAtMs,
     // When the login this token descends from began (see handleSessionRefresh).
-    originIssuedAtMs: Number.isFinite(originIssuedAtMs) ? originIssuedAtMs : Date.now(),
+    originIssuedAtMs: Number.isFinite(originIssuedAtMs) ? originIssuedAtMs : issuedAtMs,
   }), {
     expirationTtl: VALIDITY_SECONDS,
   });

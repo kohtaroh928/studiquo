@@ -56,6 +56,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      - name: Type-check and run the isolated API authorization matrix
+        run: |
+          node_modules/.bin/tsc -p ../security/tsconfig.json
+          npm run security:authz
 
   # scripts/vuln-watch: the vulnerability-watch tool's type check and tests. It has
   # no runtime dependencies; typescript and @types/node are dev-only.
