@@ -16,6 +16,8 @@
 
 追記6: ユーザー承認後、`wrangler deploy --env staging --keep-vars` を実行し、staging Worker版118（`1bc17f6f-3c35-475c-927b-654993872043`）を100%配備。`wrangler deployments status` と `wrangler versions view` で `PAYWALL_ENABLED=true`、RAG有効フラグ、staging D1/Vectorize bindingを読み取り確認した。本番Worker・本番データ・D1/Vectorize内容は変更なし。次は確認枠の `studiquo-staging` で自動登録許可を再試行し、成功後に札を返却する。
 
+追記7: ユーザーが staging 実機で自動登録の成功を確認。確認枠は返却済み。最新 `origin/main`（PR #134まで）を取り込み、環境・AIプライバシー・RAG安全性テスト42件と `RAGLibrarySyncTests` を再実行して成功。独立セキュリティレビューは指摘なし。次は `codex/rag-auto-register-error` をpushしてPRを作成する。Project資料の更新: `docs/RAG_CLAUDE_HANDOFF.md`。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
