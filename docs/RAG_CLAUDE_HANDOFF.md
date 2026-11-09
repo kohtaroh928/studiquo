@@ -14,6 +14,8 @@
 
 追記5: 実機で仍 `503` のため、Worker版115の実bindingと `ai-privacy.ts` を照合。`POST /api/rag/consent`（`enabled:true`）はAI送信開始として `PAYWALL_ENABLED === "true"` を必須にするが、版115にはこのbindingがなかった。これは `AI_PROVIDER_APPROVED=true` とRAG5フラグが有効でも503になる直接原因。`097c78e` で staging に `PAYWALL_ENABLED=true`、production に明示的な `PAYWALL_ENABLED=false` を追加し、環境設定テストを更新。環境・AIプライバシー・RAG安全性テスト42件成功。`wrangler deploy --env staging --dry-run --keep-vars` は成功し、stagingだけで同フラグが `true` になることを確認。本番・D1・Vectorizeの内容は未変更。実際の staging deploy は明示承認待ち。GitHub Projectは未記録（`unknown owner type`）。
 
+追記6: ユーザー承認後、`wrangler deploy --env staging --keep-vars` を実行し、staging Worker版118（`1bc17f6f-3c35-475c-927b-654993872043`）を100%配備。`wrangler deployments status` と `wrangler versions view` で `PAYWALL_ENABLED=true`、RAG有効フラグ、staging D1/Vectorize bindingを読み取り確認した。本番Worker・本番データ・D1/Vectorize内容は変更なし。次は確認枠の `studiquo-staging` で自動登録許可を再試行し、成功後に札を返却する。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
