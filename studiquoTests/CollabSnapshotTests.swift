@@ -275,3 +275,116 @@ final class CollabRequestURLTests: XCTestCase {
         XCTAssertEqual(plain.absoluteString, "https://staging-api.studiquo.app/api/document/invites")
     }
 }
+
+// MARK: - Regression tests for problems found while building shared editing
+
+@MainActor
+final class CollabRegressionTests: XCTestCase {
+    private struct Down: Error {}
+
+    // 共有の招待が出なかった: 招待が0件のとき区画が出ず、読み込みが区画に付いていたため一度も読まれなかった。
+    // 読み込みは区画を表示する側(CollabInviteInbox)が持ち、区画の表示に依らず呼べること。
+    func testTheInviteInboxLoadsOnItsOwnWithoutAnyViewShowingIt() async {
+        let invite = DocumentCollabService.PendingInvite(roomID: "r1", role: "editor", inviterName: "田中", createdAt: 1)
+        let inbox = CollabInviteInbox(load: { [invite] })
+        XCTAssertTrue(inbox.invites.isEmpty, "nothing is shown before the screen asks")
+        await inbox.reload()
+        XCTAssertEqual(inbox.invites, [invite])
+        XCTAssertFalse(inbox.loadFailed)
+    }
+
+    func testAFailedLoadIsOnlyReportedBeforeTheFirstSuccessAndIsClearedByTheNext() async {
+        var fail = true
+        let inbox = CollabInviteInbox(load: { if fail { throw Down() }; return [] })
+        await inbox.reload()
+        XCTAssertTrue(inbox.loadFailed)
+        fail = false
+        await inbox.reload()
+        XCTAssertFalse(inbox.loadFailed)
+        fail = true
+        await inbox.reload()
+        XCTAssertFalse(inbox.loadFailed, "a blip after a good load does not raise the banner")
+    }
+
+    // 同期が一度も送信されなかった: 入力の有無を updatedAt で見ていたため、自動保存のたびに「入力中」と誤判定された。
+    func testAnAutosaveTouchingUpdatedAtIsNotAnEdit() {
+        let document = TextDocument(title: "d")
+        let block = DocumentBlock(order: 0)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
+        block.document = document
+        document.blocks = [block]
+        let before = CollabEditFingerprint.capture(of: document, liveText: "本文")
+        document.updatedAt = Date().addingTimeInterval(60)
+        XCTAssertEqual(CollabEditFingerprint.capture(of: document, liveText: "本文"), before)
+    }
+
+    func testTypingOrAChangedBlockIsAnEdit() {
+        let document = TextDocument(title: "d")
+        let block = DocumentBlock(order: 0)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
+        block.document = document
+        document.blocks = [block]
+        let before = CollabEditFingerprint.capture(of: document, liveText: "本文")
+        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, liveText: "本文あ"), before)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: "別", attributes: DocumentBody.defaultAttributes()))
+        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, liveText: "本文"), before)
+    }
+
+    // 相手の変更が自分の文書に入らなかった / ヘッダーが同期されなかった。
+    func testHeaderFooterTitleAndTableEditsReachTheOtherDevice() async throws {
+        let room = RoomForRegression()
+        let a = TextDocument(title: "元")
+        let table = DocumentBlock.makeTable(order: 0, rows: 1, columns: 2)
+        table.document = a
+        a.blocks = [table]
+        a.isMigratedToBlocks = true
+        a.collabRoomID = "room"
+        _ = try await CollabSyncEngine.sync(document: a, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+
+        let b = CollabInviteImporter.makeDocument(roomID: "room", inviterName: nil,
+            snapshot: DocumentSnapshot.decoded(Data(room.snapshotText!.utf8))!, revision: room.revision, assets: [:])
+        b.headerFooter(.header).text = "ヘッダー"
+        b.title = "改題"
+        b.sortedBlocks[0].sortedTableRows[0].sortedCells[1].text = "右"
+        _ = try await CollabSyncEngine.sync(document: b, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+        _ = try await CollabSyncEngine.sync(document: a, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+
+        XCTAssertEqual(a.header?.text, "ヘッダー")
+        XCTAssertEqual(a.title, "改題")
+        XCTAssertEqual(a.sortedBlocks[0].sortedTableRows[0].sortedCells[1].text, "右")
+    }
+
+    // 空の文書が共有されると取り込み側が空のままになる、承認しても本文に入らない、という退行を防ぐ。
+    func testAnEmptyRoomFirstSyncPushesAndAnEmptyDeviceThenReceivesEverything() async throws {
+        let room = RoomForRegression()
+        let owner = TextDocument(title: "共有")
+        for (index, text) in ["一", "二", "三"].enumerated() {
+            let block = DocumentBlock(order: index)
+            block.bodyData = DocumentBody.encode(NSAttributedString(string: text, attributes: DocumentBody.defaultAttributes()))
+            block.document = owner
+            owner.blocks = (owner.blocks ?? []) + [block]
+        }
+        owner.collabRoomID = "room"
+        let first = try await CollabSyncEngine.sync(document: owner, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+        XCTAssertEqual(first, .pushed)
+        XCTAssertEqual(room.revision, 1)
+    }
+}
+
+/// The same revision rule as the server's, for regression tests.
+private final class RoomForRegression: DocumentSnapshotClient {
+    var revision = 0
+    var snapshotText: String?
+    func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
+        if revision == 0 { return .init(revision: 0, snapshot: nil, unchanged: nil) }
+        if since == revision { return .init(revision: revision, snapshot: nil, unchanged: true) }
+        return .init(revision: revision, snapshot: snapshotText, unchanged: nil)
+    }
+    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
+        guard baseRevision == revision else { throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
+        revision += 1; snapshotText = snapshot; return revision
+    }
+    func missingAssets(roomID: String, hashes: [String]) async throws -> [String] { [] }
+    func putAsset(roomID: String, hash: String, data: Data) async throws {}
+    func asset(roomID: String, hash: String) async throws -> Data? { nil }
+}

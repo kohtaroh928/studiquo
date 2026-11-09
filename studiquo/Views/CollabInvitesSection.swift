@@ -14,10 +14,15 @@ final class CollabInviteInbox: ObservableObject {
     @Published var notice: String?
     @Published var loadFailed = false
     private var hasLoaded = false
+    private let load: () async throws -> [DocumentCollabService.PendingInvite]
+
+    init(load: @escaping () async throws -> [DocumentCollabService.PendingInvite] = { try await DocumentCollabService.pendingInvites() }) {
+        self.load = load
+    }
 
     func reload() async {
         do {
-            invites = try await DocumentCollabService.pendingInvites()
+            invites = try await load()
             loadFailed = false
             hasLoaded = true
         } catch {

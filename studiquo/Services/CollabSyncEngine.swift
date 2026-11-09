@@ -29,6 +29,20 @@ struct LiveDocumentSnapshotClient: DocumentSnapshotClient {
     }
 }
 
+/// What "the person has not edited since" means for a sync round: the live
+/// editor text and the document's content. `updatedAt` is deliberately not part
+/// of it — every autosave bumps it, which once made nearly every round look
+/// "edited" and be dropped, so nothing was ever sent.
+struct CollabEditFingerprint: Equatable {
+    var liveText: String
+    var snapshot: DocumentSnapshot
+
+    @MainActor
+    static func capture(of document: TextDocument, liveText: String) -> CollabEditFingerprint {
+        CollabEditFingerprint(liveText: liveText, snapshot: DocumentSnapshotCodec.make(from: document).snapshot)
+    }
+}
+
 /// Keeps a shared document in step with its room: pulls what others changed,
 /// merges it with what was changed here, applies the result and pushes it back.
 /// Runs on the main actor because it reads and writes the SwiftData models.
@@ -62,8 +76,7 @@ enum CollabSyncEngine {
         flush: () -> Void,
         stillCurrent: () -> Bool,
         didApply: () -> Void,
-        save: () -> Void,
-        trace: (String) -> Void = { _ in }
+        save: () -> Void
     ) async throws -> Outcome {
         guard let roomID = document.collabRoomID else { return .upToDate }
         flush()
@@ -73,13 +86,11 @@ enum CollabSyncEngine {
             let (local, localAssets) = DocumentSnapshotCodec.make(from: document)
             let base = DocumentSnapshot.decoded(document.collabBaseSnapshot)
             let reply = try await client.snapshot(roomID: roomID, since: document.collabRevision)
-            trace("取得 版=\(reply.revision) 手元=\(document.collabRevision) 書込=\(canWrite)")
-            guard stillCurrent() else { trace("中断: 取得中に本文が変わった"); return .skipped }
+            guard stillCurrent() else { return .skipped }
 
             // The room has no snapshot yet: the owner's (or an editor's) version becomes it.
             if reply.revision == 0 {
-                guard canWrite else { trace("書込権限なし"); return .upToDate }
-                trace("最初の送信")
+                guard canWrite else { return .upToDate }
                 switch try await push(local, assets: localAssets, base: 0, roomID: roomID, client: client, document: document, save: save) {
                 case .done: return .pushed
                 case .conflict: continue
