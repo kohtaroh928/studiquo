@@ -4,7 +4,7 @@ import {mkdtemp,writeFile,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath,URL} from 'node:url';
-import {runCampaign,saveReport} from './supervisor.ts';
+import {finishGroup,runCampaign,saveReport} from './supervisor.ts';
 import {spawn} from 'node:child_process';
 const script=fileURLToPath(new URL('./fixtures/child.ts',import.meta.url));
 const options=(mode:string)=>({script,family:'fixture',seed:42,signal:new AbortController().signal,extraArgs:[mode],closeTimeoutMs:3000});
@@ -66,4 +66,33 @@ for(const signal of ['SIGINT','SIGTERM'] as const)test(`CLI ${signal} stops its 
     assert.equal(report.status,'error');assert.equal(report.interruption,signal);
     assert.ok(report.reports.every((r:{cleanupConfirmed:boolean})=>r.cleanupConfirmed));
   } finally {clearTimeout(timer);await rm(directory,{recursive:true,force:true});}
+});
+
+// Regression: after SIGKILL the group's last member is a zombie for a few milliseconds, and on macOS
+// signalling it fails with EPERM. That used to be read as "cleanup failed" (a flaky test, about one run in six).
+const errno=(code:string)=>Object.assign(new Error(code),{code});
+test('a killed group that is briefly an unsignalable zombie (EPERM) is waited for, not reported as a failed cleanup',async()=>{
+  let probes=0;
+  const kill=(_pid:number,signal?:NodeJS.Signals|number)=>{
+    if(signal==='SIGKILL')return true;
+    if(++probes<=3)throw errno('EPERM');
+    throw errno('ESRCH');
+  };
+  assert.equal(await finishGroup(4242,2000,kill),true);
+  assert.equal(probes,4);
+});
+test('EPERM on the kill itself (only zombies left) is also waited out',async()=>{
+  let probes=0;
+  const kill=(_pid:number,signal?:NodeJS.Signals|number)=>{
+    if(signal==='SIGKILL')throw errno('EPERM');
+    if(++probes<=1)throw errno('EPERM');
+    throw errno('ESRCH');
+  };
+  assert.equal(await finishGroup(4242,2000,kill),true);
+});
+test('a group that never goes away is still reported as unconfirmed, and an unexpected error is a failure',async()=>{
+  assert.equal(await finishGroup(4242,120,(_pid:number,signal?:NodeJS.Signals|number)=>{if(signal==='SIGKILL')return true;throw errno('EPERM');}),false);
+  assert.equal(await finishGroup(4242,120,(_pid:number,signal?:NodeJS.Signals|number)=>{if(signal==='SIGKILL')return true;throw errno('EINVAL');}),false);
+  assert.equal(await finishGroup(4242,120,()=>{throw errno('EINVAL');}),false);
+  assert.equal(await finishGroup(undefined,120),true);
 });

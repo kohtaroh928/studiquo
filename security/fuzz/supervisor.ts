@@ -8,19 +8,39 @@ export interface CampaignOptions {
   extraArgs?:string[]; onSpawn?:(pid:number)=>void;
 }
 
-function groupExists(pid:number):boolean {
-  try { process.kill(-pid,0); return true; }
-  catch(error) { if((error as NodeJS.ErrnoException).code==='ESRCH')return false; throw error; }
+type Kill=(pid:number,signal?:NodeJS.Signals|number)=>unknown;
+const codeOf=(error:unknown)=>(error as NodeJS.ErrnoException).code;
+
+/**
+ * Whether the group still has a member. A member that was just killed stays a
+ * zombie until its new parent reaps it (a few milliseconds), and on macOS signalling
+ * a zombie fails with EPERM, not ESRCH. EPERM therefore means "still there, wait
+ * and look again", not "cannot tell"; treating it as a failure made cleanup look
+ * unconfirmed whenever the check landed in that window (a flaky test, and a
+ * campaign that stopped after a clean run).
+ */
+function groupExists(pid:number,kill:Kill):boolean {
+  try { kill(-pid,0); return true; }
+  catch(error) {
+    const code=codeOf(error);
+    if(code==='ESRCH')return false;
+    if(code==='EPERM')return true;
+    throw error;
+  }
 }
 
 /** Kill only the detached group created by this supervisor, then confirm exit. */
-async function finishGroup(pid:number|undefined,timeoutMs:number):Promise<boolean> {
+export async function finishGroup(pid:number|undefined,timeoutMs:number,kill:Kill=process.kill):Promise<boolean> {
   if(!pid)return true;
-  try { process.kill(-pid,'SIGKILL'); }
-  catch(error) { if((error as NodeJS.ErrnoException).code!=='ESRCH')return false; }
+  try { kill(-pid,'SIGKILL'); }
+  catch(error) {
+    // ESRCH: nothing left. EPERM: only zombies left. Either way, confirm below.
+    const code=codeOf(error);
+    if(code!=='ESRCH'&&code!=='EPERM')return false;
+  }
   const until=Date.now()+timeoutMs;
   do {
-    try { if(!groupExists(pid))return true; } catch { return false; }
+    try { if(!groupExists(pid,kill))return true; } catch { return false; }
     await new Promise(resolve=>setTimeout(resolve,20));
   } while(Date.now()<until);
   return false;
