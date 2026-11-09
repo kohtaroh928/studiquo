@@ -7,7 +7,7 @@
 //   GET  /api/admin/accounts/suspended
 //   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
-import { json, readJSONLimited } from "./http.ts";
+import { json, readJSONLimited, bodyText } from "./http.ts";
 import { auditAdmin } from "./audit.ts";
 import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.ts";
 import { sendPush } from "./push.ts";
@@ -102,7 +102,7 @@ export async function handleModerationActions(url: URL, request: Request, env: E
 
   const body = await readJSONLimited(request, 1_000);
   if (url.pathname === "/api/admin/accounts/suspend") {
-    const reportID = String(body?.reportID ?? "");
+    const reportID = bodyText(body?.reportID);
     if (!/^[0-9a-f-]{36}$/.test(reportID)) return json({ error: "reportID is required." }, 400);
     const scope = body?.scope === undefined ? "account" : body.scope;
     if (!Object.hasOwn(PREFIXES, scope)) return json({ error: "scope must be account or chat." }, 400);
@@ -117,8 +117,8 @@ export async function handleModerationActions(url: URL, request: Request, env: E
   }
 
   if (url.pathname === "/api/admin/accounts/unsuspend") {
-    let id = String(body?.suspensionID ?? "");
-    if (!id && /^[0-9a-f-]{36}$/.test(String(body?.reportID ?? ""))) {
+    let id = bodyText(body?.suspensionID);
+    if (!id && /^[0-9a-f-]{36}$/.test(bodyText(body?.reportID))) {
       const found = await reportedAccount(env, body.reportID);
       if (found.response) return found.response;
       id = found.identityHash;
