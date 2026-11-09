@@ -3018,6 +3018,7 @@ private struct FriendRequestsPopover: View {
                 }
             }
             groupInvites
+            CollabInvitesSection()
         }
             .themeScreenBackground()
         .navigationTitle("申請・招待")
