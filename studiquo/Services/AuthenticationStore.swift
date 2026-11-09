@@ -68,7 +68,7 @@ final class AuthenticationStore: ObservableObject {
     private let service: String
     private let onboardingKey: String
     private let passkeyIdentityAccount = "passkey-identity"
-    private let passkeyKnownKey = "authenticationPasskeyKnownOnDevice"
+    private let passkeyKnownKey: String
     private let oauthIdentityAccount = "oauth-identity"
     private let now: () -> Date
     private let defaults: UserDefaults
@@ -117,6 +117,9 @@ final class AuthenticationStore: ObservableObject {
     ) {
         self.service = service
         self.onboardingKey = LaunchStoreEnvironment.namespaced("authenticationOnboardingComplete")
+        // Per environment like the onboarding flag: staging and production builds share one UserDefaults
+        // domain on a device, and "this account has a passkey" is not true across the two servers.
+        self.passkeyKnownKey = LaunchStoreEnvironment.namespaced("authenticationPasskeyKnownOnDevice")
         self.now = now
         self.defaults = defaults
         self.unregisterPushDevice = unregisterPushDevice

@@ -14,7 +14,7 @@ node src/cli.ts triage-apply --verdicts f # エージェントの返信を検証
 npm test                                  # 単体テスト
 ```
 
-主なオプション: `--offline`(キャッシュだけで動かす)、`--no-nvd`、`--no-jvn`、`--out <dir>`、`--state <path>`、`--inventory <path>`、`--cache <dir>`、`--swift-resolved <path>`。無人実行では後ろ3つを `out/` 配下に指定し、リポジトリ管理下の台帳を変更しない。
+主なオプション: `--offline`(キャッシュだけで動かす)、`--no-nvd`、`--no-jvn`、`--out <dir>`、`--state <path>`、`--inventory <path>`、`--cache <dir>`、`--swift-resolved <path>`。無人実行では後ろ3つを `out/` 配下に指定し、リポジトリ管理下の台帳を変更しない。`--out` は `scripts/vuln-watch/out` か一時ディレクトリの中だけ受け付け、それ以外は終了コード2で止まる(シンボリックリンクで外へ出る指定も拒否する)。
 
 終了コード: `0`=完了 / `1`=失敗 / `2`=取得に失敗したデータ源があり結果が不完全 / `3`=LLM判定が反映されなかった / `4`=その両方(取得失敗あり、かつ判定なし)。取得に失敗したデータ源があるときは、判定が付いても区分は下げない。
 

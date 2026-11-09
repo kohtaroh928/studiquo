@@ -88,6 +88,9 @@ targets:
             echo "error: STUDIQUO_REVENUECAT_PUBLIC_API_KEY is empty for $CONFIGURATION. For Staging, put it in Configuration/Staging.local.xcconfig (ignored by git; a worktree under .worktrees/ reads the main checkout's copy)."
             exit 1
           fi
+          if [ "$CONFIGURATION" = "Staging" ] && { [ -z "$STUDIQUO_GOOGLE_IOS_CLIENT_ID" ] || [ -z "$STUDIQUO_GOOGLE_SERVER_CLIENT_ID" ] || [ -z "$STUDIQUO_GOOGLE_URL_SCHEME" ]; }; then
+            echo "warning: A Staging Google client ID or URL scheme is empty, so Google sign-in will not work in this build. Put STUDIQUO_GOOGLE_IOS_CLIENT_ID, STUDIQUO_GOOGLE_SERVER_CLIENT_ID and STUDIQUO_GOOGLE_URL_SCHEME in Configuration/Staging.local.xcconfig."
+          fi
     entitlements:
       path: studiquo/studiquo.entitlements
       properties:
