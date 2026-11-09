@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData, removeParticipantData } from "./document-room-store.ts";
-import { missingAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
+import { missingAssets, pruneAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
 
 // Mirrors chat-room.ts's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -175,10 +175,22 @@ export class DocumentRoom extends DurableObject<Env> {
     return readSnapshot(this.ctx.storage.sql, sinceRevision);
   }
 
-  async putSnapshot(userKey: string, baseRevision: number, text: string) {
+  // The first snapshot of a room is the owner's: it is the owner's document. An editor
+  // who got there first (the owner not having opened it since the room was made) would
+  // otherwise make a thinner copy the room's truth. `assetHashes` is what the snapshot
+  // names; images it no longer names are dropped.
+  async putSnapshot(userKey: string, baseRevision: number, text: string, assetHashes?: string[]) {
     const role = this.requireParticipant(userKey);
     if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
-    return writeSnapshot(this.ctx.storage.sql, baseRevision, text, userKey, Date.now());
+    const current = readSnapshot(this.ctx.storage.sql, -1).revision;
+    if (current === 0 && role !== "owner") return { ok: false as const, reason: "not_ready" as const, revision: 0 };
+    const result = writeSnapshot(this.ctx.storage.sql, baseRevision, text, userKey, Date.now());
+    if (result.ok && Array.isArray(assetHashes)) pruneAssets(this.ctx.storage.sql, assetHashes);
+    return result;
+  }
+
+  async roleOfAnyone(userKey: string) {
+    return this.ctx.storage.sql.exec<{ role: string }>("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role ?? null;
   }
 
   async missingAssets(userKey: string, hashes: string[]) {

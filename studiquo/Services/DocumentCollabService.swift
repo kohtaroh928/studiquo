@@ -128,20 +128,25 @@ enum DocumentCollabService {
     struct AssetReply: Codable { let data: String }
     /// The room has moved on since the revision this device last saw.
     struct RevisionConflict: Error { let currentRevision: Int }
+    /// The room has no snapshot yet and this person is not its owner: the owner's
+    /// document is the first one in, so an editor waits for it.
+    struct RoomNotReady: Error {}
 
     static func snapshot(roomID: String, since: Int) async throws -> SnapshotReply {
         try await request(path: "api/document/rooms/\(roomID)/snapshot?since=\(since)", method: "GET", body: Optional<String>.none)
     }
 
-    static func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
-        struct Body: Encodable { let baseRevision: Int; let snapshot: String }
+    static func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+        struct Body: Encodable { let baseRevision: Int; let snapshot: String; let assets: [String] }
         do {
             let reply: RevisionReply = try await request(
-                path: "api/document/rooms/\(roomID)/snapshot", method: "PUT", body: Body(baseRevision: baseRevision, snapshot: snapshot)
+                path: "api/document/rooms/\(roomID)/snapshot", method: "PUT", body: Body(baseRevision: baseRevision, snapshot: snapshot, assets: assets)
             )
             return reply.revision
         } catch let error as ServerError where error.status == 409 {
             throw RevisionConflict(currentRevision: -1)
+        } catch let error as ServerError where error.status == 412 {
+            throw RoomNotReady()
         }
     }
 

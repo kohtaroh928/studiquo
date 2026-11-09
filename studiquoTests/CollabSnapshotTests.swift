@@ -1,6 +1,14 @@
 import XCTest
 @testable import studiquo
 
+/// Two documents in one test stand for two devices: give each its own sync state, in memory.
+func installInMemoryCollabState() {
+    CollabLocalState.store = InMemoryCollabStateStore()
+    CollabLocalState.keyProvider = { document in
+        document.collabRoomID.map { "\($0)|\(ObjectIdentifier(document).hashValue)" }
+    }
+}
+
 private func para(_ text: String, id: String? = nil) -> DocumentBlock {
     let block = DocumentBlock(order: 0, kind: .paragraph)
     block.bodyData = DocumentBody.encode(NSAttributedString(string: text, attributes: DocumentBody.defaultAttributes()))
@@ -31,13 +39,15 @@ private final class FakeRoom: DocumentSnapshotClient {
     var snapshotText: String?
     var assets: [String: Data] = [:]
     var failNextPutWithConflict = false
+    var editorsMustWait = false
 
     func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
         if revision == 0 { return .init(revision: 0, snapshot: nil, unchanged: nil) }
         if since == revision { return .init(revision: revision, snapshot: nil, unchanged: true) }
         return .init(revision: revision, snapshot: snapshotText, unchanged: nil)
     }
-    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
+    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+        if editorsMustWait { throw DocumentCollabService.RoomNotReady() }
         if failNextPutWithConflict { failNextPutWithConflict = false; throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
         guard baseRevision == revision else { throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
         revision += 1
@@ -51,6 +61,7 @@ private final class FakeRoom: DocumentSnapshotClient {
 
 @MainActor
 final class CollabSnapshotTests: XCTestCase {
+    override func setUp() { installInMemoryCollabState() }
     private func sync(_ document: TextDocument, _ room: FakeRoom, canWrite: Bool = true, current: @escaping () -> Bool = { true }) async throws -> CollabSyncEngine.Outcome {
         document.collabRoomID = document.collabRoomID ?? "room"
         return try await CollabSyncEngine.sync(document: document, canWrite: canWrite, client: room, flush: {}, stillCurrent: current, didApply: {}, save: {})
@@ -280,6 +291,7 @@ final class CollabRequestURLTests: XCTestCase {
 
 @MainActor
 final class CollabRegressionTests: XCTestCase {
+    override func setUp() { installInMemoryCollabState() }
     private struct Down: Error {}
 
     // 共有の招待が出なかった: 招待が0件のとき区画が出ず、読み込みが区画に付いていたため一度も読まれなかった。
@@ -313,9 +325,9 @@ final class CollabRegressionTests: XCTestCase {
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
         block.document = document
         document.blocks = [block]
-        let before = CollabEditFingerprint.capture(of: document, liveText: "本文")
+        let before = CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文"))
         document.updatedAt = Date().addingTimeInterval(60)
-        XCTAssertEqual(CollabEditFingerprint.capture(of: document, liveText: "本文"), before)
+        XCTAssertEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文")), before)
     }
 
     func testTypingOrAChangedBlockIsAnEdit() {
@@ -324,10 +336,10 @@ final class CollabRegressionTests: XCTestCase {
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
         block.document = document
         document.blocks = [block]
-        let before = CollabEditFingerprint.capture(of: document, liveText: "本文")
-        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, liveText: "本文あ"), before)
+        let before = CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文"))
+        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文あ")), before)
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "別", attributes: DocumentBody.defaultAttributes()))
-        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, liveText: "本文"), before)
+        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文")), before)
     }
 
     // 相手の変更が自分の文書に入らなかった / ヘッダーが同期されなかった。
@@ -380,11 +392,109 @@ private final class RoomForRegression: DocumentSnapshotClient {
         if since == revision { return .init(revision: revision, snapshot: nil, unchanged: true) }
         return .init(revision: revision, snapshot: snapshotText, unchanged: nil)
     }
-    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
+    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
         guard baseRevision == revision else { throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
         revision += 1; snapshotText = snapshot; return revision
     }
     func missingAssets(roomID: String, hashes: [String]) async throws -> [String] { [] }
     func putAsset(roomID: String, hash: String, data: Data) async throws {}
     func asset(roomID: String, hash: String) async throws -> Data? { nil }
+}
+
+
+// MARK: - Regression tests for the independent review's findings
+
+@MainActor
+final class CollabReviewFindingsTests: XCTestCase {
+    override func setUp() { installInMemoryCollabState() }
+
+    private func text(_ value: String) -> Data? { DocumentBody.encode(NSAttributedString(string: value, attributes: DocumentBody.defaultAttributes())) }
+
+    // H1: an editor who opens a document the owner has not synced yet must not make the room's first snapshot.
+    func testAnEditorWaitsWhileTheRoomHasNoSnapshotAndNothingIsSent() async throws {
+        let room = FakeRoom()
+        room.editorsMustWait = true
+        let invited = CollabInviteImporter.makeDocument(
+            roomID: "room", inviterName: nil,
+            state: DocumentCollabService.RoomState(blocks: [.init(order: 0, kind: "paragraph", text: "簡易版", listKind: nil, listLevel: 0, paragraphStyle: nil)], pendingChanges: [])
+        )
+        let outcome = try await CollabSyncEngine.sync(document: invited, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+        XCTAssertEqual(outcome, .upToDate)
+        XCTAssertEqual(room.revision, 0)
+    }
+
+    // M1: inserting or deleting a paragraph must not move every later paragraph onto its neighbour's id.
+    func testInsertingAndDeletingParagraphsKeepsEachParagraphsId() {
+        let document = TextDocument(title: "d")
+        document.blocks = ["一", "二", "三", "四"].enumerated().map { index, value in
+            let block = DocumentBlock(order: index)
+            block.bodyData = text(value)
+            block.collabID = "id-\(value)"
+            block.document = document
+            return block
+        }
+        let run = document.sortedBlocks
+        let inserted = document.replaceParagraphRun(run, with: NSAttributedString(string: "一\n新\n二\n三\n四", attributes: DocumentBody.defaultAttributes()))
+        XCTAssertEqual(inserted.map(\.collabID), ["id-一", nil, "id-二", "id-三", "id-四"])
+
+        let deleted = document.replaceParagraphRun(document.sortedBlocks, with: NSAttributedString(string: "一\n二\n四", attributes: DocumentBody.defaultAttributes()))
+        XCTAssertEqual(deleted.map(\.collabID), ["id-一", "id-二", "id-四"])
+
+        let edited = document.replaceParagraphRun(document.sortedBlocks, with: NSAttributedString(string: "一\n二改\n四", attributes: DocumentBody.defaultAttributes()))
+        XCTAssertEqual(edited.map(\.collabID), ["id-一", "id-二", "id-四"], "an edited paragraph keeps its own id")
+    }
+
+    // M2: a reviewer deleting a picture gets it back, picture included, and stays in step afterwards.
+    func testAReviewerWhoDeletesAnImageGetsItBackWithItsPicture() async throws {
+        let room = FakeRoom()
+        let owner = TextDocument(title: "d")
+        let image = DocumentBlock(order: 0, kind: .image)
+        image.bodyData = Data([5, 6, 7])
+        image.document = owner
+        owner.blocks = [image]
+        owner.collabRoomID = "room"
+        _ = try await CollabSyncEngine.sync(document: owner, canWrite: true, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+
+        let reviewer = CollabInviteImporter.makeDocument(
+            roomID: "room", inviterName: nil, snapshot: DocumentSnapshot.decoded(Data(room.snapshotText!.utf8))!, revision: room.revision, assets: room.assets
+        )
+        reviewer.blocks = []
+        _ = try await CollabSyncEngine.sync(document: reviewer, canWrite: false, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+        XCTAssertEqual(reviewer.sortedBlocks.first?.bodyData, Data([5, 6, 7]))
+        let again = try await CollabSyncEngine.sync(document: reviewer, canWrite: false, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+        XCTAssertEqual(again, .upToDate, "restored once, not every round")
+    }
+
+    // M3: a bold applied while the network call ran is an edit even though the characters are the same.
+    func testFormattingOnlyChangeCountsAsAnEdit() {
+        let document = TextDocument(title: "d")
+        let plain = NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes())
+        let bold = NSMutableAttributedString(attributedString: plain)
+        bold.addAttribute(.font, value: UIFont.boldSystemFont(ofSize: 14), range: NSRange(location: 0, length: 2))
+        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: plain), CollabEditFingerprint.capture(of: document, live: bold))
+        XCTAssertEqual(CollabEditFingerprint.capture(of: document, live: plain), CollabEditFingerprint.capture(of: document, live: NSAttributedString(attributedString: plain)))
+    }
+
+    // L3: a snapshot that names one block twice must not put the same object in the document twice.
+    func testASnapshotNamingABlockTwiceIsAppliedOnce() {
+        let source = makeDocument(["一"])
+        var (snapshot, _) = DocumentSnapshotCodec.make(from: source)
+        snapshot.blocks.append(snapshot.blocks[0])
+        let target = TextDocument(title: "t")
+        DocumentSnapshotCodec.apply(snapshot, to: target, assets: [:])
+        XCTAssertEqual(target.sortedBlocks.count, 1)
+    }
+
+    // M5: the base and revision belong to a device, not to the (iCloud-synced) document.
+    func testSyncStateIsKeptPerDeviceNotInTheDocumentModel() {
+        let a = TextDocument(title: "a"), b = TextDocument(title: "b")
+        a.collabRoomID = "room"; b.collabRoomID = "room"
+        a.collabRevision = 3
+        a.collabBaseSnapshot = Data([1])
+        XCTAssertEqual(b.collabRevision, 0)
+        XCTAssertNil(b.collabBaseSnapshot)
+        let unshared = TextDocument(title: "local only")
+        unshared.collabRevision = 9
+        XCTAssertEqual(unshared.collabRevision, 0, "a document with no room has no sync state")
+    }
 }

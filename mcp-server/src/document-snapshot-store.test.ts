@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { DOCUMENT_ROOM_SCHEMA, purgeRoomData, removeParticipantData } from "./document-room-store.ts";
+import { DOCUMENT_ROOM_SCHEMA, purgeRoomData, removeAccountData, removeParticipantData } from "./document-room-store.ts";
 import {
   CHUNK_CHARS, MAX_ASSET_CHARS, MAX_ROOM_ASSET_CHARS, MAX_SNAPSHOT_CHARS,
-  missingAssets, readAsset, readSnapshot, writeAsset, writeSnapshot,
+  ASSET_GRACE_MS, missingAssets, pruneAssets, readAsset, readSnapshot, writeAsset, writeSnapshot,
 } from "./document-snapshot-store.ts";
 import { partialSql, type Untyped } from "./test-env.ts";
 
@@ -108,4 +108,30 @@ test("removing a member keeps the document but unlinks them as its last author; 
   assert.equal(readSnapshot(sql).snapshot, "本文");
   assert.equal(removeParticipantData(sql, "alice"), "purged");
   assert.equal(count(db, "snapshot_chunks"), 0);
+});
+
+test("pruning drops images the snapshot no longer names, but not ones uploaded within the grace period", () => {
+  const { db, sql } = roomSql();
+  writeAsset(sql, hash("a"), "AAAA", 0);                 // old, unnamed -> dropped
+  writeAsset(sql, hash("b"), "BBBB", 0);                 // old, named -> kept
+  writeAsset(sql, hash("c"), "CCCC", ASSET_GRACE_MS);    // fresh, unnamed -> kept
+  assert.equal(pruneAssets(sql, [hash("b")], ASSET_GRACE_MS + 1), 1);
+  assert.equal(readAsset(sql, hash("a")), null);
+  assert.equal(readAsset(sql, hash("b")), "BBBB");
+  assert.equal(readAsset(sql, hash("c")), "CCCC");
+  assert.equal(count(db, "asset_chunks"), 2);
+  assert.equal(count(db, "asset_times"), 2);
+  // an image from before upload times were recorded has no time: it is not protected
+  db.prepare("DELETE FROM asset_times WHERE hash = ?").run(hash("c"));
+  assert.equal(pruneAssets(sql, [hash("b")], ASSET_GRACE_MS + 2), 1);
+  assert.equal(readAsset(sql, hash("c")), null);
+});
+
+test("account deletion of the owner erases the snapshot and every image, upload times included", () => {
+  const { db, sql } = roomSql();
+  sql.exec("INSERT INTO participants (user_key, role) VALUES ('alice', 'owner')");
+  writeSnapshot(sql, 0, "本文", "alice", 1);
+  writeAsset(sql, hash("a"), "AAAA");
+  assert.equal(removeAccountData(sql, "alice"), "purged-owner");
+  for (const table of ["snapshot_meta", "snapshot_chunks", "assets", "asset_chunks", "asset_times", "participants"]) assert.equal(count(db, table), 0, table);
 });
