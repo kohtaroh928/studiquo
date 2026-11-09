@@ -325,9 +325,9 @@ final class CollabRegressionTests: XCTestCase {
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
         block.document = document
         document.blocks = [block]
-        let before = CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文"))
+        let before = CollabEditMarker.capture(of: document, live: NSAttributedString(string: "本文"))
         document.updatedAt = Date().addingTimeInterval(60)
-        XCTAssertEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文")), before)
+        XCTAssertEqual(CollabEditMarker.capture(of: document, live: NSAttributedString(string: "本文")), before)
     }
 
     func testTypingOrAChangedBlockIsAnEdit() {
@@ -336,10 +336,10 @@ final class CollabRegressionTests: XCTestCase {
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes()))
         block.document = document
         document.blocks = [block]
-        let before = CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文"))
-        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文あ")), before)
+        let before = CollabEditMarker.capture(of: document, live: NSAttributedString(string: "本文"))
+        XCTAssertNotEqual(CollabEditMarker.capture(of: document, live: NSAttributedString(string: "本文あ")), before)
         block.bodyData = DocumentBody.encode(NSAttributedString(string: "別", attributes: DocumentBody.defaultAttributes()))
-        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: NSAttributedString(string: "本文")), before)
+        XCTAssertNotEqual(CollabEditMarker.capture(of: document, live: NSAttributedString(string: "本文")), before)
     }
 
     // 相手の変更が自分の文書に入らなかった / ヘッダーが同期されなかった。
@@ -471,8 +471,8 @@ final class CollabReviewFindingsTests: XCTestCase {
         let plain = NSAttributedString(string: "本文", attributes: DocumentBody.defaultAttributes())
         let bold = NSMutableAttributedString(attributedString: plain)
         bold.addAttribute(.font, value: UIFont.boldSystemFont(ofSize: 14), range: NSRange(location: 0, length: 2))
-        XCTAssertNotEqual(CollabEditFingerprint.capture(of: document, live: plain), CollabEditFingerprint.capture(of: document, live: bold))
-        XCTAssertEqual(CollabEditFingerprint.capture(of: document, live: plain), CollabEditFingerprint.capture(of: document, live: NSAttributedString(attributedString: plain)))
+        XCTAssertNotEqual(CollabEditMarker.capture(of: document, live: plain), CollabEditMarker.capture(of: document, live: bold))
+        XCTAssertEqual(CollabEditMarker.capture(of: document, live: plain), CollabEditMarker.capture(of: document, live: NSAttributedString(attributedString: plain)))
     }
 
     // L3: a snapshot that names one block twice must not put the same object in the document twice.

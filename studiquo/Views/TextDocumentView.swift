@@ -958,7 +958,7 @@ struct TextDocumentView: View {
         defer { isCollabSyncing = false }
         // What the document looked like when the round started. `updatedAt` is not used:
         // every autosave bumps it, which would make nearly every round look "edited".
-        final class Marker { var fingerprint: CollabEditFingerprint? }
+        final class Marker { var fingerprint: CollabEditMarker? }
         let marker = Marker()
         do {
             let outcome = try await CollabSyncEngine.sync(
@@ -967,10 +967,10 @@ struct TextDocumentView: View {
                 client: LiveDocumentSnapshotClient(),
                 flush: {
                     flushSave()
-                    marker.fingerprint = CollabEditFingerprint.capture(of: document, live: attributedText)
+                    marker.fingerprint = CollabEditMarker.capture(of: document, live: attributedText)
                 },
                 stillCurrent: {
-                    CollabEditFingerprint.capture(of: document, live: attributedText) == marker.fingerprint
+                    CollabEditMarker.capture(of: document, live: attributedText) == marker.fingerprint
                 },
                 didApply: { reloadAfterRemoteApply() },
                 save: { try? modelContext.save() }
