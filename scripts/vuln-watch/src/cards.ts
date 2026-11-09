@@ -1,7 +1,7 @@
 import type { RankedFinding, RunSummary } from './types.ts';
-// Notionカードの計画(設計書 3.4・3.5)。
+// GitHub Project「Studiquo タスク」の項目の計画(設計書 3.4・3.5。通知先はNotionからGitHub Projectへ移した)。
 // カードに書くのは、このファイルが組み立てた定型文だけ。脆弱性の説明文・LLMの reason・外部のURLは入れない。
-// 親セッションは、ここで作った操作リスト(cards-ops.json)を「そのまま転記する」だけにする。
+// 操作リスト(cards-ops.json)は、project.ts の cards-apply がそのまま gh project で実行する(LLMは書き込みの経路に入らない)。
 // 計画した操作は validateOp で厳密に検証し、通らないものは出さない。
 
 export const CARD_PREFIX = '[脆弱性] ';
@@ -14,8 +14,9 @@ const ID_RE = new RegExp(`^${ID_PART}$`);
 const ASSET_RE = new RegExp(`^${ASSET_PART}$`);
 const FIXED_RE = new RegExp(`^${VER_PART}$`);
 const TITLE_RE = new RegExp(String.raw`^\[脆弱性\] (${ID_PART}) (${ASSET_PART})$`);
-// Notionのカードは「末尾が32桁の16進のID」のURLに限る(題名のスラッグ・/p/・?pvs=数字は許す)。他のワークスペースのページや、IDの無いURLは通さない
-const NOTION_URL_RE = /^https:\/\/(?:www\.|app\.)?notion\.(?:so|com)\/(?:p\/)?(?:[A-Za-z0-9_%-]{0,150}-)?([0-9a-f]{32})(?:\?pvs=\d{1,4})?$/;
+// GitHub Projectの項目ID(PVTI_…)とドラフト項目の本文ID(DI_…)。gh が返す形に限る
+const ITEM_ID_RE = /^PVTI_[A-Za-z0-9_-]{10,80}$/;
+const DRAFT_ID_RE = /^DI_[A-Za-z0-9_-]{10,80}$/;
 const LINK_RE = /^(https:\/\/nvd\.nist\.gov\/vuln\/detail\/CVE-\d{4}-\d{4,}|https:\/\/github\.com\/advisories\/GHSA(?:-[a-z0-9]{4}){3}|https:\/\/jvndb\.jvn\.jp\/ja\/contents\/\d{4}\/JVNDB-\d{4}-\d{4,}\.html)$/;
 // 制御文字に加え、行区切り・ゼロ幅・双方向制御の文字も通さない
 // eslint-disable-next-line no-control-regex
@@ -28,14 +29,14 @@ const APPLIC: Record<string, string> = { applies: '該当', likely: 'おそら�
 const CONF: Record<string, string> = { high: '高', medium: '中', low: '低' };
 const SOURCES = ['osv', 'nvd', 'jvn'];
 
-/** Notion に対する1つの操作(カードの作成・更新・コメント)。 */
-export interface CardOp { op: string; properties?: Record<string, unknown>; url?: string; pageId?: string | null; text?: string }
+/** GitHub Project に対する1つの操作(項目の作成・更新・経緯への追記)。 */
+export interface CardOp { op: string; properties?: Record<string, unknown>; itemId?: string; draftId?: string; text?: string }
 
 const CREATE_ENUMS = {
   作業の種類: ['不具合', '確認作業'],
   重要度: ['本番を止める', '高', '中'],
   領域: ['サーバー', 'アプリ', '全体'],
-  担当: ['Claude', 'あなた'],
+  担当: ['Claude', '薮崎'],
   状態: ['未着手', 'あなた待ち'],
 };
 const CREATE_PROPS = new Set(['名前', '作業の種類', '重要度', '領域', '担当', '状態', '次の一手', '経緯・結果', 'リンク']);
@@ -60,11 +61,6 @@ export function eligible(f: { tier: string; status: string; }) {
 export function cardTitle(f: RankedFinding) {
   const id = primaryId(f);
   return id && typeof f.asset === 'string' && ASSET_RE.test(f.asset) ? `${CARD_PREFIX}${id} ${f.asset}` : null;
-}
-
-/** カードのURLから、Notionのページ ID(32桁の16進)を取り出す。形式に合わなければ null。 */
-export function extractPageId(url: string) {
-  return typeof url === 'string' ? (NOTION_URL_RE.exec(url)?.[1] ?? null) : null;
 }
 
 const normTitle = (t: string) => String(t).normalize('NFKC').trim();
@@ -92,7 +88,7 @@ function createOp(f: RankedFinding, today: unknown) {
       作業の種類: needsCheck ? '確認作業' : '不具合',
       重要度: IMPORTANCE[f.tier],
       領域: AREA[f.exposure] ?? '全体',
-      担当: f.needsHuman ? 'あなた' : 'Claude',
+      担当: f.needsHuman ? '薮崎' : 'Claude',
       状態: f.needsHuman ? 'あなた待ち' : '未着手',
       次の一手: next,
       '経緯・結果': history,
@@ -128,9 +124,8 @@ export function validateOp(raw: unknown) {
     return null;
   }
   if (op?.op === 'update' || op?.op === 'comment') {
-    const id = extractPageId(op.url as string);
-    if (!id) return 'カードのURLの形式が違う';
-    if (op.pageId !== id) return 'pageId がURLと一致しない';
+    if (typeof op.itemId !== 'string' || !ITEM_ID_RE.test(op.itemId)) return 'itemId の形式が違う';
+    if (typeof op.draftId !== 'string' || !DRAFT_ID_RE.test(op.draftId)) return 'draftId の形式が違う';
     if (op.op === 'comment') return str(op.text, 300) && COMMENT_RE.test(op.text) ? null : 'コメントが定型文ではない';
     const keys = Object.keys(op.properties ?? {});
     if (!keys.length) return '更新する項目が無い';
@@ -145,11 +140,11 @@ export function validateOp(raw: unknown) {
 }
 
 /**
- * Notionから取得した既存カードを、題名・URL・状態・重要度だけに絞る。
+ * GitHub Projectから取得した既存項目を、題名・ID・状態・重要度だけに絞る。
  * 「[脆弱性]」で始まるのに形式が合わず捨てたものは dropped に数える(捨てたまま計画すると重複カードを作るため)。
  */
-/** Notion から取得した既存カードの、絞り込み後の形。 */
-export interface ExistingCard { title: string; url: string; status: string | null; importance: string | null }
+/** GitHub Project から取得した既存項目の、絞り込み後の形。 */
+export interface ExistingCard { title: string; itemId: string; draftId: string; status: string | null; importance: string | null }
 
 export function sanitizeExisting(raw: unknown) {
   const cards: ExistingCard[] = [];
@@ -158,13 +153,14 @@ export function sanitizeExisting(raw: unknown) {
     if (typeof c?.title !== 'string') continue;
     const title = normTitle(c.title);
     if (!title.startsWith(CARD_PREFIX.trim())) continue;
-    if (title.length > 300 || CONTROL_RE.test(title) || !extractPageId(c.url as string)) {
+    if (title.length > 300 || CONTROL_RE.test(title) || typeof c.itemId !== 'string' || !ITEM_ID_RE.test(c.itemId) || typeof c.draftId !== 'string' || !DRAFT_ID_RE.test(c.draftId)) {
       dropped++;
       continue;
     }
     cards.push({
       title,
-      url: c.url as string,
+      itemId: c.itemId as string,
+      draftId: c.draftId as string,
       status: typeof c.status === 'string' ? c.status.slice(0, 20) : null,
       importance: typeof c.importance === 'string' ? c.importance.slice(0, 20) : null,
     });
@@ -199,7 +195,7 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
     if (problem) skipped.push({ target: label, reason: problem });
     else ops.push(op);
   };
-  const withPage = (op: CardOp, url: string): CardOp => ({ ...op, url, pageId: extractPageId(url) });
+  const withPage = (op: CardOp, ex: ExistingCard): CardOp => ({ ...op, itemId: ex.itemId, draftId: ex.draftId });
 
   const current = new Set<string>();
   for (const f of (Array.isArray(ranked) ? ranked : []) as RankedFinding[]) {
@@ -237,8 +233,8 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
         const to = IMPORTANCE[f.tier];
         const from = ex.importance || '低';
         if (importanceRank(to) > importanceRank(from)) {
-          push(withPage({ op: 'update', properties: { 重要度: to } }, ex.url), title);
-          push(withPage({ op: 'comment', text: upText(today, from, to) }, ex.url), title);
+          push(withPage({ op: 'update', properties: { 重要度: to } }, ex), title);
+          push(withPage({ op: 'comment', text: upText(today, from, to) }, ex), title);
         }
       }
     } catch (e) {
@@ -250,8 +246,8 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
     for (const ex of cards.values()) {
       if (!TITLE_RE.test(ex.title) || current.has(ex.title)) continue;
       if (ex.status !== '未着手' && ex.status !== '進行中') continue;
-      push(withPage({ op: 'update', properties: { 状態: '監視中' } }, ex.url), ex.title);
-      push(withPage({ op: 'comment', text: goneText(today) }, ex.url), ex.title);
+      push(withPage({ op: 'update', properties: { 状態: '監視中' } }, ex), ex.title);
+      push(withPage({ op: 'comment', text: goneText(today) }, ex), ex.title);
     }
   } else if (incomplete) {
     notes.push('取得に失敗したデータ源があるため、検出されなくなったカードは動かしていない。');
@@ -289,5 +285,5 @@ export function buildSummary({ ranked, run, triage, plan, executed = {}, today, 
   ];
   if (hidden) lines.push(`判定済み・対象外(要約から除外): ${hidden}件 / latest.mdに記録`);
   for (const note of plan?.notes ?? []) lines.push(`注意: ${note}`);
-  return { text: lines.join('\n'), notify: urgentNew ? `脆弱性監視: 緊急またはKEV掲載の新規 ${urgentNew}件。Notionのカードを確認してください` : null };
+  return { text: lines.join('\n'), notify: urgentNew ? `脆弱性監視: 緊急またはKEV掲載の新規 ${urgentNew}件。GitHub Projectの項目を確認してください` : null };
 }

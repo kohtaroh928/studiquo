@@ -37,6 +37,7 @@ jobs:
       - name: XcodeGenでプロジェクトを生成
         run: |
           brew install xcodegen
+          scripts/check-xcodegen-version
           xcodegen generate
       - name: iPadシミュレータを選ぶ
         id: sim
