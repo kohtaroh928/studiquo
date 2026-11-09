@@ -101,7 +101,10 @@ final class RAGLibrarySyncService {
         // The next request is still subject to the server's rate limit.
         state.controlRetryAfter = nil; state.controlRetryAttempts = 0
         guard save() else { throw RAGIndexingService.IndexError.disabled }
-        try await flushInvalidations()
+        // The consent update below invalidates every previous remote source as
+        // one server-side generation change. Do not make a fresh, explicit
+        // grant depend on an old local invalidation queue: that queue can
+        // belong to a prior registration and may be temporarily unavailable.
         prepareIdentities(for: notebooks, scope: scope)
         do { try context.save() }
         catch { throw GrantError.localPersistence }
