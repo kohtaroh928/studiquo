@@ -3,7 +3,7 @@ import { resolveChatUserKey } from "./chat-identity.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared, bodyText } from "./http.ts";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared, bodyText, bodyNumber } from "./http.ts";
 import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.ts";
 import { handleGroupRoutes } from "./groups.ts";
 import { sendPush } from "./push.ts";
@@ -68,7 +68,7 @@ function parseAfter(rawValue: string | null) {
 // date still counts as "today" is left to the viewer's own client, which is
 // the only side that actually knows what day it is for the viewer.
 function parseStudyStats(body: { todayStudySeconds: unknown; studyDate: unknown; }) {
-  const seconds = Number(body?.todayStudySeconds);
+  const seconds = bodyNumber(body?.todayStudySeconds);
   const date = bodyText(body?.studyDate);
   if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 86_400) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
@@ -528,7 +528,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
   const readMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/read$/.exec(url.pathname);
   if (readMatch && request.method === "POST") {
     const body = await readBody(request);
-    const throughID = Number(body?.throughID);
+    const throughID = bodyNumber(body?.throughID);
     if (!Number.isSafeInteger(throughID) || throughID < 0) return json({ error: "Invalid read position." }, 400);
     return roomResponse(env.CHAT_ROOM.getByName(readMatch[1]).markRead(key, throughID));
   }
@@ -633,7 +633,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     // well-formed base64 would make every later download fail with a 500.
     if (!isWellFormedBase64(body?.data)) return json({ error: "Invalid attachment." }, 400);
     try {
-      const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, body?.contentType, body?.data);
+      const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, bodyText(body?.contentType), body?.data);
       return json(result, 201);
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);

@@ -1,5 +1,5 @@
 import { blockedBetween } from "./block-check.ts";
-import { json, readJSONLimited as readJSONLimitedShared, bodyText } from "./http.ts";
+import { json, readJSONLimited as readJSONLimitedShared, bodyText, bodyNumber } from "./http.ts";
 import { sendPush } from "./push.ts";
 import { roomMembershipKey } from "./document-room-store.ts";
 import type { Env } from "./env.ts";
@@ -349,7 +349,7 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
     const allowed = await withinLimit(env, "document-propose", key, PROPOSE_LIMIT_PER_MINUTE);
     if (!allowed) return json({ error: "Too many proposed changes. Please slow down." }, 429);
     const body = await readBody(request);
-    const blockOrder = Number(body?.blockOrder);
+    const blockOrder = bodyNumber(body?.blockOrder);
     const previousText = bodyText(body?.previousText).slice(0, 20_000);
     const newText = bodyText(body?.newText).slice(0, 20_000);
     if (!Number.isSafeInteger(blockOrder) || blockOrder < 0) return json({ error: "Invalid blockOrder." }, 400);

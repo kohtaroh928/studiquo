@@ -131,6 +131,15 @@ export function bodyText<F extends string | null = string>(value: unknown, fallb
   throw new InvalidBodyError();
 }
 
+/**
+ * Number() of a JSON body member, as the routes read numbers: a number, numeric
+ * string, boolean or null/undefined converts as Number() does; an object or
+ * array gives NaN instead of throwing (Number({"toString":{}}) is a TypeError).
+ */
+export function bodyNumber(value: unknown): number {
+  return value !== null && typeof value === "object" ? NaN : Number(value);
+}
+
 /** The 400 for an InvalidBodyError, for a catch-all that would otherwise answer 500; null for any other error. */
 export function invalidBodyResponse(error: unknown): Response | null {
   return error instanceof InvalidBodyError ? json({ error: "Invalid request." }, 400) : null;
