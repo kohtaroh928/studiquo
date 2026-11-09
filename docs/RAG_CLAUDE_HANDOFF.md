@@ -8,6 +8,8 @@
 
 追記2: 実機再試行で「AIに接続できませんでした」と表示された（HTTP番号は未採取）。版115の実際のbindingを読み取り、RAG有効フラグ5項目は `true`、`ADMIN_DB`・`RAG_VECTORIZE`・`RATE_LIMIT_RAG_INDEX` は存在することを確認。staging D1の `rag_accounts`、`rag_sources`、`rag_controls`、`rag_documents`、`rag_cleanup_jobs`、`rag_cleanup_vectors` と、同意に必要な `rag_accounts`/`rag_controls` の列も存在する。Workerの履歴ログは利用できず、`wrangler tail` は接続直後に出力なく終了したため、HTTPステータスまたは端末ログをまだ取得できていない。次は画面に出るエラー全文（ステータス番号を含む）を確認し、認証・レート制限・Worker 503を分ける。
 
+追記3: ユーザーの再試行では再び旧一般文言「自動登録を開始できませんでした」が出た。Xcodeは正しい `/Users/yabukohtarohgmail.com/studiquo/studiquo.xcodeproj` を開いているが、確認枠は18:19 JSTに `claude/collab-invite-screen` の `6e03911` へ切り替わっており、修正版 `5ccd4b9` をRunしていなかったことを確認。現在の共同編集確認を勝手に返却せず、ユーザーが明示的に返却を指示した後に `codex/rag-auto-register-error` を再取得して再試行する。Project記録は引き続き `unknown owner type` で未記録。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
