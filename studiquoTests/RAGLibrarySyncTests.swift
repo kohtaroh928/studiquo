@@ -460,6 +460,35 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertEqual(updated.controlRetryAttempts, 0)
     }
 
+    func testManualGrantDoesNotRequireOldInvalidationQueueToReachConsentService() async throws {
+        let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        var saved = RAGLibrarySyncState()
+        saved.entries["stale-document"] = .init(pendingState: "deleted")
+        defaults.set(try JSONEncoder().encode(saved), forKey: "ragManaged-owner")
+        var requests: [String] = [], epoch = 0
+        let client = RAGControlClient(transport: { request in
+            requests.append(request.url!.path)
+            if request.url!.path.contains("documents/stale-document") {
+                throw WorkerAIProvider.ProviderError.http(status: 503, message: "")
+            }
+            if request.httpMethod != "GET" { epoch += 1 }
+            let reply: [String: Any] = ["enabled": epoch > 0, "consentEpoch": epoch, "available": true]
+            return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        })
+        let service = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" })
+
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [])
+
+        XCTAssertEqual(requests, ["/api/rag/consent", "/api/rag/consent"])
+        XCTAssertTrue(service.enabled)
+    }
+
     func testBackgroundCancelsScheduledControlRetry() async throws {
         let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
