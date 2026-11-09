@@ -50,7 +50,7 @@ export async function processRawPDF(env: any,session: any,input: any,request: an
   cleanupEnd??=Date.now()+cleanupMs;
   const left=cleanupEnd-Date.now();
   if(left<=0)return Promise.reject(Error('pdf_cleanup_unconfirmed'));
-  return bounded(fn,left);
+  return bounded(fn,left).catch((e: any)=>{if(e?.message==='pdf_processing_timeout')cleanupEnd=0;throw e;});
  };
  const localStopped=async(): Promise<any> =>{
   // Timed-out wrappers do not stop the actual verification/DB/RPC tasks.

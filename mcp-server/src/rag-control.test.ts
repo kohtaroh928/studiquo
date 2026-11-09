@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { qualityEnvironment } from './rag-quality-fixture.ts';
+import { ragPrivacyRejection } from './ai-privacy.ts';
 import { controlAvailable, readControl, updateConsent, prepareDocument, invalidateDocument, invalidateSourceControl, invalidateAccountControl, cleanupPending } from './rag/control.ts';
 async function env() {
  const e=qualityEnvironment();
@@ -86,4 +87,33 @@ test('control rejects unbounded or malformed client values',async()=>{
  const e=await env();for(const p of [{requestId:''},{expectedGeneration:-1},{totalPages:10001},{documentId:'a/b'},{consentEpoch:0},{title:'x'.repeat(301)}]){
  await assert.rejects(prepareDocument(e,'owner',req(p)),/invalid_control|control_conflict/);
  }
+});
+test('ragPrivacyRejection requires PAYWALL_ENABLED to enable consent or prepare documents but allows revocation when paywall is off',async()=>{
+ const headers={
+  'content-type':'application/json',
+  'X-Studiquo-RAG-Consent':'rag-openai-v1',
+  'X-Studiquo-AI-Consent':'openai-v1',
+  'X-Studiquo-Age':'adult',
+ };
+ const post=(path,body)=>new Request(`https://example.test${path}`,{method:'POST',headers,body:JSON.stringify(body)});
+ const paywallOff={AI_PROVIDER_APPROVED:'true',PAYWALL_ENABLED:'false'};
+ const paywallOn={AI_PROVIDER_APPROVED:'true',PAYWALL_ENABLED:'true'};
+
+ const blockedConsent=await ragPrivacyRejection(post('/api/rag/consent',{enabled:true,expectedEpoch:0}),paywallOff,'/api/rag/consent');
+ assert.equal(blockedConsent?.status,503);
+
+ const blockedPrepare=await ragPrivacyRejection(post('/api/rag/documents/prepare',req()),paywallOff,'/api/rag/documents/prepare');
+ assert.equal(blockedPrepare?.status,503);
+
+ const blockedEligible=await ragPrivacyRejection(post('/api/rag/documents/document-a/state',{state:'eligible',expectedGeneration:1,consentEpoch:1}),paywallOff,'/api/rag/documents/document-a/state');
+ assert.equal(blockedEligible?.status,503);
+
+ const allowedRevoke=await ragPrivacyRejection(post('/api/rag/consent',{enabled:false,expectedEpoch:1}),paywallOff,'/api/rag/consent');
+ assert.equal(allowedRevoke,null);
+
+ const allowedLock=await ragPrivacyRejection(post('/api/rag/documents/document-a/state',{state:'locked',expectedGeneration:1,consentEpoch:1}),paywallOff,'/api/rag/documents/document-a/state');
+ assert.equal(allowedLock,null);
+
+ const allowedConsent=await ragPrivacyRejection(post('/api/rag/consent',{enabled:true,expectedEpoch:0}),paywallOn,'/api/rag/consent');
+ assert.equal(allowedConsent,null);
 });
