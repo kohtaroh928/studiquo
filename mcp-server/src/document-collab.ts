@@ -1,5 +1,5 @@
 import { blockedBetween } from "./block-check.ts";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
+import { json, readJSONLimited as readJSONLimitedShared, bodyText, bodyNumber } from "./http.ts";
 import { sendPush } from "./push.ts";
 import { roomMembershipKey } from "./document-room-store.ts";
 import type { Env } from "./env.ts";
@@ -60,7 +60,7 @@ const INIT_WINDOW_SECONDS = 3_600;
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
 function parseFriendCode(body: { code: unknown; }) {
-  const code = String(body?.code ?? "").trim().toUpperCase();
+  const code = bodyText(body?.code).trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
@@ -165,7 +165,7 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
     if (!allowed) return json({ error: "Too many invites. Please slow down." }, 429);
     const body = await readBody(request);
     const code = parseFriendCode(body);
-    const role = String(body?.role ?? "");
+    const role = bodyText(body?.role);
     if (!code) return json({ error: "Invalid code." }, 400);
     // Only a friend can be added to a document. Without this, anyone who knew a
     // friend code could seat a stranger in a room whose content they control
@@ -349,9 +349,9 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
     const allowed = await withinLimit(env, "document-propose", key, PROPOSE_LIMIT_PER_MINUTE);
     if (!allowed) return json({ error: "Too many proposed changes. Please slow down." }, 429);
     const body = await readBody(request);
-    const blockOrder = Number(body?.blockOrder);
-    const previousText = String(body?.previousText ?? "").slice(0, 20_000);
-    const newText = String(body?.newText ?? "").slice(0, 20_000);
+    const blockOrder = bodyNumber(body?.blockOrder);
+    const previousText = bodyText(body?.previousText).slice(0, 20_000);
+    const newText = bodyText(body?.newText).slice(0, 20_000);
     if (!Number.isSafeInteger(blockOrder) || blockOrder < 0) return json({ error: "Invalid blockOrder." }, 400);
     return roomResponse(env.DOCUMENT_ROOM.getByName(proposeMatch[1]).proposeChange(key, blockOrder, previousText, newText));
   }
@@ -360,7 +360,7 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
   if (reviewMatch && request.method === "POST") {
     const changeID = Number(reviewMatch[2]);
     const body = await readBody(request);
-    const decision = String(body?.decision ?? "");
+    const decision = bodyText(body?.decision);
     try {
       const result = await env.DOCUMENT_ROOM.getByName(reviewMatch[1]).reviewChange(key, changeID, decision);
       if (result.status === "not_found") return json({ error: "Change not found." }, 404);

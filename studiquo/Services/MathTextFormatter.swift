@@ -102,9 +102,14 @@ enum MathTextFormatter {
         return code.trimmingCharacters(in: CharacterSet(charactersIn: "`"))
     }
 
+    private static let maxLineLengthForMarkdown = 5_000
+
     private static func strippingMarkdown(_ text: String) -> String {
         var lines: [String] = []
         for var line in text.components(separatedBy: "\n") {
+            // A line this long is not prose, and the patterns below backtrack: one line of 155,000 `[`
+            // ran for minutes. It is left as written.
+            if line.count > Self.maxLineLengthForMarkdown { lines.append(line); continue }
             if line.range(of: #"^\s*([-*_]\s*){3,}$"#, options: .regularExpression) != nil,
                line.range(of: #"^\s*[-*]\s+\S"#, options: .regularExpression) == nil { continue }
             if line.range(of: #"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$"#, options: .regularExpression) != nil,
@@ -166,10 +171,16 @@ private indirect enum TeX {
 }
 
 private struct TeXParser {
+    private static let maxNodes = 8_192
+    private static let maxMacroDefinitions = 64
+    private static let maxMacroNodes = 64
+
     private let chars: [Character]
     private var i = 0
     private var macros: [String: [TeX]] = [:]
+    private var macroNodeCounts: [String: Int] = [:]
     private var depth = 0
+    private var nodeCount = 0
 
     init(_ source: String) { chars = Array(source) }
 
@@ -183,8 +194,9 @@ private struct TeXParser {
         var nodes: [TeX] = []
         depth += 1
         defer { depth -= 1 }
-        guard depth < 60 else { i = chars.count; return nodes }
+        guard depth < 60, nodeCount < Self.maxNodes else { i = chars.count; return nodes }
         while i < chars.count {
+            guard nodeCount < Self.maxNodes else { i = chars.count; break }
             let c = chars[i]
             switch stop {
             case .brace where c == "}": return nodes
@@ -235,7 +247,8 @@ private struct TeXParser {
     // MARK: Atoms
 
     private mutating func parseAtom() -> TeX? {
-        guard i < chars.count else { return nil }
+        guard i < chars.count, nodeCount < Self.maxNodes else { i = chars.count; return nil }
+        nodeCount += 1
         let c = chars[i]
         switch c {
         case "{":
@@ -371,7 +384,12 @@ private struct TeXParser {
         }
 
         if Self.noOpCommands.contains(name) { return nil }
-        if let macro = macros[name] { return .group(macro) }
+        if let macro = macros[name] {
+            let cost = max(macroNodeCounts[name] ?? macro.count, 1)
+            nodeCount += cost
+            guard nodeCount <= Self.maxNodes else { i = chars.count; return nil }
+            return .group(macro)
+        }
 
         switch name {
         case "quad", "enspace", "thinspace", "medspace", "thickspace": return .space(" ")
@@ -545,13 +563,20 @@ private struct TeXParser {
         skipSpaces()
         guard i < chars.count, chars[i] == "{" else { return }
         i += 1
+        let startNodeCount = nodeCount
         let body = parseSequence(stop: .brace)
+        let bodyCost = max(nodeCount - startNodeCount, body.count)
         if i < chars.count, chars[i] == "}" { i += 1 }
+        guard !name.isEmpty,
+              bodyCost <= Self.maxMacroNodes,
+              macros[name] != nil || macros.count < Self.maxMacroDefinitions else { return }
         if command == "DeclareMathOperator" {
             // \DeclareMathOperator{\name}{text}
             macros[name] = [.styled("operatorname", .group(body))]
-        } else if !name.isEmpty {
+            macroNodeCounts[name] = bodyCost + 1
+        } else {
             macros[name] = body
+            macroNodeCounts[name] = bodyCost
         }
     }
 
@@ -854,9 +879,13 @@ private struct TeXRenderer {
     // MARK: Environments
 
     private func environment(_ name: String, _ rows: [[[TeX]]]) -> Frag {
-        let rowStrings = rows.map { row in row.map { string($0) } }
+        // Rendered only by the environments that print cells as strings. `cases`
+        // and the align family lay the same cells out with `frags` instead, so
+        // rendering them here as well doubled the work at every nesting level:
+        // 60 nested `\begin{align}` (the parser's depth limit) never finished.
+        func renderedRows() -> [[String]] { rows.map { row in row.map { string($0) } } }
         func listRows(_ separator: String) -> String {
-            rowStrings.map { $0.joined(separator: separator) }.joined(separator: "; ")
+            renderedRows().map { $0.joined(separator: separator) }.joined(separator: "; ")
         }
         switch name {
         case "pmatrix": return Frag(text: "(\(listRows(", ")))", kind: .ordinary)
@@ -868,9 +897,9 @@ private struct TeXRenderer {
             let body = rows.map { row in join(row.flatMap { frags($0) + [Frag(text: " ", kind: .space)] }) }.joined(separator: "; ")
             return Frag(text: "{ \(body) }", kind: .ordinary)
         case "array", "tabular", "tabularx":
-            return Frag(text: rowStrings.map { $0.joined(separator: " | ") }.joined(separator: "\n"), kind: .ordinary)
+            return Frag(text: renderedRows().map { $0.joined(separator: " | ") }.joined(separator: "\n"), kind: .ordinary)
         case "substack":
-            return Frag(text: rowStrings.map { $0.joined(separator: " ") }.joined(separator: ", "), kind: .ordinary)
+            return Frag(text: renderedRows().map { $0.joined(separator: " ") }.joined(separator: ", "), kind: .ordinary)
         default:
             // aligned, align, gather, equation, split, …: one line per row
             let lines = rows.map { row in join(row.flatMap { frags($0) + [Frag(text: " ", kind: .space)] }) }

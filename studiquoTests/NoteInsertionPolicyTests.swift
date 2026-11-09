@@ -156,7 +156,7 @@ final class NoteInsertionPolicyTests: XCTestCase {
         )
         for condition in [
             "splitMode != .single",
-            "secondaryNotebook != nil",
+            "let secondaryNotebook",
             "secondaryFlashcardDeck == nil",
             "!secondaryShowsWeb",
             "!secondaryShowsAIChat",

@@ -92,6 +92,10 @@ final class Notebook {
         lockedPDFData != nil
     }
 
+    var hasEncryptedPages: Bool {
+        encryptedContent != nil
+    }
+
     var pageCountForLibrary: Int {
         cachedPageCount
     }

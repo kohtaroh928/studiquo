@@ -12,7 +12,7 @@ enum NotebookCover {
     /// protected notebook never does: its pages are sealed while it is
     /// closed, and what is on them must not show in a list.
     static func isEligible(_ notebook: Notebook) -> Bool {
-        notebook.containsPDF && !notebook.isLocked
+        notebook.containsPDF && !notebook.isLocked && !notebook.hasLockedPDFToUnlock && !notebook.hasEncryptedPages
     }
 
     /// The first page by `order`, which is not necessarily `pages.first` and

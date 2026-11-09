@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "node scripts/deploy-guard.mjs",
     "start": "node src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "smoke": "node src/smoke.ts",
@@ -19,7 +19,10 @@
     "security:fuzz": "node ../security/fuzz/run.ts --enforce",
     "security:fuzz:test": "node --test ../security/fuzz/*.test.ts",
     "security:fuzz:typecheck": "tsc -p ../security/fuzz/tsconfig.json",
-    "security:sast:rules": "python3 ../security/sast/test_rules.py"
+    "security:sast:rules": "python3 ../security/sast/test_rules.py",
+    "security:restore-drill": "node ../security/restore-drill/run.ts",
+    "security:key-rotation-drill": "node ../security/key-rotation-drill/run.ts",
+    "security:incident-drill": "node ../security/incident-drill/run.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
