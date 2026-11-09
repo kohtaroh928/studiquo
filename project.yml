@@ -287,6 +287,10 @@ targets:
         SWIFT_VERSION: "5.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo.share
         PRODUCT_NAME: studiquoShare
+        # Must match the main app's base value; the entitlements file and
+        # StudiquoAppGroup read it, so leaving it unset outside Staging empties
+        # the App Group and Debug/Release signing fails.
+        STUDIQUO_APP_GROUP: group.com.yabuko.studiquo.share
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_STYLE: Automatic
