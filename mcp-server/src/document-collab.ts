@@ -32,6 +32,14 @@ const WINDOW_SECONDS = 60;
 const INVITE_TTL_SECONDS = 14 * 24 * 3_600;
 const MAX_PENDING_INVITES = 20;
 const RESPOND_LIMIT_PER_MINUTE = 20;
+// Whole-document sync: a snapshot or an image can be a few MB (base64), unlike the
+// small JSON bodies above. Reads are polled while a document is open.
+const SNAPSHOT_BODY_BYTES = 6_500_000;
+const ASSET_BODY_BYTES = 6_500_000;
+const SNAPSHOT_WRITE_LIMIT_PER_MINUTE = 40;
+const SNAPSHOT_READ_LIMIT_PER_MINUTE = 120;
+const ASSET_WRITE_LIMIT_PER_MINUTE = 60;
+const ASSET_READ_LIMIT_PER_MINUTE = 120;
 
 export function pendingInviteKey(userKey: string, roomID: string) {
   return `doc-invite:${userKey}:${roomID}`;
@@ -283,6 +291,81 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
         await env.STUDIQUO_DATA.delete(inviteKey);
         return json({ error: "This invitation is no longer available." }, 410);
       }
+      throw error;
+    }
+  }
+
+  const snapshotMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/snapshot$/.exec(url.pathname);
+  if (snapshotMatch && request.method === "GET") {
+    if (!(await withinLimit(env, "document-snapshot-read", key, SNAPSHOT_READ_LIMIT_PER_MINUTE))) return json({ error: "Too many requests. Please slow down." }, 429);
+    const since = Number(url.searchParams.get("since") ?? "-1");
+    try {
+      return json(await env.DOCUMENT_ROOM.getByName(snapshotMatch[1]).getSnapshot(key, Number.isSafeInteger(since) ? since : -1));
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+  if (snapshotMatch && request.method === "PUT") {
+    if (!(await withinLimit(env, "document-snapshot-write", key, SNAPSHOT_WRITE_LIMIT_PER_MINUTE))) return json({ error: "Too many requests. Please slow down." }, 429);
+    const body = await readBody(request, SNAPSHOT_BODY_BYTES);
+    const baseRevision = Number(body?.baseRevision);
+    if (!Number.isSafeInteger(baseRevision) || baseRevision < 0 || typeof body?.snapshot !== "string") return json({ error: "Invalid snapshot." }, 400);
+    try {
+      const result = await env.DOCUMENT_ROOM.getByName(snapshotMatch[1]).putSnapshot(key, baseRevision, body.snapshot);
+      if (result.ok) return json({ revision: result.revision });
+      if (result.reason === "too_large") return json({ error: "This document is too large to share." }, 413);
+      return json({ error: "conflict", revision: result.revision }, 409);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+
+  const assetsMissingMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/assets\/missing$/.exec(url.pathname);
+  if (assetsMissingMatch && request.method === "POST") {
+    if (!(await withinLimit(env, "document-asset-read", key, ASSET_READ_LIMIT_PER_MINUTE))) return json({ error: "Too many requests. Please slow down." }, 429);
+    const body = await readBody(request, 20_000);
+    if (!Array.isArray(body?.hashes) || !body.hashes.every((hash: unknown) => typeof hash === "string")) return json({ error: "Invalid hashes." }, 400);
+    try {
+      return json(await env.DOCUMENT_ROOM.getByName(assetsMissingMatch[1]).missingAssets(key, body.hashes));
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+
+  const assetMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/assets\/([a-f0-9]{64})$/.exec(url.pathname);
+  if (assetMatch && request.method === "PUT") {
+    if (!(await withinLimit(env, "document-asset-write", key, ASSET_WRITE_LIMIT_PER_MINUTE))) return json({ error: "Too many requests. Please slow down." }, 429);
+    const body = await readBody(request, ASSET_BODY_BYTES);
+    if (typeof body?.data !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) return json({ error: "Invalid data." }, 400);
+    // The name of an image is the SHA-256 of its bytes: a participant cannot store
+    // something under another image's name.
+    const bytes = Uint8Array.from(atob(body.data), char => char.charCodeAt(0));
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    if (digest !== assetMatch[2]) return json({ error: "The hash does not match the data." }, 400);
+    try {
+      const result = await env.DOCUMENT_ROOM.getByName(assetMatch[1]).putAsset(key, assetMatch[2], body.data);
+      if (result.ok) return json({ status: result.stored ? "stored" : "exists" });
+      return json({ error: result.reason === "room_full" ? "This document has too many images." : "Invalid image." }, result.reason === "too_large" ? 413 : 400);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+  if (assetMatch && request.method === "GET") {
+    if (!(await withinLimit(env, "document-asset-read", key, ASSET_READ_LIMIT_PER_MINUTE))) return json({ error: "Too many requests. Please slow down." }, 429);
+    try {
+      const result = await env.DOCUMENT_ROOM.getByName(assetMatch[1]).getAsset(key, assetMatch[2]);
+      return result.found ? json({ data: result.data }) : json({ error: "Not found." }, 404);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
       throw error;
     }
   }

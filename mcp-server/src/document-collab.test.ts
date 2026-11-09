@@ -1,12 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
+import { DOCUMENT_ROOM_SCHEMA } from "./document-room-store.ts";
+import { missingAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
 import { sha256Hex } from "./auth.ts";
-import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
+import { partialCtx, partialEnv, partialSql, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Stands in for the real DocumentRoom Durable Object (document-room.ts): one
 // shared participants/blocks/changes record per room id, persisting across
 // separate getByName(id) calls the way a real Durable Object instance would.
+function snapshotSql(state: Untyped) {
+  if (!state.sql) {
+    const db = new DatabaseSync(":memory:");
+    db.exec(DOCUMENT_ROOM_SCHEMA);
+    state.sql = partialSql({
+      exec(query: string, ...params: Untyped[]) {
+        const statement = db.prepare(query);
+        const rows = /^\s*SELECT/i.test(query) ? statement.all(...params) : (statement.run(...params), []);
+        return { toArray: () => rows, one: () => rows[0] };
+      },
+    });
+  }
+  return state.sql;
+}
+
 function fakeDocumentRoomBinding() {
   const rooms = new Map();
   function room(id: string) {
@@ -96,6 +114,31 @@ function fakeDocumentRoomBinding() {
           };
           state.changes.push(change);
           return { id: change.id, status: "pending" };
+        },
+        // The snapshot methods run the real storage code (document-snapshot-store.ts)
+        // on an in-memory SQLite; only the role checks repeat document-room.ts.
+        async getSnapshot(userKey: string, sinceRevision: number) {
+          requireParticipant(state, userKey);
+          return readSnapshot(snapshotSql(state), sinceRevision);
+        },
+        async putSnapshot(userKey: string, baseRevision: number, text: string) {
+          const role = requireParticipant(state, userKey);
+          if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
+          return writeSnapshot(snapshotSql(state), baseRevision, text, userKey, Date.now());
+        },
+        async missingAssets(userKey: string, hashes: string[]) {
+          requireParticipant(state, userKey);
+          return { missing: missingAssets(snapshotSql(state), hashes) };
+        },
+        async putAsset(userKey: string, hash: string, data: string) {
+          const role = requireParticipant(state, userKey);
+          if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
+          return writeAsset(snapshotSql(state), hash, data);
+        },
+        async getAsset(userKey: string, hash: string) {
+          requireParticipant(state, userKey);
+          const data = readAsset(snapshotSql(state), hash);
+          return data === null ? { found: false } : { found: true, data };
         },
         async reviewChange(userKey: string, changeID: string, decision: string) {
           requireReviewer(state, userKey);
@@ -1014,4 +1057,78 @@ test("an unknown path under /api/document/ is a 404, and a known path with the w
   assert.equal((await worker.fetch(request("/api/document/nope", { token: owner }), env, noopCtx)).status, 404);
   assert.equal((await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/state`, { method: "POST", token: owner, body: {} }), env, noopCtx)).status, 404);
   assert.equal((await worker.fetch(request("/api/document/invites", { method: "POST", token: owner, body: {} }), env, noopCtx)).status, 404);
+});
+
+// ---------- whole-document sync (snapshot and images) ----------
+
+const snapshotPath = `/api/document/rooms/${ROOM_ID}/snapshot`;
+const putSnapshot = (env: LooseEnv, token: string, baseRevision: number, snapshot: string) =>
+  worker.fetch(request(snapshotPath, { method: "PUT", token, body: { baseRevision, snapshot } }), env, noopCtx);
+const getSnapshot = (env: LooseEnv, token: string, since = -1) =>
+  worker.fetch(request(`${snapshotPath}?since=${since}`, { token }), env, noopCtx);
+
+async function roomWith(roles: string[]) {
+  const env = environment();
+  const owner = freshToken("1");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "はじめに" }]);
+  const tokens: Record<string, string> = { owner };
+  for (const [index, role] of roles.entries()) {
+    tokens[role] = freshToken(String(index + 2));
+    assert.equal((await invite(env, owner, tokens[role], role)).status, 200);
+  }
+  return { env, tokens };
+}
+
+test("an editor and the owner save snapshots on top of each other; a stale save gets 409 with the current revision", async () => {
+  const { env, tokens } = await roomWith(["editor"]);
+  const first = await putSnapshot(env, tokens.owner, 0, "v1");
+  assert.deepEqual(await first.json(), { revision: 1 });
+  const second = await putSnapshot(env, tokens.editor, 1, "v2");
+  assert.deepEqual(await second.json(), { revision: 2 });
+  const stale = await putSnapshot(env, tokens.owner, 1, "stale");
+  assert.equal(stale.status, 409);
+  assert.deepEqual(await stale.json(), { error: "conflict", revision: 2 });
+  assert.deepEqual(await (await getSnapshot(env, tokens.owner)).json(), { revision: 2, snapshot: "v2" });
+  assert.deepEqual(await (await getSnapshot(env, tokens.owner, 2)).json(), { revision: 2, snapshot: null, unchanged: true });
+});
+
+test("a reviewer can read the snapshot but not write it; a stranger can do neither", async () => {
+  const { env, tokens } = await roomWith(["reviewer"]);
+  await putSnapshot(env, tokens.owner, 0, "v1");
+  assert.equal((await getSnapshot(env, tokens.reviewer)).status, 200);
+  assert.equal((await putSnapshot(env, tokens.reviewer, 1, "x")).status, 403);
+  const stranger = freshToken("9");
+  assert.equal((await getSnapshot(env, stranger)).status, 403);
+  assert.equal((await putSnapshot(env, stranger, 1, "x")).status, 403);
+});
+
+test("a malformed snapshot write is a 400, an oversized one a 413", async () => {
+  const { env, tokens } = await roomWith([]);
+  const bad = (body: unknown) => worker.fetch(request(snapshotPath, { method: "PUT", token: tokens.owner, body }), env, noopCtx);
+  assert.equal((await bad({ baseRevision: "x", snapshot: "s" })).status, 400);
+  assert.equal((await bad({ baseRevision: -1, snapshot: "s" })).status, 400);
+  assert.equal((await bad({ baseRevision: 0, snapshot: 5 })).status, 400);
+  assert.equal((await putSnapshot(env, tokens.owner, 0, "x".repeat(6_000_001))).status, 413);
+});
+
+test("an image is stored under the SHA-256 of its bytes: a wrong name is refused, a right one is stored once and read back", async () => {
+  const { env, tokens } = await roomWith(["editor", "reviewer"]);
+  const bytes = new Uint8Array([1, 2, 3, 250, 251]);
+  const data = btoa(String.fromCharCode(...bytes));
+  const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(b => b.toString(16).padStart(2, "0")).join("");
+  const assetPath = (name: string) => `/api/document/rooms/${ROOM_ID}/assets/${name}`;
+  const put = (token: string, name: string, body: unknown) => worker.fetch(request(assetPath(name), { method: "PUT", token, body }), env, noopCtx);
+
+  assert.equal((await put(tokens.editor, "b".repeat(64), { data })).status, 400, "the name must be the hash of the bytes");
+  assert.equal((await put(tokens.editor, hash, { data: "not base64!" })).status, 400);
+  assert.deepEqual(await (await put(tokens.editor, hash, { data })).json(), { status: "stored" });
+  assert.deepEqual(await (await put(tokens.owner, hash, { data })).json(), { status: "exists" });
+  assert.equal((await put(tokens.reviewer, hash, { data })).status, 403, "a reviewer cannot upload");
+
+  const missing = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/assets/missing`, { method: "POST", token: tokens.reviewer, body: { hashes: [hash, "c".repeat(64)] } }), env, noopCtx);
+  assert.deepEqual(await missing.json(), { missing: ["c".repeat(64)] });
+  const got = await worker.fetch(request(assetPath(hash), { token: tokens.reviewer }), env, noopCtx);
+  assert.deepEqual(await got.json(), { data });
+  assert.equal((await worker.fetch(request(assetPath("d".repeat(64)), { token: tokens.owner }), env, noopCtx)).status, 404);
+  assert.equal((await worker.fetch(request(assetPath(hash), { token: freshToken("9") }), env, noopCtx)).status, 403);
 });
