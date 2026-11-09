@@ -6,6 +6,8 @@
 
 追記: `origin/main` の最新 `e9e1f26` をマージした `5ccd4b9` で、同じ生成・関連テストを再実行して成功。確認枠は `codex/rag-auto-register-error` の `5ccd4b9` で使用中。次の一手はユーザーが `~/studiquo` の `studiquo-staging` をRunし、資料検索設定の「対象PDFの自動登録を許可」を再試行すること。実機結果が出たら札を返却し、表示内容とWorker観測を引き継ぎへ追記する。
 
+追記2: 実機再試行で「AIに接続できませんでした」と表示された（HTTP番号は未採取）。版115の実際のbindingを読み取り、RAG有効フラグ5項目は `true`、`ADMIN_DB`・`RAG_VECTORIZE`・`RATE_LIMIT_RAG_INDEX` は存在することを確認。staging D1の `rag_accounts`、`rag_sources`、`rag_controls`、`rag_documents`、`rag_cleanup_jobs`、`rag_cleanup_vectors` と、同意に必要な `rag_accounts`/`rag_controls` の列も存在する。Workerの履歴ログは利用できず、`wrangler tail` は接続直後に出力なく終了したため、HTTPステータスまたは端末ログをまだ取得できていない。次は画面に出るエラー全文（ステータス番号を含む）を確認し、認証・レート制限・Worker 503を分ける。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
