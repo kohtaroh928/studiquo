@@ -1,3 +1,4 @@
+import { recordRevocation } from "./revocation-log.ts";
 import { cleanupAccountRawPDF } from './rag/pdf-account-cleanup.ts';
 import { deleteAccountRAG } from "./rag/index.ts";
 import { sha256Hex } from "./auth.ts";
@@ -198,9 +199,11 @@ async function finishDeletion(env: Env, canonicalSub: string, deletionStateKey: 
   const finished = { status: "deleted", generation, ...(pdfCleanup.tracked ? {pdfCleanup} : {}),
     identityHashes: await Promise.all([...identityKeys].map(sha256Hex)) };
   if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
-  await markAliases(env, canonicalSub, identityKeys, finished);
+  const keptByNewAccount = await markAliases(env, canonicalSub, identityKeys, finished);
   if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(finished));
+  // Not the aliases that had already begun a new account: replaying a deletion for those would close a live account.
+  for (const identity of identityKeys) if (!keptByNewAccount.has(identity)) await recordRevocation(env, "account-deleted", await sha256Hex(identity));
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   const queuedJob = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
   if (!queuedJob || generationOf(queuedJob) <= generation) await env.STUDIQUO_DATA.delete(jobKey);
