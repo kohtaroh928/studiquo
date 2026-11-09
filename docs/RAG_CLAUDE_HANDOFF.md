@@ -1,8 +1,8 @@
 > タスク管理の正本は、2026-10-25からGitHub Project「Studiquo タスク」(https://github.com/users/kohtaroh928/projects/1)。以下の記録にある「Notion既存カード」「Notionを更新」は移行前の記録で、今後はGitHub Projectの既存項目を更新する(`AGENTS.md`の「GitHub Projectでのタスク管理」)。
 
-## 2026-11-09 最近のRAG・共同編集・セキュリティ実装に対するテストケース12項目の追加（Antigravity）
+## 2026-11-09 最近のRAG・共同編集・セキュリティ実装に対するテストケース12項目の追加・PR作成（Antigravity）
 
-ユーザー依頼により、ここ最近の実装（PR #123〜#139）に対する優先度順（P0〜P3）の12項目のテストケースを作成・検証した。RAG関連では `.worktrees/recent-impl-tests-3`（ブランチ `antigravity/recent-impl-tests-3`、`origin/main` `49671b6` 起点）にて、`studiquoTests/RAGLibrarySyncTests.swift`（`GrantError.localPersistence` の文言と同意API 503失敗時の非有効化・再試行待機設定）、`mcp-server/src/rag-control.test.ts`（`ragPrivacyRejection` における `PAYWALL_ENABLED` ゲートと同意撤回・ロック変更の非ブロック検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー独走ページ `clearRerankWinnerPage`・`rerankTop` が数量質問の根拠になるケースと、質問固有のラテン文字/カタカナ主題語が欠落する場合に棄却されるケースの統合検証）を追加し、すべてパスすることを確認した。本番・ステージングへの配備やデータ変更は行っていない。
+ユーザー依頼により、ここ最近の実装（PR #123〜#139）に対する優先度順（P0〜P3）の12項目のテストケースを作成・検証し、最新 `origin/main`（`995721f`）へリベースしたうえでPRを作成した（PR #143: https://github.com/kohtaroh928/studiquo/pull/143 、PR #144: https://github.com/kohtaroh928/studiquo/pull/144 ）。RAG関連では `.worktrees/recent-impl-tests-3`（ブランチ `antigravity/recent-impl-tests-3`、PR #143）にて、`studiquoTests/RAGLibrarySyncTests.swift`（`GrantError.localPersistence` の文言と同意API 503失敗時の非有効化・`pendingRevoke` 設定）、`mcp-server/src/rag-control.test.ts`（`ragPrivacyRejection` における `PAYWALL_ENABLED` ゲートと同意撤回・ロック変更の非ブロック検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー独走ページ `clearRerankWinnerPage`・`rerankTop` が数量質問の根拠になるケースと、質問固有のラテン文字/カタカナ主題語が欠落する場合に棄却されるケースの統合検証）を追加し、すべてパスすることを確認した。GitHub Project 項目 `PVTI_lAHODtsRbs4Bom7vzhHKyNw` にPRリンクを記録済み。常駐processなし。本番・ステージングへの配備やデータ変更は行っていない。次の一手: CI通過確認とユーザーレビュー後のPR #143・#144マージ。
 
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
