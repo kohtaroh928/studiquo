@@ -4,6 +4,14 @@
 
 ユーザー依頼により、ここ最近の実装（PR #123〜#139）に対する優先度順（P0〜P3）の12項目のテストケースを作成・検証し、最新 `origin/main`（`995721f`）へリベースしたうえでPRを作成した（PR #143: https://github.com/kohtaroh928/studiquo/pull/143 、PR #144: https://github.com/kohtaroh928/studiquo/pull/144 ）。またCIの `Worker tests` で `src/rag-pdf-process.test.ts` の `failure after success cleanup timeout does not create a second grace window` が `setTimeout` の1ms早期発火（`Date.now() < cleanupEnd`）により失敗していたため、`mcp-server/src/rag/pdf-process.ts` の `clean()` で `pdf_processing_timeout` 発生時に `cleanupEnd = 0` として猶予期限切れを確定させる修正を加えた。RAG関連では `.worktrees/recent-impl-tests-3`（ブランチ `antigravity/recent-impl-tests-3`、PR #143）にて、`studiquoTests/RAGLibrarySyncTests.swift`（`GrantError.localPersistence` の文言と同意API 503失敗時の非有効化・`pendingRevoke` 設定）、`mcp-server/src/rag-control.test.ts`（`ragPrivacyRejection` における `PAYWALL_ENABLED` ゲートと同意撤回・ロック変更の非ブロック検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー独走ページ `clearRerankWinnerPage`・`rerankTop` が数量質問の根拠になるケースと、質問固有のラテン文字/カタカナ主題語が欠落する場合に棄却されるケースの統合検証）を追加し、すべてパスすることを確認した。GitHub Project 項目 `PVTI_lAHODtsRbs4Bom7vzhHKyNw` にPRリンクを記録済み。常駐processなし。本番・ステージングへの配備やデータ変更は行っていない。次の一手: CI通過確認とユーザーレビュー後のPR #143・#144マージ。
 
+## 2026-11-04 Codex API認可マトリクス（ローカル検証のみ）
+
+最終更新: 2026-11-04。今回: ユーザー依頼「全API認可の網羅テスト」を、`origin/main` の `31599e6` 基点の専用worktree `.worktrees/authz-matrix` / `codex/authz-matrix` で実施。RAGは既知の他アカウントdocument/source IDに対する状態・status・readiness・state変更・2形式の削除を実Worker/ローカルD1で検証した。所有者の成功対照と、他アカウントへ作用しないことを確認。RAG・認証の本体実装、feature flag、DB migrationは変更していない。過去の実API/実機評価を今回再実行したとは扱わない。
+
+現在地: `security/authz/` に133個のメソッド×経路台帳と675テストを追加。全675成功、既存サーバーテスト全体終了コード0、Worker/test/security型検査成功。独立レビューの所見は対応後、追加指摘なし（レビュー担当による独立再実行なし）。詳細と制約は `docs/SECURITY_AUTHORIZATION_MATRIX.md`。全保護経路の拒否検証と、すべての業務フロー完走は別であり、署名必須/App Attest/実AI/Vectorize/実PDF処理/Cloudflare edge/実機の証明ではない。
+
+次の一手: ローカルブランチのテスト差分を確認し、依頼があればPR・統合へ進む。今回push/merge/deploy、staging/本番データ操作、有料評価、自動スケジュール再開なし。テストは一時runtimeをdisposeし、常駐processなし。GitHub Projectは既存「認可の網羅テスト」に結果・制約・次の一手を追記し、担当Codex・統合前の「あなた待ち」へ更新済み。既存のRAG評価・実機待ちはこの検証で完了扱いにしない。Projectの資料の更新: なし（テスト追加のみ）。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
