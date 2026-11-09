@@ -27,10 +27,12 @@ npm test                                  # 単体テスト
 ```bash
 node src/cli.ts scan                              # 収集→採点。判定に回す指摘の件数を出す
 node src/cli.ts triage-apply --verdicts out/reply.json   # 判定の返信を検証して反映(返信が不要な回は --no-reply)
-node src/cli.ts summary --created 1 --updated 0 --commented 0 --failed 0   # 固定書式の要約と NOTIFY= 行
+node src/cli.ts cards-plan --fetch                # GitHub Projectの既存項目を取得し、操作リスト out/cards-ops.json を作る
+node src/cli.ts cards-apply                       # 操作リストを gh project で実行(結果は out/cards-applied.json)
+node src/cli.ts summary                           # 固定書式の要約と NOTIFY= 行
 ```
 
-未解決の指摘は GitHub Project「Studiquo タスク」にドラフト項目として記録する。既存項目を検索してから更新・作成し、IssueやNotionは使わない。
+未解決の指摘は GitHub Project「Studiquo タスク」にドラフト項目として記録する。`cards-plan --fetch` が既存の `[脆弱性]` 項目を取得して重複を避け、`cards-apply` が作成・更新する(Issueは使わない)。担当は、人の確認が要るもの(KEV掲載)が `薮崎`、それ以外が `Claude`。
 
 ## ファイル
 
