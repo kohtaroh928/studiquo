@@ -39,7 +39,12 @@ private final class FakeRoom: DocumentSnapshotClient {
     var snapshotText: String?
     var assets: [String: Data] = [:]
     var failNextPutWithConflict = false
+    var alwaysConflictOnPut = false
+    var failPutWithTooLarge = false
     var editorsMustWait = false
+    var missingAssetsBatchSizes: [Int] = []
+    var putAssetCalls = 0
+    var putAttempts = 0
 
     func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
         if revision == 0 { return .init(revision: 0, snapshot: nil, unchanged: nil) }
@@ -47,15 +52,30 @@ private final class FakeRoom: DocumentSnapshotClient {
         return .init(revision: revision, snapshot: snapshotText, unchanged: nil)
     }
     func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+        putAttempts += 1
         if editorsMustWait { throw DocumentCollabService.RoomNotReady() }
+        if failPutWithTooLarge { throw DocumentCollabService.ServerError(status: 413, message: "Snapshot too large") }
+        if alwaysConflictOnPut {
+            revision += 1
+            var competing = DocumentSnapshot.decoded(Data((snapshotText ?? snapshot).utf8))!
+            competing.title = "他端末更新-\(revision)"
+            snapshotText = String(data: competing.encoded()!, encoding: .utf8)
+            throw DocumentCollabService.RevisionConflict(currentRevision: revision)
+        }
         if failNextPutWithConflict { failNextPutWithConflict = false; throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
         guard baseRevision == revision else { throw DocumentCollabService.RevisionConflict(currentRevision: revision) }
         revision += 1
         snapshotText = snapshot
         return revision
     }
-    func missingAssets(roomID: String, hashes: [String]) async throws -> [String] { hashes.filter { assets[$0] == nil } }
-    func putAsset(roomID: String, hash: String, data: Data) async throws { assets[hash] = data }
+    func missingAssets(roomID: String, hashes: [String]) async throws -> [String] {
+        missingAssetsBatchSizes.append(hashes.count)
+        return hashes.filter { assets[$0] == nil }
+    }
+    func putAsset(roomID: String, hash: String, data: Data) async throws {
+        putAssetCalls += 1
+        assets[hash] = data
+    }
     func asset(roomID: String, hash: String) async throws -> Data? { assets[hash] }
 }
 
@@ -496,5 +516,199 @@ final class CollabReviewFindingsTests: XCTestCase {
         let unshared = TextDocument(title: "local only")
         unshared.collabRevision = 9
         XCTAssertEqual(unshared.collabRevision, 0, "a document with no room has no sync state")
+    }
+
+    // MARK: - Additional coverage for image asset batching, limits, merge conflicts, local state store, and paragraph ID carry-over
+
+    func testUploadingMoreThanOneHundredImagesBatchesMissingAssetChecksAndUploadsOnlyMissingOnes() async throws {
+        let room = FakeRoom()
+        let document = TextDocument(title: "画像多数")
+        var blocks: [DocumentBlock] = []
+        for index in 0..<105 {
+            let image = DocumentBlock(order: index, kind: .image)
+            let bytes = Data([UInt8(index & 0xff), UInt8((index >> 8) & 0xff), 0x42])
+            image.bodyData = bytes
+            image.document = document
+            blocks.append(image)
+        }
+        document.blocks = blocks
+        document.isMigratedToBlocks = true
+        document.collabRoomID = "room-batch"
+
+        let (_, allAssets) = DocumentSnapshotCodec.make(from: document)
+        XCTAssertEqual(allAssets.count, 105)
+        for (hash, data) in allAssets.sorted(by: { $0.key < $1.key }).prefix(10) {
+            room.assets[hash] = data
+        }
+
+        let outcome = try await CollabSyncEngine.sync(
+            document: document, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(outcome, .pushed)
+        XCTAssertEqual(room.missingAssetsBatchSizes, [100, 5])
+        XCTAssertEqual(room.putAssetCalls, 95)
+        XCTAssertEqual(room.assets.count, 105)
+    }
+
+    func testOversizedImageIsExcludedFromSnapshotUploadAndPreservedLocallyOnApply() {
+        let document = makeDocument(["本文"])
+        let oversizedData = Data(repeating: 0xab, count: DocumentSnapshotCodec.maxImageBytes + 1)
+        let image = DocumentBlock(order: 1, kind: .image)
+        image.bodyData = oversizedData
+        image.document = document
+        document.blocks = (document.blocks ?? []) + [image]
+
+        var (snapshot, assets) = DocumentSnapshotCodec.make(from: document)
+        XCTAssertTrue(assets.isEmpty, "oversized image must not be uploaded as an asset")
+        let imageSnap = snapshot.blocks.first { $0.kind == "image" }
+        XCTAssertNotNil(imageSnap)
+        XCTAssertNil(imageSnap?.imageHash)
+
+        snapshot.title = "リモート更新後"
+        DocumentSnapshotCodec.apply(snapshot, to: document, assets: [:])
+        let preservedImage = document.sortedBlocks.first { $0.kind == .image }
+        XCTAssertEqual(preservedImage?.bodyData?.count, DocumentSnapshotCodec.maxImageBytes + 1, "local oversized image bytes must not be wiped when imageHash is nil")
+    }
+
+    func testSnapshotTooLarge413ReturnsTooLargeWithoutAdvancingLocalState() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["初期"])
+        document.collabRoomID = "room-413"
+        let first = try await CollabSyncEngine.sync(
+            document: document, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(first, .pushed)
+        XCTAssertEqual(document.collabRevision, 1)
+
+        document.sortedBlocks[0].bodyData = text("巨大変更")
+        room.failPutWithTooLarge = true
+        let second = try await CollabSyncEngine.sync(
+            document: document, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(second, .tooLarge)
+        XCTAssertEqual(document.collabRevision, 1)
+        let baseSnapshot = try XCTUnwrap(DocumentSnapshot.decoded(document.collabBaseSnapshot))
+        XCTAssertEqual(DocumentBody.decode(baseSnapshot.blocks[0].body).string, "初期")
+    }
+
+    func testMergeWhenBothSidesReorderUsesRemoteOrderSkeletonAndKeepsBothSidesInsertions() {
+        let base = DocumentSnapshot(title: "t", pageSize: "a4", columnCount: 1, header: nil, footer: nil, blocks: [
+            .init(id: "a", kind: "paragraph", body: text("A"), imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+            .init(id: "b", kind: "paragraph", body: text("B"), imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+            .init(id: "c", kind: "paragraph", body: text("C"), imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+        ])
+        let local = DocumentSnapshot(title: "t", pageSize: "a4", columnCount: 1, header: nil, footer: nil, blocks: [
+            base.blocks[1],
+            base.blocks[0],
+            .init(id: "x", kind: "paragraph", body: text("X"), imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+            base.blocks[2],
+        ])
+        let remote = DocumentSnapshot(title: "t", pageSize: "a4", columnCount: 1, header: nil, footer: nil, blocks: [
+            base.blocks[2],
+            base.blocks[1],
+            .init(id: "y", kind: "paragraph", body: text("Y"), imageHash: nil, equationSource: "", listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []),
+            base.blocks[0],
+        ])
+        let merged = DocumentSnapshotMerge.merge(base: base, local: local, remote: remote)
+        let ids = merged.snapshot.blocks.map(\.id)
+        XCTAssertEqual(ids, ["c", "b", "y", "a", "x"])
+        XCTAssertEqual(Set(ids).count, 5)
+    }
+
+    func testApplyingSnapshotWhenABlockChangesKindReplacesTheBlockObject() {
+        let document = makeDocument(["段落から表へ"])
+        let originalBlock = document.sortedBlocks[0]
+        originalBlock.collabID = "same-id"
+        XCTAssertEqual(originalBlock.kind, .paragraph)
+
+        let tableSnapshot = DocumentSnapshot(title: "t", pageSize: "a4", columnCount: 1, header: nil, footer: nil, blocks: [
+            .init(
+                id: "same-id", kind: "table", body: nil, imageHash: nil, equationSource: "",
+                listKind: nil, listLevel: 0, paragraphStyle: nil,
+                rows: [[.init(body: text("A1"), columnSpan: 1, rowSpan: 1), .init(body: text("B1"), columnSpan: 1, rowSpan: 1)]],
+                comments: [], footnotes: []
+            ),
+        ])
+        DocumentSnapshotCodec.apply(tableSnapshot, to: document, assets: [:])
+        XCTAssertEqual(document.sortedBlocks.count, 1)
+        let replaced = document.sortedBlocks[0]
+        XCTAssertTrue(replaced !== originalBlock)
+        XCTAssertEqual(replaced.collabID, "same-id")
+        XCTAssertEqual(replaced.kind, .table)
+        XCTAssertEqual(replaced.sortedTableRows.first?.sortedCells.map(\.text), ["A1", "B1"])
+    }
+
+    func testRepeatedRevisionConflictsExhaustMaxAttemptsAndReturnSkipped() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["初期"])
+        document.collabRoomID = "room-conflict-exhaust"
+        _ = try await CollabSyncEngine.sync(
+            document: document, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        document.sortedBlocks[0].bodyData = text("競合し続ける変更")
+        room.putAttempts = 0
+        room.alwaysConflictOnPut = true
+
+        let outcome = try await CollabSyncEngine.sync(
+            document: document, canWrite: true, client: room,
+            flush: {}, stillCurrent: { true }, didApply: {}, save: {}
+        )
+        XCTAssertEqual(outcome, .skipped)
+        XCTAssertEqual(room.putAttempts, 4)
+    }
+
+    func testFileCollabStateStorePersistsBaseExcludesFromBackupAndDeletesOnNil() throws {
+        let store = FileCollabStateStore()
+        let key = "test-room-\(UUID().uuidString)|doc"
+        defer {
+            store.setBase(nil, forKey: key)
+            UserDefaults.standard.removeObject(forKey: "collab.rev.\(key)")
+        }
+
+        XCTAssertEqual(store.revision(forKey: key), 0)
+        XCTAssertNil(store.base(forKey: key))
+
+        let payload = Data("{\"title\":\"テスト\"}".utf8)
+        store.setRevision(12, forKey: key)
+        store.setBase(payload, forKey: key)
+        XCTAssertEqual(store.revision(forKey: key), 12)
+        XCTAssertEqual(store.base(forKey: key), payload)
+
+        let directory = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+            .appendingPathComponent("collab-sync", isDirectory: true)
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isExcludedFromBackupKey])
+        let matched = try XCTUnwrap(files.first { (try? Data(contentsOf: $0)) == payload })
+        let values = try matched.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+
+        store.setBase(nil, forKey: key)
+        XCTAssertNil(store.base(forKey: key))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: matched.path))
+    }
+
+    func testCarryOverCollabIDsWithDuplicateEmptyAndRepeatedParagraphsDoesNotDuplicateIDs() {
+        let old = [
+            para("", id: "id-1"),
+            para("本文", id: "id-2"),
+            para("", id: "id-3"),
+            para("本文", id: "id-4"),
+        ]
+        let new = ["", "挿入", "本文", "", "本文"].map { para($0) }
+        DocumentBlockText.carryOverCollabIDs(from: old, to: new)
+        XCTAssertEqual(new.map(\.collabID), ["id-1", nil, "id-2", "id-3", "id-4"])
+    }
+
+    func testCarryOverCollabIDsWhenAllParagraphsChangeAndCountGrowsAssignsLeadingIDsOnly() {
+        let old = [
+            para("古1", id: "id-1"),
+            para("古2", id: "id-2"),
+        ]
+        let new = ["新1", "新2", "新3"].map { para($0) }
+        DocumentBlockText.carryOverCollabIDs(from: old, to: new)
+        XCTAssertEqual(new.map(\.collabID), ["id-1", "id-2", nil])
     }
 }
