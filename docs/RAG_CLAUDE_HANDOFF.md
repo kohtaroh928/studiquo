@@ -1,5 +1,9 @@
 > タスク管理の正本は、2026-10-25からGitHub Project「Studiquo タスク」(https://github.com/users/kohtaroh928/projects/1)。以下の記録にある「Notion既存カード」「Notionを更新」は移行前の記録で、今後はGitHub Projectの既存項目を更新する(`AGENTS.md`の「GitHub Projectでのタスク管理」)。
 
+## 2026-11-09 最近のRAG・共同編集・セキュリティ実装に対するテストケース12項目の追加・PR作成（Antigravity）
+
+ユーザー依頼により、ここ最近の実装（PR #123〜#139）に対する優先度順（P0〜P3）の12項目のテストケースを作成・検証し、最新 `origin/main`（`995721f`）へリベースしたうえでPRを作成した（PR #143: https://github.com/kohtaroh928/studiquo/pull/143 、PR #144: https://github.com/kohtaroh928/studiquo/pull/144 ）。またCIの `Worker tests` で `src/rag-pdf-process.test.ts` の `failure after success cleanup timeout does not create a second grace window` が `setTimeout` の1ms早期発火（`Date.now() < cleanupEnd`）により失敗していたため、`mcp-server/src/rag/pdf-process.ts` の `clean()` で `pdf_processing_timeout` 発生時に `cleanupEnd = 0` として猶予期限切れを確定させる修正を加えた。RAG関連では `.worktrees/recent-impl-tests-3`（ブランチ `antigravity/recent-impl-tests-3`、PR #143）にて、`studiquoTests/RAGLibrarySyncTests.swift`（`GrantError.localPersistence` の文言と同意API 503失敗時の非有効化・`pendingRevoke` 設定）、`mcp-server/src/rag-control.test.ts`（`ragPrivacyRejection` における `PAYWALL_ENABLED` ゲートと同意撤回・ロック変更の非ブロック検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー独走ページ `clearRerankWinnerPage`・`rerankTop` が数量質問の根拠になるケースと、質問固有のラテン文字/カタカナ主題語が欠落する場合に棄却されるケースの統合検証）を追加し、すべてパスすることを確認した。GitHub Project 項目 `PVTI_lAHODtsRbs4Bom7vzhHKyNw` にPRリンクを記録済み。常駐processなし。本番・ステージングへの配備やデータ変更は行っていない。次の一手: CI通過確認とユーザーレビュー後のPR #143・#144マージ。
+
 ## 2026-11-04 Codex API認可マトリクス（ローカル検証のみ）
 
 最終更新: 2026-11-04。今回: ユーザー依頼「全API認可の網羅テスト」を、`origin/main` の `31599e6` 基点の専用worktree `.worktrees/authz-matrix` / `codex/authz-matrix` で実施。RAGは既知の他アカウントdocument/source IDに対する状態・status・readiness・state変更・2形式の削除を実Worker/ローカルD1で検証した。所有者の成功対照と、他アカウントへ作用しないことを確認。RAG・認証の本体実装、feature flag、DB migrationは変更していない。過去の実API/実機評価を今回再実行したとは扱わない。

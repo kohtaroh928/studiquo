@@ -39,4 +39,37 @@ final class GoogleSignInConfigurationTests: XCTestCase {
         otherDefaults.set(true, forKey: other)
         XCTAssertFalse(AuthenticationStore(service: "test.\(UUID().uuidString)", defaults: otherDefaults).knowsPasskeyOnThisDevice)
     }
+
+    @MainActor
+    func testLogoutPreservesPasskeyKnownFlagWhileAccountDeletionClearsOnlyCurrentEnvironmentFlag() {
+        let currentKey = LaunchStoreEnvironment.namespaced("authenticationPasskeyKnownOnDevice")
+        let otherKey = currentKey.hasSuffix(".staging") ? "authenticationPasskeyKnownOnDevice" : "authenticationPasskeyKnownOnDevice.staging"
+        let suite = "passkey-flag-lifecycle-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(true, forKey: currentKey)
+        defaults.set(true, forKey: otherKey)
+        let store = AuthenticationStore(service: "test.\(UUID().uuidString)", defaults: defaults)
+        XCTAssertTrue(store.knowsPasskeyOnThisDevice)
+
+        store.logout()
+        XCTAssertTrue(store.knowsPasskeyOnThisDevice, "logout must keep the device passkey hint so the login screen offers passkey sign-in")
+        XCTAssertTrue(defaults.bool(forKey: otherKey))
+
+        store.finishAccountDeletion()
+        XCTAssertFalse(store.knowsPasskeyOnThisDevice, "account deletion clears the current environment passkey hint")
+        XCTAssertTrue(defaults.bool(forKey: otherKey), "account deletion in one environment must not wipe the other environment's passkey hint")
+    }
+
+    func testUnexpandedOrNonStringServerClientIDIsRejected() {
+        XCTAssertFalse(GoogleSignInService.isConfigured([
+            "GIDClientID": "123.apps.googleusercontent.com",
+            "GIDServerClientID": "$(STUDIQUO_GOOGLE_WEB_CLIENT_ID)",
+        ]))
+        XCTAssertFalse(GoogleSignInService.isConfigured([
+            "GIDClientID": "123.apps.googleusercontent.com",
+            "GIDServerClientID": 999,
+        ]))
+    }
 }
