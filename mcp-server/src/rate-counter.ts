@@ -217,6 +217,30 @@ export class RateCounter extends DurableObject<Env> {
     });
   }
 
+  // Password set (local-auth.ts upsertLocalAccount): writes the record only if
+  // no newer password was written since, and remembers its generation, as one
+  // step. Two password sets at once can finish their (slow) hashing in either
+  // order; the one with the lower generation must not land last, or the stored
+  // record and the remembered generation would disagree and nobody could sign in.
+  // The remembered generation is what lets a sign-in refuse a stale record that
+  // another location's KV still serves (committedAccountGeneration).
+  async commitAccountRecord(key: string, json: string | ArrayBuffer | ArrayBufferView<ArrayBufferLike> | ReadableStream<unknown>, gen: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const committed = (await this.ctx.storage.get<number>("committedGen")) ?? 0;
+      if (gen < committed) return false;
+      await this.env.STUDIQUO_DATA.put(key, json);
+      await this.ctx.storage.put("committedGen", gen);
+      return true;
+    });
+  }
+
+  // The generation of the newest password record written, or null for an
+  // account that has not had one written since this was introduced (those are
+  // not checked, as before).
+  async committedAccountGeneration() {
+    return (await this.ctx.storage.get<number>("committedGen")) ?? null;
+  }
+
   // App Attest (app-attest.ts): one object per registered app key, holding its
   // public key and the last assertion counter. Deliberately has no alarm: a key
   // stays valid for as long as the app install does, and forgetting the counter
