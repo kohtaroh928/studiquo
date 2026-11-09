@@ -64,7 +64,10 @@ struct RAGAutomaticLibraryControls: View {
                         defer { working = false }
                         do { try await service.grant(scope: selectedScope, includeFuture: includeFuture, context: context, notebooks: notebooks) }
                         catch let error as RAGLibrarySyncService.GrantError { errorMessage = error.localizedDescription }
-                        catch { errorMessage = L("自動登録を開始できませんでした。通信と送信許可を確認してください。") }
+                        // Keep the safe, localized reason from the registration request. The
+                        // former catch-all message hid actionable states such as a stale
+                        // session, server rate limit, or an unavailable control endpoint.
+                        catch { errorMessage = error.localizedDescription }
                     }
                 }
                 .disabled(working || !service.available || !AIDataDisclosure.hasBeenAcknowledged || (scopeKind == "folder" && folderID.isEmpty))
