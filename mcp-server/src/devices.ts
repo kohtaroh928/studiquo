@@ -1,5 +1,5 @@
 import { checkRateLimit } from "./rate-limit.ts";
-import { json, readJSONLimited } from "./http.ts";
+import { json, readJSONLimited, bodyText } from "./http.ts";
 import { sendPush } from "./push.ts";
 import type { Env } from "./env.ts";
 
@@ -47,8 +47,8 @@ export async function removeDevice(env: Env, userKey: string, deviceToken: strin
 function parseDevice(raw: unknown): Device | null {
   // A request body: each member is checked before it is used.
   const body = raw as Record<string, unknown> | null | undefined;
-  const token = String(body?.deviceToken ?? "").trim().toLowerCase();
-  const environment = String(body?.environment ?? "");
+  const token = bodyText(body?.deviceToken).trim().toLowerCase();
+  const environment = bodyText(body?.environment);
   if (!DEVICE_TOKEN_PATTERN.test(token) || token.length % 2 !== 0) return null;
   if (!DEVICE_ENVIRONMENTS.has(environment)) return null;
   const installationID = typeof body?.installationID === "string"
@@ -141,7 +141,7 @@ export async function handleDeviceRoutes(url: URL, request: Request, env: Env, u
   if (request.method === "DELETE") {
     const body = await readJSONLimited(request, MAX_BODY);
     if (body === null) return json({ error: "Invalid device registration." }, 400);
-    const token = String(body?.deviceToken ?? "").trim().toLowerCase();
+    const token = bodyText(body?.deviceToken).trim().toLowerCase();
     if (!DEVICE_TOKEN_PATTERN.test(token) || token.length % 2 !== 0) {
       return json({ error: "Invalid device registration." }, 400);
     }

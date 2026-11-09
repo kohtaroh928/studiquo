@@ -3,7 +3,7 @@ import { resolveChatUserKey } from "./chat-identity.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared, bodyText, bodyNumber } from "./http.ts";
 import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.ts";
 import { handleGroupRoutes } from "./groups.ts";
 import { sendPush } from "./push.ts";
@@ -41,7 +41,7 @@ const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
 function parseFriendCode(body: { code: unknown; }) {
-  const code = String(body?.code ?? "").trim().toUpperCase();
+  const code = bodyText(body?.code).trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
@@ -50,7 +50,7 @@ function parseFriendCode(body: { code: unknown; }) {
 // link token can never be confused with, or substituted for, a manually
 // typed friend code.
 function parseLinkToken(body: { token: unknown; }) {
-  const token = String(body?.token ?? "").trim().toUpperCase();
+  const token = bodyText(body?.token).trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(token) ? token : null;
 }
 
@@ -68,8 +68,8 @@ function parseAfter(rawValue: string | null) {
 // date still counts as "today" is left to the viewer's own client, which is
 // the only side that actually knows what day it is for the viewer.
 function parseStudyStats(body: { todayStudySeconds: unknown; studyDate: unknown; }) {
-  const seconds = Number(body?.todayStudySeconds);
-  const date = String(body?.studyDate ?? "");
+  const seconds = bodyNumber(body?.todayStudySeconds);
+  const date = bodyText(body?.studyDate);
   if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 86_400) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   return { seconds, date };
@@ -83,7 +83,7 @@ async function ensureUser(env: Env, key: string, name: string | null = null, stu
   const storageKey = `chat:user:${key}`;
   const user = await env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
   if (user) {
-    const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
+    const cleaned = bodyText(name).trim().slice(0, 80);
     const needsWrite = (cleaned && cleaned !== user.name) || studyStats || !user.linkToken;
     // Read-only fast path. Any write (rename, study stats, link-token
     // backfill) goes through the per-key UserRegistry instead of
@@ -232,7 +232,8 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     if (body?.bio !== undefined && (typeof body.bio !== "string" || [...body.bio].length > 500)) {
       return json({ error: "Bio must be a string of at most 500 characters." }, 400);
     }
-    const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, body?.name, parseStudyStats(body), body?.bio);
+    // Checked here: the registry (a Durable Object) turns it into text with String().
+    const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, bodyText(body?.name, null), parseStudyStats(body), body?.bio);
     // So a report about this chat user can be traced to the account an operator
     // may suspend (moderation-actions.ts); the chat key alone can't be reversed.
     const identityLink = `chat-identity-of:${key}`;
@@ -257,8 +258,8 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, key);
     if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
-    const contentType = String(body?.contentType ?? "");
-    const data = String(body?.data ?? "");
+    const contentType = bodyText(body?.contentType);
+    const data = bodyText(body?.data);
     if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
@@ -527,7 +528,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
   const readMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/read$/.exec(url.pathname);
   if (readMatch && request.method === "POST") {
     const body = await readBody(request);
-    const throughID = Number(body?.throughID);
+    const throughID = bodyNumber(body?.throughID);
     if (!Number.isSafeInteger(throughID) || throughID < 0) return json({ error: "Invalid read position." }, 400);
     return roomResponse(env.CHAT_ROOM.getByName(readMatch[1]).markRead(key, throughID));
   }
@@ -541,7 +542,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_MESSAGE, key);
     if (!allowed) return json({ error: "Too many messages. Please slow down." }, 429);
     const body = await readBody(request);
-    const text = String(body?.text ?? "").trim().slice(0, 2_000);
+    const text = bodyText(body?.text).trim().slice(0, 2_000);
     if (!text) return json({ error: "Message is required." }, 400);
     const clientMessageID = typeof body?.clientMessageID === "string" ? body.clientMessageID.slice(0, 100) : null;
     const room = env.CHAT_ROOM.getByName(match[1]);
@@ -591,7 +592,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
   if (editMatch && request.method === "POST") {
     const messageID = Number(editMatch[2]);
     const body = await readBody(request);
-    const text = String(body?.text ?? "").trim().slice(0, 2_000);
+    const text = bodyText(body?.text).trim().slice(0, 2_000);
     if (!text) return json({ error: "Message is required." }, 400);
     try {
       const result = await env.CHAT_ROOM.getByName(editMatch[1]).editMessage(key, messageID, text);
@@ -632,7 +633,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     // well-formed base64 would make every later download fail with a 500.
     if (!isWellFormedBase64(body?.data)) return json({ error: "Invalid attachment." }, 400);
     try {
-      const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, body?.contentType, body?.data);
+      const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, bodyText(body?.contentType), body?.data);
       return json(result, 201);
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
@@ -694,7 +695,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     if (!allowed) return json({ error: "Too many reports. Please slow down." }, 429);
     const messageID = Number(reportMatch[2]);
     const body = await readBody(request);
-    const reason = String(body?.reason ?? "").trim().slice(0, MAX_REPORT_REASON_LENGTH);
+    const reason = bodyText(body?.reason).trim().slice(0, MAX_REPORT_REASON_LENGTH);
     try {
       await env.CHAT_ROOM.getByName(reportMatch[1]).requireParticipant(key);
     } catch (error) {

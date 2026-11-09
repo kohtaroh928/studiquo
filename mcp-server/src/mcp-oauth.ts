@@ -1,6 +1,6 @@
 import { recordRevocation } from "./revocation-log.ts";
 import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
-import { json, readJSONLimited, readTextLimited } from "./http.ts";
+import { json, readJSONLimited, readTextLimited, bodyText } from "./http.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { accountIsUnavailable } from "./session.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
@@ -115,7 +115,7 @@ export function classifyClient(client: ClientRecord) {
 }
 
 export function normalizeCode(value: unknown) {
-  return String(value ?? "").toUpperCase().replace(/[\s-]/g, "");
+  return bodyText(value).toUpperCase().replace(/[\s-]/g, "");
 }
 
 async function ownerCodeKey(code: string) {
@@ -318,7 +318,10 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
       return json({ error: "invalid_client_metadata" }, 400);
     }
     const clientId = `studiquo_${randomToken(16)}`;
-    const clientName = String(body.client_name ?? "MCP client").slice(0, 100);
+    // RFC 7591: client_name is a string; anything else is bad metadata.
+    const rawClientName = body.client_name ?? "MCP client";
+    if (typeof rawClientName !== "string") return json({ error: "invalid_client_metadata" }, 400);
+    const clientName = rawClientName.slice(0, 100);
     await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName, redirectUris: uris }), { expirationTtl: UNAPPROVED_CLIENT_TTL });
     return json({ client_id: clientId, client_name: clientName, redirect_uris: uris,
       token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"],
@@ -354,7 +357,7 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
     const fail = (message: string, status = 400) => json({ error: "invalid_code", message }, status);
     if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, clientKey(request)))) return fail("試行が多すぎます。しばらくしてからやり直してください。", 429);
     const body = await readJSONLimited(request, 1_000);
-    const id = String(body?.id ?? "");
+    const id = bodyText(body?.id);
     const code = normalizeCode(body?.code);
     if (!/^[a-f0-9]{64}$/.test(id)) return fail("この画面は期限切れです。AIアプリから接続をやり直してください。");
     const pending = await env.STUDIQUO_DATA.get<PendingAuthorization>(`mcp:auth:${id}`, "json");
