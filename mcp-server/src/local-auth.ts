@@ -227,7 +227,33 @@ export async function upsertLocalAccount(env: Env, email: unknown, password: unk
   const record = argon2Writes(env)
     ? await newArgon2Record(normalized, password, gen, { patient: true })
     : await newLegacyRecord(normalized, password, gen);
-  await env.STUDIQUO_DATA.put(`${ACCOUNT_PREFIX}${normalized}`, JSON.stringify(record));
+  // Written by the counter object, which refuses a record older than one it has
+  // already written (two sets at once can finish out of order) and remembers
+  // this one's generation for verifyLocalAccount.
+  const written = await generationStub(env, await sha256Hex(normalized))
+    .commitAccountRecord(`${ACCOUNT_PREFIX}${normalized}`, JSON.stringify(record), gen);
+  if (!written) throw new Error("A newer password was set at the same time.");
+}
+
+/**
+ * True when `record` is older than the newest password written for the account:
+ * KV can serve the previous record for about a minute after a change, and its
+ * password must not sign in during that time. Asks the counter object (strongly
+ * consistent). If that can't be asked the record is let through, as before this
+ * check existed: a counter outage must not stop every sign-in, and the cost is
+ * only the old one-minute window. An account with no remembered generation is
+ * not checked.
+ */
+async function recordIsStale(env: Env, normalized: string, record: LocalAccountRecord) {
+  try {
+    const committed = await generationStub(env, await sha256Hex(normalized)).committedAccountGeneration();
+    if (committed === null || committed === undefined) return false;
+    const gen = Number.isInteger(record.gen) ? (record.gen as number) : 0;
+    return gen < committed;
+  } catch (error) {
+    console.error(JSON.stringify({ message: "password generation check failed", error: error instanceof Error ? error.message : String(error) }));
+    return false;
+  }
 }
 
 // Fixed, public, never matches a real account: they only exist so the paths
@@ -309,7 +335,12 @@ export async function verifyLocalAccount(env: Env, email: unknown, password: unk
   if (!normalized || typeof password !== "string") return rejectAfterDummyWork(password, { priority });
   const key = `${ACCOUNT_PREFIX}${normalized}`;
   const record = await env.STUDIQUO_DATA.get<LocalAccountRecord>(key, "json");
-  if (!record) return rejectAfterDummyWork(password, { priority });
+  if (!record) {
+    // The same extra round trip a real record costs (recordIsStale), so the
+    // timing doesn't tell an account that exists from one that doesn't.
+    await generationStub(env, await sha256Hex(normalized)).committedAccountGeneration().catch(() => null);
+    return rejectAfterDummyWork(password, { priority });
+  }
 
   try {
     if (record.algo === "argon2id") {
@@ -318,7 +349,9 @@ export async function verifyLocalAccount(env: Env, email: unknown, password: unk
       const stored = fromBase64(record.passwordHash);
       const candidate = await hashers.argon2id(password, fromBase64(record.salt), params, { priority });
       await dummyPbkdf2(password);
-      return constantTimeEqual(candidate, stored);
+      // Asked whatever the result, so a stale record answers no differently from a wrong password.
+      const stale = await recordIsStale(env, normalized, record);
+      return constantTimeEqual(candidate, stored) && !stale;
     }
 
     // Legacy: PBKDF2-SHA256.
@@ -327,7 +360,8 @@ export async function verifyLocalAccount(env: Env, email: unknown, password: unk
     const stored = fromBase64(record.passwordHash);
     const candidate = await hashers.pbkdf2(password, fromBase64(record.salt), iterations);
     await dummyArgon2(password, { priority });
-    if (!constantTimeEqual(candidate, stored)) return false;
+    const stale = await recordIsStale(env, normalized, record);
+    if (!constantTimeEqual(candidate, stored) || stale) return false;
     await upgradeLegacyRecord(env, key, record, normalized, password);
     return true;
   } catch (error) {

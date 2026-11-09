@@ -522,4 +522,42 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: "ragManaged-legacy-owner"))
     }
 
+    func testGrantErrorLocalPersistenceDescriptionAndGrantPropagatesServerFailureWithoutEnabling() async throws {
+        XCTAssertEqual(
+            RAGLibrarySyncService.GrantError.localPersistence.errorDescription,
+            L("この端末の資料情報を保存できなかったため、自動登録を開始しませんでした。資料を閉じてからもう一度お試しください。")
+        )
+
+        let container = try ModelContainer(
+            for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let client = RAGControlClient(transport: { request in
+            if request.httpMethod == "GET" {
+                let reply: [String: Any] = ["enabled": false, "consentEpoch": 0, "available": true]
+                return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let errBody = #"{"error":"AI機能は公開準備中です。学習資料は送信されません。"}"#
+            return (Data(errBody.utf8), HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        })
+        let service = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" }, now: { Date(timeIntervalSince1970: 200) })
+
+        do {
+            try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [])
+            XCTFail("Expected server 503 to be thrown")
+        } catch let WorkerAIProvider.ProviderError.http(status, _) {
+            XCTAssertEqual(status, 503)
+        }
+
+        XCTAssertFalse(service.enabled)
+        let saved = try JSONDecoder().decode(RAGLibrarySyncState.self, from: try XCTUnwrap(defaults.data(forKey: "ragManaged-owner")))
+        XCTAssertFalse(saved.enabled)
+        XCTAssertTrue(saved.pendingRevoke, "interrupted grant persists pendingRevoke so remote consent is cleaned up")
+    }
+
 }
