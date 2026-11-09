@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData, removeParticipantData } from "./document-room-store.ts";
+import { missingAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
 
 // Mirrors chat-room.ts's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -163,6 +164,38 @@ export class DocumentRoom extends DurableObject<Env> {
   async roleOf(userKey: string) {
     const row = this.ctx.storage.sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0];
     return row?.role ?? null;
+  }
+
+  // The whole-document sync: one snapshot with a revision. Anyone in the room
+  // may read it; only the owner and editors write (a reviewer follows along).
+  // A write must name the revision it was based on, so two people saving at
+  // once cannot silently overwrite each other: the second one is told to merge.
+  async getSnapshot(userKey: string, sinceRevision: number) {
+    this.requireParticipant(userKey);
+    return readSnapshot(this.ctx.storage.sql, sinceRevision);
+  }
+
+  async putSnapshot(userKey: string, baseRevision: number, text: string) {
+    const role = this.requireParticipant(userKey);
+    if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
+    return writeSnapshot(this.ctx.storage.sql, baseRevision, text, userKey, Date.now());
+  }
+
+  async missingAssets(userKey: string, hashes: string[]) {
+    this.requireParticipant(userKey);
+    return { missing: missingAssets(this.ctx.storage.sql, hashes) };
+  }
+
+  async putAsset(userKey: string, hash: string, data: string) {
+    const role = this.requireParticipant(userKey);
+    if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
+    return writeAsset(this.ctx.storage.sql, hash, data);
+  }
+
+  async getAsset(userKey: string, hash: string) {
+    this.requireParticipant(userKey);
+    const data = readAsset(this.ctx.storage.sql, hash);
+    return data === null ? { found: false as const } : { found: true as const, data };
   }
 
   // The room's members if `userKey` is its owner, otherwise null.
