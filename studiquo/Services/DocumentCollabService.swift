@@ -116,6 +116,62 @@ enum DocumentCollabService {
         try await request(path: "api/document/rooms/\(roomID)/invite/decline", method: "POST", body: [String: String]())
     }
 
+    // MARK: Whole-document sync
+
+    struct SnapshotReply: Codable {
+        let revision: Int
+        let snapshot: String?
+        let unchanged: Bool?
+    }
+    struct RevisionReply: Codable { let revision: Int }
+    struct MissingReply: Codable { let missing: [String] }
+    struct AssetReply: Codable { let data: String }
+    /// The room has moved on since the revision this device last saw.
+    struct RevisionConflict: Error { let currentRevision: Int }
+    /// The room has no snapshot yet and this person is not its owner: the owner's
+    /// document is the first one in, so an editor waits for it.
+    struct RoomNotReady: Error {}
+
+    static func snapshot(roomID: String, since: Int) async throws -> SnapshotReply {
+        try await request(path: "api/document/rooms/\(roomID)/snapshot?since=\(since)", method: "GET", body: Optional<String>.none)
+    }
+
+    static func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+        struct Body: Encodable { let baseRevision: Int; let snapshot: String; let assets: [String] }
+        do {
+            let reply: RevisionReply = try await request(
+                path: "api/document/rooms/\(roomID)/snapshot", method: "PUT", body: Body(baseRevision: baseRevision, snapshot: snapshot, assets: assets)
+            )
+            return reply.revision
+        } catch let error as ServerError where error.status == 409 {
+            throw RevisionConflict(currentRevision: -1)
+        } catch let error as ServerError where error.status == 412 {
+            throw RoomNotReady()
+        }
+    }
+
+    static func missingAssets(roomID: String, hashes: [String]) async throws -> [String] {
+        let reply: MissingReply = try await request(
+            path: "api/document/rooms/\(roomID)/assets/missing", method: "POST", body: ["hashes": hashes]
+        )
+        return reply.missing
+    }
+
+    static func putAsset(roomID: String, hash: String, data: Data) async throws {
+        let _: [String: String] = try await request(
+            path: "api/document/rooms/\(roomID)/assets/\(hash)", method: "PUT", body: ["data": data.base64EncodedString()]
+        )
+    }
+
+    static func asset(roomID: String, hash: String) async throws -> Data? {
+        do {
+            let reply: AssetReply = try await request(path: "api/document/rooms/\(roomID)/assets/\(hash)", method: "GET", body: Optional<String>.none)
+            return Data(base64Encoded: reply.data)
+        } catch let error as ServerError where error.status == 404 {
+            return nil
+        }
+    }
+
     static func participants(roomID: String) async throws -> [Participant] {
         try await request(path: "api/document/rooms/\(roomID)/participants", method: "GET", body: Optional<String>.none)
     }
@@ -141,11 +197,20 @@ enum DocumentCollabService {
         try await request(path: "api/document/rooms/\(roomID)/changes/\(changeID)/review", method: "POST", body: ["decision": decision])
     }
 
+    /// `path` may end in a query (`…/snapshot?since=3`). `URL.appending(path:)` would
+    /// percent-encode the `?` into the path, and the server would not find the route.
+    static func requestURL(endpoint: URL, path: String) -> URL? {
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard var components = URLComponents(url: endpoint.appending(path: String(parts[0])), resolvingAgainstBaseURL: false) else { return nil }
+        if parts.count == 2 { components.percentEncodedQuery = String(parts[1]) }
+        return components.url
+    }
+
     private static func request<Response: Decodable, Body: Encodable>(
         path: String, method: String, body: Body?
     ) async throws -> Response {
-        guard let endpoint = MCPCloudCredentials.configuredEndpoint() else { throw URLError(.badURL) }
-        var request = URLRequest(url: endpoint.appending(path: path))
+        guard let endpoint = MCPCloudCredentials.configuredEndpoint(), let url = requestURL(endpoint: endpoint, path: path) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")

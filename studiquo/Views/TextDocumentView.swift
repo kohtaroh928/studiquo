@@ -193,11 +193,9 @@ struct TextDocumentView: View {
     /// for it.
     @State private var justActivatedSegmentID: ObjectIdentifier?
     @State private var showsChangeHistory = false
-    /// The header/footer text as of the last proposal (or the first edit this
-    /// session), keyed "header"/"footer" — what a collaboration proposal's
-    /// `previousText` is. Only used while the document has a room.
-    @State private var headerFooterBaseline: [String: String] = [:]
-    @State private var headerFooterProposalTasks: [String: Task<Void, Never>] = [:]
+    @State private var isCollabSyncing = false
+    @State private var collabReadOnly = false
+    @State private var collabStatus: String?
     @State private var showsCollabSheet = false
     @State private var showsInsertEquationSheet = false
     @State private var equationDraft = ""
@@ -284,7 +282,18 @@ struct TextDocumentView: View {
         .background(Theme.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: load)
-        .onDisappear { flushSave() }
+        .onDisappear {
+            flushSave()
+            if document.collabRoomID != nil {
+                // One last round with what was typed just now. A round still running (it is
+                // cancelled with this screen) is waited for, not skipped.
+                Task {
+                    for _ in 0..<20 where isCollabSyncing { try? await Task.sleep(for: .milliseconds(150)) }
+                    await syncCollabOnce()
+                }
+            }
+        }
+        .task(id: document.collabRoomID) { await collabSyncLoop() }
         .onChange(of: attributedText) { _, _ in scheduleSave() }
         .alert("文書名を変更", isPresented: $isRenaming) {
             TextField("文書名", text: $renameDraft)
@@ -393,7 +402,7 @@ struct TextDocumentView: View {
             }
             .accessibilityLabel("共同編集")
             .sheet(isPresented: $showsCollabSheet) {
-                CollabSheet(document: document, onChange: { try? modelContext.save() })
+                CollabSheet(document: document, status: collabStatus, readOnly: collabReadOnly, onChange: { try? modelContext.save() }, onSyncNow: { await syncCollabOnce() })
             }
 
             Menu {
@@ -750,47 +759,6 @@ struct TextDocumentView: View {
 
     // MARK: Header & footer
 
-    private func noteHeaderFooterEdit(_ kind: DocumentHeaderFooterKind) {
-        let key = kind == .header ? "header" : "footer"
-        if headerFooterBaseline[key] == nil {
-            headerFooterBaseline[key] = (kind == .header ? document.header : document.footer)?.text ?? ""
-        }
-    }
-
-    /// Proposes a header/footer edit to the room once typing pauses, so each
-    /// keystroke is not its own proposal. Mirrors `recordChange` for paragraphs:
-    /// the text is already applied here, and the room gets a pending change
-    /// under the reserved header/footer block order.
-    private func scheduleHeaderFooterProposal(_ kind: DocumentHeaderFooterKind) {
-        guard let roomID = document.collabRoomID else { return }
-        let key = kind == .header ? "header" : "footer"
-        headerFooterProposalTasks[key]?.cancel()
-        headerFooterProposalTasks[key] = Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                let current = (kind == .header ? document.header : document.footer)?.text ?? ""
-                let previous = headerFooterBaseline[key] ?? ""
-                guard current != previous, let order = DocumentCollabService.blockOrder(forTarget: key) else { return }
-                headerFooterBaseline[key] = current
-                let record = DocumentChangeRecord(
-                    author: profileName.isEmpty ? "Studiquoユーザー" : profileName,
-                    kind: .edit, previousText: previous, newText: current, anchorBlock: nil
-                )
-                record.collabTarget = key
-                record.document = document
-                document.changeRecords = (document.changeRecords ?? []) + [record]
-                try? modelContext.save()
-                Task {
-                    guard let result = try? await DocumentCollabService.propose(
-                        roomID: roomID, blockOrder: order, previousText: previous, newText: current
-                    ) else { return }
-                    await MainActor.run { record.collabChangeID = result.id }
-                }
-            }
-        }
-    }
-
     /// A tap target in the page's own margin, matching how a word processor
     /// lets you edit a header/footer directly where it's shown — rather than
     /// a separate toggle or sheet — but backed by `DocumentHeaderFooter`,
@@ -801,12 +769,7 @@ struct TextDocumentView: View {
         return HStack(spacing: 8) {
             TextField(placeholder, text: Binding(
                 get: { existing?.text ?? "" },
-                set: {
-                    noteHeaderFooterEdit(kind)
-                    document.headerFooter(kind).text = $0
-                    scheduleAuxiliarySave()
-                    scheduleHeaderFooterProposal(kind)
-                }
+                set: { document.headerFooter(kind).text = $0; scheduleAuxiliarySave() }
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -977,6 +940,77 @@ struct TextDocumentView: View {
         externalRevision += 1
     }
 
+    // MARK: Shared-document sync
+
+    /// Syncs with the room every few seconds while this document is open, and
+    /// once more when it is closed. See `CollabSyncEngine`.
+    private func collabSyncLoop() async {
+        guard document.collabRoomID != nil else { return }
+        while !Task.isCancelled {
+            await syncCollabOnce()
+            try? await Task.sleep(for: .seconds(4))
+        }
+    }
+
+    private func syncCollabOnce() async {
+        guard document.collabRoomID != nil, hasLoaded, !isCollabSyncing else { return }
+        isCollabSyncing = true
+        defer { isCollabSyncing = false }
+        // What the document looked like when the round started. `updatedAt` is not used:
+        // every autosave bumps it, which would make nearly every round look "edited".
+        final class Marker { var fingerprint: CollabEditMarker? }
+        let marker = Marker()
+        do {
+            let outcome = try await CollabSyncEngine.sync(
+                document: document,
+                canWrite: !collabReadOnly,
+                client: LiveDocumentSnapshotClient(),
+                flush: {
+                    flushSave()
+                    marker.fingerprint = CollabEditMarker.capture(of: document, live: attributedText)
+                },
+                stillCurrent: {
+                    CollabEditMarker.capture(of: document, live: attributedText) == marker.fingerprint
+                },
+                didApply: { reloadAfterRemoteApply() },
+                save: { try? modelContext.save() }
+            )
+            switch outcome {
+            case .upToDate: collabStatus = L("同期済み")
+            case .skipped: collabStatus = L("入力中のため、次の同期で反映します")
+            case .pushed: collabStatus = L("変更を送信しました")
+            case .pulled(let conflicts):
+                collabStatus = conflicts > 0
+                    ? L("相手の変更を反映しました(同じ箇所の編集が\(conflicts)件重なり、この端末の内容を残しました)")
+                    : L("相手の変更を反映しました")
+            case .tooLarge: collabStatus = L("文書が大きすぎるため、共有できません")
+            }
+        } catch let error as DocumentCollabService.ServerError where error.status == 403 {
+            // A reviewer follows along but cannot write; the next round puts the room's text back.
+            collabReadOnly = true
+            collabStatus = L("この文書は閲覧のみです(レビュアー)")
+        } catch {
+            collabStatus = L("同期できません。通信環境を確認してください")
+        }
+    }
+
+    /// After the room's changes were applied to the blocks: the active segment
+    /// may be gone or changed, so reload (or pick) it and tell the editor.
+    private func reloadAfterRemoteApply() {
+        if let activeID = activeSegmentID, let segment = document.segments.first(where: { $0.id == activeID && $0.kind == .text }) {
+            attributedText = DocumentBlockText.joinedText(of: segment.blocks)
+        } else if let first = document.segments.first(where: { $0.kind == .text }) {
+            activeSegmentID = first.id
+            attributedText = DocumentBlockText.joinedText(of: first.blocks)
+        } else {
+            attributedText = NSAttributedString(string: "", attributes: DocumentBody.defaultAttributes())
+            activeSegmentID = nil
+        }
+        let length = attributedText.length
+        selectedRange = NSRange(location: min(selectedRange.location, length), length: 0)
+        externalRevision += 1
+    }
+
     /// After remote changes were accepted straight into blocks (see
     /// `DocumentChangeRecord.applyRemoteChange`), reloads the live text of the
     /// active segment so the editor does not keep showing (and later write
@@ -1053,15 +1087,6 @@ struct TextDocumentView: View {
         )
         record.document = document
         document.changeRecords = (document.changeRecords ?? []) + [record]
-
-        if let roomID = document.collabRoomID, let blockOrder = anchorBlock?.order {
-            Task {
-                guard let result = try? await DocumentCollabService.propose(
-                    roomID: roomID, blockOrder: blockOrder, previousText: previousText, newText: newText
-                ) else { return }
-                await MainActor.run { record.collabChangeID = result.id }
-            }
-        }
     }
 
     /// The whole document's flowing text, for `bodyData`/`plainText` — every
@@ -2801,7 +2826,10 @@ private struct ChangeHistorySheet: View {
 /// place to review everything rather than two parallel review UIs.
 private struct CollabSheet: View {
     @Bindable var document: TextDocument
+    let status: String?
+    let readOnly: Bool
     let onChange: () -> Void
+    let onSyncNow: () async -> Void
     @EnvironmentObject private var friendStore: FriendStore
     @Environment(\.dismiss) private var dismiss
 
@@ -2813,7 +2841,6 @@ private struct CollabSheet: View {
     @State private var selectedFriendCode = ""
     @State private var selectedRole = "editor"
     @State private var errorMessage: String?
-    @State private var statusMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -2901,13 +2928,15 @@ private struct CollabSheet: View {
             }
             Section {
                 Button {
-                    Task { await syncPendingChanges(roomID: roomID) }
+                    Task { isSyncing = true; await onSyncNow(); isSyncing = false }
                 } label: {
-                    Label("変更を同期", systemImage: "arrow.triangle.2.circlepath")
+                    Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(isSyncing)
-                if let statusMessage {
-                    Text(statusMessage).font(.caption).foregroundStyle(.secondary)
+                Text(readOnly ? L("この文書は閲覧のみです。相手の変更が自動で反映されます。") : L("変更は数秒ごとに自動で同期されます。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -2972,52 +3001,6 @@ private struct CollabSheet: View {
             await refreshParticipants()
         } catch {
             await MainActor.run { errorMessage = "招待に失敗しました。相手が友達登録されているか確認してください。" }
-        }
-    }
-
-    /// Pulls the room's still-open proposals and mirrors any this device
-    /// hasn't seen yet as local `DocumentChangeRecord`s, anchored to
-    /// whichever local block currently sits at the same `order` — so they
-    /// show up in "変更履歴" alongside this device's own pending edits. A
-    /// proposal whose block order no longer matches any local block (a
-    /// structural edit shifted things since it was proposed) is skipped
-    /// rather than guessed at.
-    private func syncPendingChanges(roomID: String) async {
-        isSyncing = true
-        defer { isSyncing = false }
-        do {
-            let state = try await DocumentCollabService.state(roomID: roomID)
-            let people = try? await DocumentCollabService.participants(roomID: roomID)
-            if let people { await MainActor.run { participants = people } }
-
-            var nameByKey: [String: String] = [:]
-            for person in people ?? [] { if let name = person.name { nameByKey[person.userKey] = name } }
-            var blocksByOrder: [Int: DocumentBlock] = [:]
-            for block in document.sortedBlocks { blocksByOrder[block.order] = block }
-            let existingIDs = Set((document.changeRecords ?? []).compactMap(\.collabChangeID))
-
-            var addedCount = 0
-            for change in state.pendingChanges where !existingIDs.contains(change.id) {
-                let target = DocumentCollabService.target(forBlockOrder: change.blockOrder)
-                let anchor = blocksByOrder[change.blockOrder]
-                guard target != nil || anchor != nil else { continue }
-                let record = DocumentChangeRecord(
-                    author: nameByKey[change.authorKey] ?? "共同編集メンバー",
-                    kind: .edit, previousText: change.previousText, newText: change.newText, anchorBlock: target == nil ? anchor : nil
-                )
-                record.collabTarget = target
-                record.isRemote = true
-                record.collabChangeID = change.id
-                record.document = document
-                document.changeRecords = (document.changeRecords ?? []) + [record]
-                addedCount += 1
-            }
-            await MainActor.run {
-                if addedCount > 0 { onChange() }
-                statusMessage = addedCount > 0 ? "\(addedCount)件の新しい変更提案を取り込みました。" : "新しい変更提案はありませんでした。"
-            }
-        } catch {
-            await MainActor.run { errorMessage = "同期に失敗しました。通信環境を確認してください。" }
         }
     }
 }

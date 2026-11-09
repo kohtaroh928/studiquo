@@ -35,6 +35,24 @@ enum CollabInviteImporter {
             }
     }
 
+    /// A new, not yet inserted document built from the room's whole-document
+    /// snapshot (tables, images, formatting, comments and all), already in step
+    /// with `revision` so the first sync only brings what changed since.
+    static func makeDocument(
+        roomID: String, inviterName: String?, snapshot: DocumentSnapshot, revision: Int, assets: [String: Data]
+    ) -> TextDocument {
+        let document = TextDocument(title: snapshot.title.isEmpty ? title(inviterName: inviterName) : snapshot.title)
+        DocumentSnapshotCodec.apply(snapshot, to: document, assets: assets)
+        document.isMigratedToBlocks = true
+        let whole = DocumentBlockText.joinedText(of: document.sortedBlocks.filter { $0.kind == .paragraph })
+        document.bodyData = DocumentBody.encode(whole)
+        document.plainText = whole.string
+        document.collabRoomID = roomID
+        document.collabRevision = revision
+        document.collabBaseSnapshot = snapshot.encoded()
+        return document
+    }
+
     /// A new, not yet inserted document bound to `roomID`, so that the editor's
     /// existing propose/review flow works for the invited person.
     static func makeDocument(
