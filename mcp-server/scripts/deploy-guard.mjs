@@ -14,10 +14,14 @@ export function configSection(text, environment) {
 }
 
 export function requiresSignedTokens(text, environment) {
+  if (environment && !/^[A-Za-z0-9_-]+$/.test(environment)) return true; // unknown shape: check strictly
   const section = configSection(text, environment);
   if (!environment) return /^\s*"REQUIRE_SIGNED_TOKENS"\s*:\s*"true"/m.test(section);
-  const block = new RegExp(`"${environment}"\\s*:\\s*\\{[\\s\\S]*?"REQUIRE_SIGNED_TOKENS"\\s*:\\s*"(true|false)"`).exec(section);
-  return block?.[1] === "true";
+  // Plain string search (the name comes from the command line, so it never goes into a RegExp).
+  const start = section.indexOf(`"${environment}"`);
+  if (start < 0) return false;
+  const found = /"REQUIRE_SIGNED_TOKENS"\s*:\s*"(true|false)"/.exec(section.slice(start));
+  return found?.[1] === "true";
 }
 
 /** A message when the deploy must stop, otherwise null. */
