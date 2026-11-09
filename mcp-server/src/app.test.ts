@@ -3410,6 +3410,11 @@ const ROUTES: Array<[RouteAuth, string, string]> = [
   ["bearer", "POST", `/api/document/rooms/${ROOM}/leave`],
   ["bearer", "GET", `/api/document/rooms/${ROOM}/state`],
   ["bearer", "POST", `/api/document/rooms/${ROOM}/propose`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/snapshot`],
+  ["bearer", "PUT", `/api/document/rooms/${ROOM}/snapshot`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/assets/missing`],
+  ["bearer", "PUT", `/api/document/rooms/${ROOM}/assets/${ROOM}`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/assets/${ROOM}`],
   ["bearer", "POST", `/api/document/rooms/${ROOM}/changes/1/review`],
   // passkeys: sign-in and the email code are for people who have no session yet
   ["public", "POST", "/api/passkeys/email-code/send"],

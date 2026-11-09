@@ -2983,6 +2983,7 @@ private struct MyFriendCardPopover: View {
 
 private struct FriendRequestsPopover: View {
     @ObservedObject var store: FriendStore
+    @StateObject private var collabInbox = CollabInviteInbox()
 
     var body: some View {
         List {
@@ -3018,12 +3019,14 @@ private struct FriendRequestsPopover: View {
                 }
             }
             groupInvites
+            CollabInvitesSection(inbox: collabInbox)
         }
             .themeScreenBackground()
         .navigationTitle("申請・招待")
         .task {
             await store.refreshIncomingRequests()
             await store.refreshGroupInvites()
+            await collabInbox.reload()
         }
     }
 

@@ -65,7 +65,6 @@ final class TextDocument {
     /// local-only. A 64-hex-character string minted client-side by whoever
     /// first turns collaboration on for this document.
     var collabRoomID: String?
-
     init(title: String = "無題の文書") {
         self.title = title
         self.createdAt = .now
@@ -295,6 +294,10 @@ final class DocumentBlock {
     @Relationship(inverse: \DocumentChangeRecord.anchorBlock)
     var anchoredChangeRecords: [DocumentChangeRecord]?
     var document: TextDocument?
+    /// A stable identity for this block across devices in a shared document
+    /// (the room's snapshot names blocks by it). Assigned the first time the
+    /// document is synced; carried over when the editor rebuilds a paragraph.
+    var collabID: String?
 
     init(order: Int, kind: DocumentBlockKind = .paragraph) {
         self.order = order
@@ -713,6 +716,15 @@ final class DocumentChangeRecord {
     /// remote participant's pending change is pulled down and mirrored here
     /// so it shows up in the same change-history UI.
     var collabChangeID: Int?
+    /// Which part of the document a collaboration change targets: nil for a
+    /// paragraph (`anchorBlock`), or "header" / "footer". The room keeps those
+    /// two under reserved block orders (`DocumentCollabService.headerBlockOrder`).
+    var collabTarget: String?
+    /// True for a change another participant proposed and this device mirrored
+    /// from the room. Its text is not in this document yet; accepting it
+    /// applies it (see `applyRemoteChange`). A change made on this device is
+    /// already applied locally when it is recorded.
+    var isRemote: Bool = false
 
     init(author: String, kind: DocumentChangeKind, previousText: String, newText: String, anchorBlock: DocumentBlock?) {
         self.author = author
@@ -736,8 +748,25 @@ final class DocumentChangeRecord {
     /// Restores `anchorBlock`'s text to `previousText` and marks this
     /// `.rejected`. A no-op (still marks `.rejected`) if `anchorBlock` no
     /// longer exists — there's nothing left to revert.
+    /// Puts a remote change's text into `document`: the header or footer, or
+    /// the paragraph it was made to. A no-op for a local record, and for a
+    /// paragraph change whose block no longer exists.
+    func applyRemoteChange(to document: TextDocument) {
+        guard isRemote else { return }
+        switch collabTarget {
+        case "header": document.headerFooter(.header).text = newText
+        case "footer": document.headerFooter(.footer).text = newText
+        default:
+            anchorBlock?.bodyData = DocumentBody.encode(
+                NSAttributedString(string: newText, attributes: DocumentBody.defaultAttributes())
+            )
+        }
+        document.updatedAt = .now
+    }
+
     func reject() {
-        if let anchorBlock {
+        // A remote change was never applied here, so there is nothing to revert.
+        if !isRemote, let anchorBlock {
             anchorBlock.bodyData = DocumentBody.encode(
                 NSAttributedString(string: previousText, attributes: DocumentBody.defaultAttributes())
             )
@@ -809,6 +838,39 @@ extension NSAttributedString {
 }
 
 enum DocumentBlockText {
+    /// Gives each rebuilt paragraph the sync id of the old paragraph it came from.
+    /// Paragraphs whose text is unchanged are matched first (a longest common
+    /// subsequence), so inserting or deleting one paragraph does not shift every
+    /// later paragraph onto its neighbour's id; whatever is left (edited
+    /// paragraphs) is matched in order.
+    static func carryOverCollabIDs(from oldRun: [DocumentBlock], to newRun: [DocumentBlock]) {
+        let old = oldRun.map { DocumentBody.decode($0.bodyData).string }
+        let new = newRun.map { DocumentBody.decode($0.bodyData).string }
+        let n = old.count, m = new.count
+        var table = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
+        if n > 0, m > 0 {
+            for i in stride(from: n - 1, through: 0, by: -1) {
+                for j in stride(from: m - 1, through: 0, by: -1) {
+                    table[i][j] = old[i] == new[j] ? table[i + 1][j + 1] + 1 : max(table[i + 1][j], table[i][j + 1])
+                }
+            }
+        }
+        var matchedOld = Set<Int>(), matchedNew = Set<Int>()
+        var i = 0, j = 0
+        while i < n, j < m {
+            if old[i] == new[j] {
+                newRun[j].collabID = oldRun[i].collabID
+                matchedOld.insert(i); matchedNew.insert(j)
+                i += 1; j += 1
+            } else if table[i + 1][j] >= table[i][j + 1] { i += 1 } else { j += 1 }
+        }
+        let leftoverOld = (0..<n).filter { !matchedOld.contains($0) }
+        let leftoverNew = (0..<m).filter { !matchedNew.contains($0) }
+        for (position, newIndex) in leftoverNew.enumerated() where position < leftoverOld.count {
+            newRun[newIndex].collabID = oldRun[leftoverOld[position]].collabID
+        }
+    }
+
     /// One `DocumentBlock` (kind `.paragraph`) per paragraph in `text`, in
     /// order, not yet attached to any document.
     static func makeParagraphBlocks(from text: NSAttributedString) -> [DocumentBlock] {
@@ -1054,6 +1116,9 @@ extension TextDocument {
         let newRun = DocumentBlockText.makeParagraphBlocks(from: text)
         for block in newRun { block.document = self }
         DocumentBlockText.carryOverListMetadata(from: oldRun, to: newRun)
+        // The editor hands back fresh blocks; a shared document's sync identity
+        // must survive that, matched by position within the run.
+        DocumentBlockText.carryOverCollabIDs(from: oldRun, to: newRun)
         all.replaceSubrange(startIndex...endIndex, with: newRun)
         for (index, block) in all.enumerated() { block.order = index }
         blocks = all
