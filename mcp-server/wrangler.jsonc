@@ -162,6 +162,13 @@
     // installed and both sign-ins were seen to verify. Removing this line accepts
     // the sign-ins of older builds, which send none, again.
     "REQUIRE_ID_TOKEN_NONCE": "true",
+    // /mcp accepts only OAuth-paired tokens, not the app's own session token (TOKEN-1).
+    // Takes effect at the next production deploy: anyone who connected an AI app with the old
+    // pasted token must connect it again with the pairing code.
+    "MCP_REFUSE_SESSION_TOKENS": "true",
+    // Account deletion needs a sign-in from the last 10 minutes when the account has no passkey (AUTH-1).
+    // Takes effect at the next production deploy; the app build that explains it is in main.
+    "REQUIRE_RECENT_LOGIN_FOR_DELETION": "true",
     // App Attest (src/app-attest.ts): "off" (default), "log" (check and log only)
     // or "enforce". Needs the app that sends assertions to be out first; watch the
     // "app attest" log lines for "absent" before enforcing.

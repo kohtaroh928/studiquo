@@ -3,7 +3,7 @@ import { structuredCitation } from "./structured-input.ts";
 import { matchQuery } from "./chunking.ts";
 import { queryPlan, rrf, scopeFilter } from "./query.ts";
 import { importantText, importantTokens, relevanceEvidence } from "./relevance.ts";
-import { fuseRanks, selectDiverse, coversSubject } from "./ranking.ts";
+import { fuseRanks, selectDiverse, coversSubject, clearRerankWinnerPage } from "./ranking.ts";
 import { detailRequirements, assessReferences } from "./answerability.ts";
 import { singleRankedReference, referenceEligibility } from "./reference-selection.ts";
 import { boundedSearch } from "./search-branches.ts";
@@ -128,6 +128,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const referenceEligible = referenceEligibility(plan.canonicalQuery, plan);
     let selected = selectDiverse(candidates, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     let ordered = candidates;
+    let rerankTopPage: { source: string; page: number } | null = null; // the page of the chunk the reranker rated best (a clear winner only)
     const requirements = detailRequirements(plan.canonicalQuery, plan.coverageGroups);
     try {
       if (!await referencesAuthorized(env, key, candidates.map(c => ({ citation: { sourceId: c.source_id, pageNumber: c.page_number, chunkId: c.chunk_id }, sourceSnapshot: { title: c.title, source_hash: c.source_hash, context_hash: c.context_hash, folder_id: c.folder_id } })))) return emptyRetrieval("auth_failed");
@@ -161,6 +162,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
         clearTimeout(rerankTimer);
       }
       ordered = fuseRanks(candidates, result?.response);
+      rerankTopPage = clearRerankWinnerPage(candidates, result?.response);
       selected = singleRankedReference(candidates, result?.response, plan.canonicalQuery, plan, requirements) ??
         selectDiverse(ordered, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     } catch {
@@ -247,7 +249,8 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     // A comparison whose subjects could not be named ("AとBは、CとDの違い": coverageGroups is empty) is not a
     // single-subject question either. plan.multi is not used: it is set by any word such as 共通 or それぞれ.
     const singleSubject = plan.coverageGroups.length === 0 && !plan.unresolvedComparison;
-    const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0 }));
+    const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0,
+      rerankTop: rerankTopPage !== null && String(r.citation?.sourceId) === rerankTopPage.source && r.citation?.pageNumber === rerankTopPage.page }));
     if (!quantityEvidencePresent(query, ranked, { tied: singleSubject })) return emptyRetrieval("insufficient", { status: "insufficient" }, "quantity");
     // A word missing from the library is only decisive when the two searches do not agree. If the
     // semantic and the keyword search both put the same excerpt first, the word is a paraphrase
