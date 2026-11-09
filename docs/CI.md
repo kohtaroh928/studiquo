@@ -12,7 +12,7 @@ GitHub ActionsとXcode Cloudを併用する。同じ検査を二重に走らせ�
 
 ## iOSのワークフロー
 
-- `.xcodeproj`はリポジトリに入れず`project.yml`から生成するので、実行のたびに`xcodegen generate`する。
+- `.xcodeproj`はリポジトリに入れず`project.yml`から生成するので、実行のたびに`xcodegen generate`する。xcodegenの版は`.xcodegen-version`で固定し、`scripts/check-xcodegen-version`が違う版なら止める(brewは最新を入れるため)。版を上げるときは、`xcodegen generate`とビルドを確認してからこのファイルを更新する。
 - テストは`studiquoTests`だけ(UIテストは含めない)。シミュレータは利用できるiPadを自動で選ぶ。署名は無効(`CODE_SIGNING_ALLOWED=NO`)。
 - macOSランナーは分数の消費が大きい。実行条件を広げるときはコストを確認する。
 - 決まり(`ci.yml`と同じ): secretsを使わない、`permissions: contents: read`、actionはコミットSHAで固定(Dependabotが更新を提案)。

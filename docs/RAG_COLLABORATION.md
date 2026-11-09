@@ -77,7 +77,7 @@ raw回答・prompt・実資料・キーはGit/Notion/共有PRへ載せない。�
 
 ## 5. 日々の進め方とPR
 
-1. 自分のbranch/statusとNotionの担当タスクを確認し、対象ファイル・完了条件を書く。
+1. 自分のbranch/statusとGitHub Project「Studiquo タスク」の担当項目を確認し、対象ファイル・完了条件を書く。
 2. 小さな候補を一つ作り、check/testを実行する。
 3. 自分の `collaboration/rag-prompt/HANDOFF.md` に変更・検証・未実施・次の一手を残す。共通のRAG_CLAUDE_HANDOFFは友人が同時編集せず、統合担当がPRから要点を取り込む。
 4. commit/pushを依頼または明示承認した範囲で実施する。自動で一括addやpushしない。手動例は以下。
@@ -93,7 +93,7 @@ git push -u origin codex/rag-prompt-completeness
 
 PRには目的、baseline/candidate hash、検証条件、結果/未実施、回帰・費用・限界を書く。productionへの反映PRは統合担当が別に作る。プロンプトを変えるだけでも、資料忠実性や過剰補足の悪化がないか確認する。
 
-Notionは既存「RAG回答の残る弱点を評価・改善する」に関連付け、友人の初回候補タスクを一つ割り当てる。友人のNotion表示名は本人確認後に設定し、AIが知らない担当者を推測で選ばない。接続がない場合はHANDOFFに未記録と書く。
+GitHub Project「Studiquo タスク」(2026-10-25にNotionから移行)では既存「RAG回答の残る弱点を評価・改善する」に関連付け、友人の初回候補タスクを一つ割り当てる。友人の担当名は本人確認後に設定し、AIが知らない担当者を推測で選ばない。接続がない場合はHANDOFFに未記録と書く。
 
 ## 6. 完了条件と現在の準備状態
 

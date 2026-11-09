@@ -1,3 +1,5 @@
+> タスク管理の正本は、2026-10-25からGitHub Project「Studiquo タスク」(https://github.com/users/kohtaroh928/projects/1)。以下の記録にある「Notion既存カード」「Notionを更新」は移行前の記録で、今後はGitHub Projectの既存項目を更新する(`AGENTS.md`の「GitHub Projectでのタスク管理」)。
+
 ## 2026-11-09 自動登録失敗の理由表示を修正
 
 ユーザー報告の「対象PDFの自動登録を許可」後の一般エラーを調査した。現在の staging Worker は版 `35aa4afd-055c-4c35-9641-5f45f3ff9592` が100%稼働し、設定ファイル上の `RAG_ENABLED`・`RAG_AUTO_INDEX_ENABLED`・`RAG_PDF_PROCESSING_ENABLED`・`RAG_PDF_CLEANUP_ENABLED`・`AI_PROVIDER_APPROVED` はすべて `true`。前回の古いローカル再試行待機を解除する修正（PR #117）も最新統合HEADに含まれる。一方、アプリ画面は `grant` のHTTP認証・レート制限・送信先停止などをすべて同じ「通信と送信許可を確認してください」に丸めており、原因を画面から区別できなかった。端末ログはCoreDevice接続タイムアウト、Workerの履歴ログは利用できず、今回の個別HTTPステータスは未確定。

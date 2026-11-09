@@ -16,6 +16,16 @@ import UIKit
 final class GoogleSignInService {
     static let shared = GoogleSignInService()
 
+    /// Whether the build carries both Google client IDs. A Staging build gets them from the ignored
+    /// `Staging.local.xcconfig`; without them the SDK is configured with an empty ID, and the failure
+    /// shows up as a Google error screen instead of saying what is missing.
+    nonisolated static func isConfigured(_ info: [String: Any]?) -> Bool {
+        ["GIDClientID", "GIDServerClientID"].allSatisfy {
+            guard let value = info?[$0] as? String else { return false }
+            return !value.trimmingCharacters(in: .whitespaces).isEmpty && !value.hasPrefix("$(")
+        }
+    }
+
     private var endpoint: URL { MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)! }
 
     /// Returns Google's stable per-account identifier (`user.userID`, present
@@ -24,6 +34,7 @@ final class GoogleSignInService {
     /// nothing else this service does persists that fact.
     @discardableResult
     func signIn() async throws -> (subject: String, email: String?) {
+        guard Self.isConfigured(Bundle.main.infoDictionary) else { throw GoogleSignInServiceError.notConfigured }
         guard let presentingViewController = Self.presentingViewController() else {
             throw GoogleSignInServiceError.noPresentingViewController
         }
@@ -92,6 +103,8 @@ final class GoogleSignInService {
 
 enum GoogleSignInServiceError: LocalizedError {
     case noPresentingViewController, invalidResponse, serverRejected
+    /// This build has no Google client ID (see `GoogleSignInService.isConfigured`).
+    case notConfigured
     /// The account has a passkey, so a Google sign-in is no longer accepted.
     case passkeyRequired
     /// The account was just deleted and the server is still finishing it.
@@ -101,6 +114,7 @@ enum GoogleSignInServiceError: LocalizedError {
         case .noPresentingViewController: "サインイン画面を表示できませんでした。"
         case .invalidResponse: "Googleのサインイン応答を読み取れませんでした。"
         case .serverRejected: "サインインサーバーに接続できませんでした。"
+        case .notConfigured: "このビルドではGoogleサインインが設定されていません。"
         case .passkeyRequired: PasskeyRequired.message
         case .accountDeleting: AccountDeleting.message
         }
