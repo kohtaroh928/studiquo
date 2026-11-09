@@ -1132,3 +1132,27 @@ test("an image is stored under the SHA-256 of its bytes: a wrong name is refused
   assert.equal((await worker.fetch(request(assetPath("d".repeat(64)), { token: tokens.owner }), env, noopCtx)).status, 404);
   assert.equal((await worker.fetch(request(assetPath(hash), { token: freshToken("9") }), env, noopCtx)).status, 403);
 });
+
+// Regression: the app once sent "…/snapshot%3Fsince=0" (the "?" percent-encoded into the
+// path), which matches no route and answered 404 on every poll, so nothing was ever synced.
+test("the snapshot route takes its query as a query; an encoded question mark in the path is a 404", async () => {
+  const { env, tokens } = await roomWith([]);
+  await putSnapshot(env, tokens.owner, 0, "v1");
+  const ok = await worker.fetch(request(`${snapshotPath}?since=0`, { token: tokens.owner }), env, noopCtx);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await ok.json(), { revision: 1, snapshot: "v1" });
+  const encoded = await worker.fetch(request(`${snapshotPath}%3Fsince=0`, { token: tokens.owner }), env, noopCtx);
+  assert.equal(encoded.status, 404);
+  // Without a query the full snapshot comes back; a junk query is ignored rather than failing.
+  assert.equal((await worker.fetch(request(`${snapshotPath}?since=abc`, { token: tokens.owner }), env, noopCtx)).status, 200);
+});
+
+// Regression: a first sync of a room with no snapshot, then a second device reading it, must hand
+// back exactly what was stored (no loss through the revision rule).
+test("what the first writer stores is exactly what a later reader gets, and writes can only build on the current revision", async () => {
+  const { env, tokens } = await roomWith(["editor"]);
+  const text = JSON.stringify({ blocks: ["あ".repeat(10), "い"] });
+  assert.deepEqual(await (await putSnapshot(env, tokens.owner, 0, text)).json(), { revision: 1 });
+  assert.deepEqual(await (await getSnapshot(env, tokens.editor, 0)).json(), { revision: 1, snapshot: text });
+  assert.equal((await putSnapshot(env, tokens.editor, 0, "late")).status, 409);
+});
