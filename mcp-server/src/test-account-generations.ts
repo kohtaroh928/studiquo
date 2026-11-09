@@ -2,8 +2,19 @@
 // (nextAccountGeneration / retireAccountGeneration / upgradeAccountIfCurrent /
 // purgeAll), with the same contract: one count per name, and an upgrade
 // applied only if the count is unchanged.
+const committedGenerations = new WeakMap<Map<string, number>, Map<string, number>>();
+
 export function accountGenerationMethods(name: string, generations: Map<string, number>, getData: () => { put(key: string, value: string): Promise<unknown> }) {
+  const committed = committedGenerations.get(generations) ?? committedGenerations.set(generations, new Map()).get(generations)!;
   return {
+    // As RateCounter.commitAccountRecord / committedAccountGeneration.
+    async commitAccountRecord(key: string, json: string, gen: number) {
+      if (gen < (committed.get(name) ?? 0)) return false;
+      await getData().put(key, json);
+      committed.set(name, gen);
+      return true;
+    },
+    async committedAccountGeneration() { return committed.get(name) ?? null; },
     async nextAccountGeneration() {
       const next = (generations.get(name) ?? 0) + 1;
       generations.set(name, next);
