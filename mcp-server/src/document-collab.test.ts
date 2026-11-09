@@ -3,7 +3,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
 import { DOCUMENT_ROOM_SCHEMA } from "./document-room-store.ts";
-import { missingAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
+import { missingAssets, pruneAssets, readAsset, readSnapshot, writeAsset, writeSnapshot } from "./document-snapshot-store.ts";
 import { sha256Hex } from "./auth.ts";
 import { partialCtx, partialEnv, partialSql, type LooseEnv, type Untyped } from "./test-env.ts";
 
@@ -121,10 +121,13 @@ function fakeDocumentRoomBinding() {
           requireParticipant(state, userKey);
           return readSnapshot(snapshotSql(state), sinceRevision);
         },
-        async putSnapshot(userKey: string, baseRevision: number, text: string) {
+        async putSnapshot(userKey: string, baseRevision: number, text: string, assetHashes?: string[]) {
           const role = requireParticipant(state, userKey);
           if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
-          return writeSnapshot(snapshotSql(state), baseRevision, text, userKey, Date.now());
+          if (readSnapshot(snapshotSql(state), -1).revision === 0 && role !== "owner") return { ok: false, reason: "not_ready", revision: 0 };
+          const result = writeSnapshot(snapshotSql(state), baseRevision, text, userKey, Date.now());
+          if (result.ok && Array.isArray(assetHashes)) pruneAssets(snapshotSql(state), assetHashes);
+          return result;
         },
         async missingAssets(userKey: string, hashes: string[]) {
           requireParticipant(state, userKey);
@@ -1155,4 +1158,49 @@ test("what the first writer stores is exactly what a later reader gets, and writ
   assert.deepEqual(await (await putSnapshot(env, tokens.owner, 0, text)).json(), { revision: 1 });
   assert.deepEqual(await (await getSnapshot(env, tokens.editor, 0)).json(), { revision: 1, snapshot: text });
   assert.equal((await putSnapshot(env, tokens.editor, 0, "late")).status, 409);
+});
+
+// Review finding: an editor who writes before the owner has ever synced would make a thinner copy
+// the room's first truth (and the owner's richer document would then be overwritten by it).
+test("the first snapshot of a room can only come from its owner; an editor is told the room is not ready", async () => {
+  const { env, tokens } = await roomWith(["editor"]);
+  const early = await putSnapshot(env, tokens.editor, 0, "thin copy");
+  assert.equal(early.status, 412);
+  assert.deepEqual(await (await getSnapshot(env, tokens.owner)).json(), { revision: 0, snapshot: null }, "nothing was stored");
+  assert.deepEqual(await (await putSnapshot(env, tokens.owner, 0, "owner version")).json(), { revision: 1 });
+  assert.deepEqual(await (await putSnapshot(env, tokens.editor, 1, "editor edit")).json(), { revision: 2 });
+});
+
+// Review finding: authorization came after reading and hashing a body of several MB.
+test("a stranger or reviewer is refused before any body is read, and a malformed base64 image is a 400, not a 500", async () => {
+  const { env, tokens } = await roomWith(["reviewer"]);
+  const stranger = freshToken("9");
+  const assetPath = `/api/document/rooms/${ROOM_ID}/assets/${"e".repeat(64)}`;
+  for (const token of [stranger, tokens.reviewer]) {
+    assert.equal((await worker.fetch(request(assetPath, { method: "PUT", token, body: { data: "AAAA" } }), env, noopCtx)).status, 403);
+    assert.equal((await putSnapshot(env, token, 0, "x")).status, 403);
+  }
+  const owner = tokens.owner;
+  for (const data of ["A", "AAA", "A===", "====", "AAAA=A"]) {
+    const response = await worker.fetch(request(assetPath, { method: "PUT", token: owner, body: { data } }), env, noopCtx);
+    assert.equal(response.status, 400, data);
+  }
+});
+
+test("images the new snapshot no longer names are dropped; a just-uploaded one is kept for a while", async () => {
+  const { env, tokens } = await roomWith(["editor"]);
+  const bytes = (n: number) => new Uint8Array([n, n + 1, n + 2]);
+  const sha = async (b: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", b))].map(x => x.toString(16).padStart(2, "0")).join("");
+  const put = async (b: Uint8Array) => {
+    const hash = await sha(b);
+    await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/assets/${hash}`, { method: "PUT", token: tokens.owner, body: { data: btoa(String.fromCharCode(...b)) } }), env, noopCtx);
+    return hash;
+  };
+  const keep = await put(bytes(1));
+  const dropped = await put(bytes(10));
+  const write = (base: number, assets: string[]) => worker.fetch(request(snapshotPath, { method: "PUT", token: tokens.owner, body: { baseRevision: base, snapshot: "s", assets } }), env, noopCtx);
+  assert.equal((await write(0, [keep])).status, 200);
+  const has = async (hash: string) => (await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/assets/${hash}`, { token: tokens.owner }), env, noopCtx)).status;
+  assert.equal(await has(dropped), 200, "uploaded a moment ago: kept during the grace period");
+  assert.equal(await has(keep), 200);
 });

@@ -160,7 +160,10 @@ enum DocumentSnapshotCodec {
         var existing: [String: DocumentBlock] = [:]
         for block in document.sortedBlocks { if let id = block.collabID { existing[id] = block } }
         var result: [DocumentBlock] = []
+        var seen = Set<String>()
         for source in snapshot.blocks {
+            // A snapshot naming one block twice would put one object in the document twice.
+            guard seen.insert(source.id).inserted else { continue }
             let block: DocumentBlock
             if let found = existing[source.id], found.kindRawValue == source.kind {
                 block = found

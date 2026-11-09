@@ -284,7 +284,14 @@ struct TextDocumentView: View {
         .onAppear(perform: load)
         .onDisappear {
             flushSave()
-            if document.collabRoomID != nil { Task { await syncCollabOnce() } }
+            if document.collabRoomID != nil {
+                // One last round with what was typed just now. A round still running (it is
+                // cancelled with this screen) is waited for, not skipped.
+                Task {
+                    for _ in 0..<20 where isCollabSyncing { try? await Task.sleep(for: .milliseconds(150)) }
+                    await syncCollabOnce()
+                }
+            }
         }
         .task(id: document.collabRoomID) { await collabSyncLoop() }
         .onChange(of: attributedText) { _, _ in scheduleSave() }
@@ -960,10 +967,10 @@ struct TextDocumentView: View {
                 client: LiveDocumentSnapshotClient(),
                 flush: {
                     flushSave()
-                    marker.fingerprint = CollabEditFingerprint.capture(of: document, liveText: attributedText.string)
+                    marker.fingerprint = CollabEditFingerprint.capture(of: document, live: attributedText)
                 },
                 stillCurrent: {
-                    CollabEditFingerprint.capture(of: document, liveText: attributedText.string) == marker.fingerprint
+                    CollabEditFingerprint.capture(of: document, live: attributedText) == marker.fingerprint
                 },
                 didApply: { reloadAfterRemoteApply() },
                 save: { try? modelContext.save() }

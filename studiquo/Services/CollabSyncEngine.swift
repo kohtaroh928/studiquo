@@ -5,7 +5,7 @@ import Foundation
 protocol DocumentSnapshotClient {
     func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply
     /// Throws `DocumentCollabService.RevisionConflict` when the room has moved on.
-    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int
+    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int
     func missingAssets(roomID: String, hashes: [String]) async throws -> [String]
     func putAsset(roomID: String, hash: String, data: Data) async throws
     func asset(roomID: String, hash: String) async throws -> Data?
@@ -15,8 +15,8 @@ struct LiveDocumentSnapshotClient: DocumentSnapshotClient {
     func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
         try await DocumentCollabService.snapshot(roomID: roomID, since: since)
     }
-    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String) async throws -> Int {
-        try await DocumentCollabService.putSnapshot(roomID: roomID, baseRevision: baseRevision, snapshot: snapshot)
+    func putSnapshot(roomID: String, baseRevision: Int, snapshot: String, assets: [String]) async throws -> Int {
+        try await DocumentCollabService.putSnapshot(roomID: roomID, baseRevision: baseRevision, snapshot: snapshot, assets: assets)
     }
     func missingAssets(roomID: String, hashes: [String]) async throws -> [String] {
         try await DocumentCollabService.missingAssets(roomID: roomID, hashes: hashes)
@@ -34,12 +34,18 @@ struct LiveDocumentSnapshotClient: DocumentSnapshotClient {
 /// of it — every autosave bumps it, which once made nearly every round look
 /// "edited" and be dropped, so nothing was ever sent.
 struct CollabEditFingerprint: Equatable {
-    var liveText: String
+    /// The editor's whole live text with its formatting, not just the characters:
+    /// a bold applied while the network call ran must count as an edit too.
+    var live: NSAttributedString
     var snapshot: DocumentSnapshot
 
+    static func == (lhs: CollabEditFingerprint, rhs: CollabEditFingerprint) -> Bool {
+        lhs.live.isEqual(to: rhs.live) && lhs.snapshot == rhs.snapshot
+    }
+
     @MainActor
-    static func capture(of document: TextDocument, liveText: String) -> CollabEditFingerprint {
-        CollabEditFingerprint(liveText: liveText, snapshot: DocumentSnapshotCodec.make(from: document).snapshot)
+    static func capture(of document: TextDocument, live: NSAttributedString) -> CollabEditFingerprint {
+        CollabEditFingerprint(live: live, snapshot: DocumentSnapshotCodec.make(from: document).snapshot)
     }
 }
 
@@ -95,6 +101,7 @@ enum CollabSyncEngine {
                 case .done: return .pushed
                 case .conflict: continue
                 case .tooLarge: return .tooLarge
+                case .notReady: return .upToDate
                 }
             }
 
@@ -102,14 +109,23 @@ enum CollabSyncEngine {
             if reply.unchanged == true {
                 if let base, local == base { return appliedRemote ? .pulled(conflicts: conflicts) : .upToDate }
                 guard canWrite else {
-                    // A reviewer's edits never leave the device: put the room's version back.
-                    if let base { DocumentSnapshotCodec.apply(base, to: document, assets: localAssets); didApply(); save() }
+                    // A reviewer's edits never leave the device: put the room's version back,
+                    // fetching the pictures of that version that this device no longer has.
+                    if let base {
+                        var assets = localAssets
+                        for hash in Set(base.blocks.compactMap(\.imageHash)) where assets[hash] == nil {
+                            if let data = try await client.asset(roomID: roomID, hash: hash) { assets[hash] = data }
+                        }
+                        guard stillCurrent() else { return .skipped }
+                        DocumentSnapshotCodec.apply(base, to: document, assets: assets); didApply(); save()
+                    }
                     return .pulled(conflicts: 0)
                 }
                 switch try await push(local, assets: localAssets, base: document.collabRevision, roomID: roomID, client: client, document: document, save: save) {
                 case .done: return appliedRemote ? .pulled(conflicts: conflicts) : .pushed
                 case .conflict: continue
                 case .tooLarge: return .tooLarge
+                case .notReady: return .upToDate
                 }
             }
 
@@ -147,6 +163,7 @@ enum CollabSyncEngine {
                 case .done: return .pulled(conflicts: conflicts)
                 case .conflict: continue
                 case .tooLarge: return .tooLarge
+                case .notReady: return .pulled(conflicts: conflicts)
                 }
             }
             return .pulled(conflicts: conflicts)
@@ -154,7 +171,7 @@ enum CollabSyncEngine {
         return .skipped
     }
 
-    private enum PushResult { case done, conflict, tooLarge }
+    private enum PushResult { case done, conflict, tooLarge, notReady }
 
     private static func push(
         _ snapshot: DocumentSnapshot, assets: [String: Data], base: Int, roomID: String,
@@ -170,13 +187,15 @@ enum CollabSyncEngine {
         }
         guard let data = snapshot.encoded(), let text = String(data: data, encoding: .utf8) else { return .tooLarge }
         do {
-            let revision = try await client.putSnapshot(roomID: roomID, baseRevision: base, snapshot: text)
+            let revision = try await client.putSnapshot(roomID: roomID, baseRevision: base, snapshot: text, assets: hashes)
             document.collabBaseSnapshot = data
             document.collabRevision = revision
             save()
             return .done
         } catch is DocumentCollabService.RevisionConflict {
             return .conflict
+        } catch is DocumentCollabService.RoomNotReady {
+            return .notReady
         } catch let error as DocumentCollabService.ServerError where error.status == 413 {
             return .tooLarge
         }
