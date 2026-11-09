@@ -50,6 +50,26 @@ enum DocumentCollabService {
     }
     private struct ErrorPayload: Decodable { let error: String }
 
+    /// The room tracks a document's header and footer as two extra blocks under
+    /// these reserved orders, far above any paragraph's. The server accepts any
+    /// non-negative order, so no server change is needed.
+    static let headerBlockOrder = 1_000_000
+    static let footerBlockOrder = 1_000_001
+    static func blockOrder(forTarget target: String?) -> Int? {
+        switch target {
+        case "header": return headerBlockOrder
+        case "footer": return footerBlockOrder
+        default: return nil
+        }
+    }
+    static func target(forBlockOrder order: Int) -> String? {
+        switch order {
+        case headerBlockOrder: return "header"
+        case footerBlockOrder: return "footer"
+        default: return nil
+        }
+    }
+
     /// A fresh 64-lowercase-hex-character room id, the shape the server's
     /// route regex requires. Minted client-side (unlike a chat room's id,
     /// which the server derives from exactly two participants' keys) since a

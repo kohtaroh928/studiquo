@@ -193,6 +193,11 @@ struct TextDocumentView: View {
     /// for it.
     @State private var justActivatedSegmentID: ObjectIdentifier?
     @State private var showsChangeHistory = false
+    /// The header/footer text as of the last proposal (or the first edit this
+    /// session), keyed "header"/"footer" — what a collaboration proposal's
+    /// `previousText` is. Only used while the document has a room.
+    @State private var headerFooterBaseline: [String: String] = [:]
+    @State private var headerFooterProposalTasks: [String: Task<Void, Never>] = [:]
     @State private var showsCollabSheet = false
     @State private var showsInsertEquationSheet = false
     @State private var equationDraft = ""
@@ -376,7 +381,7 @@ struct TextDocumentView: View {
                     }
             }
             .accessibilityLabel("変更履歴")
-            .sheet(isPresented: $showsChangeHistory) {
+            .sheet(isPresented: $showsChangeHistory, onDismiss: { reloadActiveSegmentFromBlocks() }) {
                 ChangeHistorySheet(document: document, onChange: { try? modelContext.save() })
             }
 
@@ -745,6 +750,47 @@ struct TextDocumentView: View {
 
     // MARK: Header & footer
 
+    private func noteHeaderFooterEdit(_ kind: DocumentHeaderFooterKind) {
+        let key = kind == .header ? "header" : "footer"
+        if headerFooterBaseline[key] == nil {
+            headerFooterBaseline[key] = (kind == .header ? document.header : document.footer)?.text ?? ""
+        }
+    }
+
+    /// Proposes a header/footer edit to the room once typing pauses, so each
+    /// keystroke is not its own proposal. Mirrors `recordChange` for paragraphs:
+    /// the text is already applied here, and the room gets a pending change
+    /// under the reserved header/footer block order.
+    private func scheduleHeaderFooterProposal(_ kind: DocumentHeaderFooterKind) {
+        guard let roomID = document.collabRoomID else { return }
+        let key = kind == .header ? "header" : "footer"
+        headerFooterProposalTasks[key]?.cancel()
+        headerFooterProposalTasks[key] = Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                let current = (kind == .header ? document.header : document.footer)?.text ?? ""
+                let previous = headerFooterBaseline[key] ?? ""
+                guard current != previous, let order = DocumentCollabService.blockOrder(forTarget: key) else { return }
+                headerFooterBaseline[key] = current
+                let record = DocumentChangeRecord(
+                    author: profileName.isEmpty ? "Studiquoユーザー" : profileName,
+                    kind: .edit, previousText: previous, newText: current, anchorBlock: nil
+                )
+                record.collabTarget = key
+                record.document = document
+                document.changeRecords = (document.changeRecords ?? []) + [record]
+                try? modelContext.save()
+                Task {
+                    guard let result = try? await DocumentCollabService.propose(
+                        roomID: roomID, blockOrder: order, previousText: previous, newText: current
+                    ) else { return }
+                    await MainActor.run { record.collabChangeID = result.id }
+                }
+            }
+        }
+    }
+
     /// A tap target in the page's own margin, matching how a word processor
     /// lets you edit a header/footer directly where it's shown — rather than
     /// a separate toggle or sheet — but backed by `DocumentHeaderFooter`,
@@ -755,7 +801,12 @@ struct TextDocumentView: View {
         return HStack(spacing: 8) {
             TextField(placeholder, text: Binding(
                 get: { existing?.text ?? "" },
-                set: { document.headerFooter(kind).text = $0; scheduleAuxiliarySave() }
+                set: {
+                    noteHeaderFooterEdit(kind)
+                    document.headerFooter(kind).text = $0
+                    scheduleAuxiliarySave()
+                    scheduleHeaderFooterProposal(kind)
+                }
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -922,6 +973,17 @@ struct TextDocumentView: View {
         guard let activeID = activeSegmentID,
               let segment = document.segments.first(where: { $0.id == activeID }),
               segment.blocks.contains(where: { $0 === block }) else { return }
+        attributedText = DocumentBlockText.joinedText(of: segment.blocks)
+        externalRevision += 1
+    }
+
+    /// After remote changes were accepted straight into blocks (see
+    /// `DocumentChangeRecord.applyRemoteChange`), reloads the live text of the
+    /// active segment so the editor does not keep showing (and later write
+    /// back) the old wording.
+    private func reloadActiveSegmentFromBlocks() {
+        guard let activeID = activeSegmentID,
+              let segment = document.segments.first(where: { $0.id == activeID }) else { return }
         attributedText = DocumentBlockText.joinedText(of: segment.blocks)
         externalRevision += 1
     }
@@ -2689,6 +2751,7 @@ private struct ChangeHistorySheet: View {
     /// (this device's own view of the record), but the room's canonical
     /// text won't move, so the failure is surfaced rather than hidden.
     private func accept(_ record: DocumentChangeRecord) {
+        record.applyRemoteChange(to: document)
         record.status = .accepted
         onChange()
         syncToRoomIfNeeded(record, decision: "accept")
@@ -2864,7 +2927,7 @@ private struct CollabSheet: View {
         isStarting = true
         defer { isStarting = false }
         let roomID = DocumentCollabService.mintRoomID()
-        let blocks = document.sortedBlocks.map { block -> DocumentCollabService.Block in
+        var blocks = document.sortedBlocks.map { block -> DocumentCollabService.Block in
             DocumentCollabService.Block(
                 order: block.order,
                 kind: block.kindRawValue,
@@ -2873,6 +2936,11 @@ private struct CollabSheet: View {
                 listLevel: block.listLevel,
                 paragraphStyle: block.paragraphStyleRawValue
             )
+        }
+        for (target, text) in [("header", document.header?.text ?? ""), ("footer", document.footer?.text ?? "")] where !text.isEmpty {
+            if let order = DocumentCollabService.blockOrder(forTarget: target) {
+                blocks.append(DocumentCollabService.Block(order: order, kind: target, text: text, listKind: nil, listLevel: 0, paragraphStyle: nil))
+            }
         }
         do {
             _ = try await DocumentCollabService.initialize(roomID: roomID, blocks: blocks)
@@ -2930,11 +2998,15 @@ private struct CollabSheet: View {
 
             var addedCount = 0
             for change in state.pendingChanges where !existingIDs.contains(change.id) {
-                guard let anchor = blocksByOrder[change.blockOrder] else { continue }
+                let target = DocumentCollabService.target(forBlockOrder: change.blockOrder)
+                let anchor = blocksByOrder[change.blockOrder]
+                guard target != nil || anchor != nil else { continue }
                 let record = DocumentChangeRecord(
                     author: nameByKey[change.authorKey] ?? "共同編集メンバー",
-                    kind: .edit, previousText: change.previousText, newText: change.newText, anchorBlock: anchor
+                    kind: .edit, previousText: change.previousText, newText: change.newText, anchorBlock: target == nil ? anchor : nil
                 )
+                record.collabTarget = target
+                record.isRemote = true
                 record.collabChangeID = change.id
                 record.document = document
                 document.changeRecords = (document.changeRecords ?? []) + [record]
