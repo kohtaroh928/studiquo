@@ -20,3 +20,31 @@ final class DocumentCollabInviteTests: XCTestCase {
         XCTAssertNil(declined.role)
     }
 }
+
+final class CollabInviteImporterTests: XCTestCase {
+    private func state() -> DocumentCollabService.RoomState {
+        DocumentCollabService.RoomState(blocks: [
+            .init(order: 5, kind: "paragraph", text: "後ろの段落", listKind: nil, listLevel: 0, paragraphStyle: nil),
+            .init(order: 1, kind: "table", text: "", listKind: nil, listLevel: 0, paragraphStyle: nil),
+            .init(order: 2, kind: "paragraph", text: "最初の段落", listKind: "bullet", listLevel: 1, paragraphStyle: "heading1"),
+        ], pendingChanges: [])
+    }
+
+    func testImportKeepsParagraphsAtTheRoomsOrderAndDropsOtherKinds() {
+        let blocks = CollabInviteImporter.makeBlocks(from: state())
+        XCTAssertEqual(blocks.map(\.order), [2, 5])
+        XCTAssertEqual(blocks[0].listKindRawValue, "bullet")
+        XCTAssertEqual(blocks[0].listLevel, 1)
+        XCTAssertEqual(blocks[0].paragraphStyleRawValue, "heading1")
+    }
+
+    func testImportedDocumentIsBoundToTheRoomAndReadsBackItsText() {
+        let document = CollabInviteImporter.makeDocument(roomID: "room1", inviterName: "田中", state: state())
+        XCTAssertEqual(document.collabRoomID, "room1")
+        XCTAssertTrue(document.isMigratedToBlocks)
+        XCTAssertEqual(document.sortedBlocks.map(\.order), [2, 5])
+        XCTAssertEqual(document.plainText, "最初の段落\n後ろの段落")
+        XCTAssertTrue(document.title.contains("田中"))
+        XCTAssertFalse(CollabInviteImporter.title(inviterName: nil).isEmpty)
+    }
+}
