@@ -357,7 +357,7 @@ final class DocumentBlock {
     /// undercount any row containing a merge.
     var tableColumnCount: Int {
         sortedTableRows.map { row in
-            row.sortedCells.reduce(0) { $0 + $1.columnSpan }
+            row.sortedCells.reduce(0) { $0 + $1.layoutColumnSpan }
         }.max() ?? 0
     }
 
@@ -402,13 +402,18 @@ final class DocumentBlock {
                 guard let cell = remainingCells.first else { break }
                 remainingCells = remainingCells.dropFirst()
                 slots.append(.cell(cell))
-                if cell.rowSpan > 1 {
-                    for c in column..<min(column + cell.columnSpan, columnCount) {
-                        coveredThroughRow[c] = rowIndex + cell.rowSpan
-                        coveredSpan[c] = cell.columnSpan
+                // The bounded spans, never the stored ones: a span that arrived
+                // from outside (a shared snapshot, an imported file) may be zero,
+                // negative or huge, and the raw value would trap here.
+                let columnSpan = cell.layoutColumnSpan
+                let rowSpan = cell.layoutRowSpan
+                if rowSpan > 1 {
+                    for c in column..<min(column + columnSpan, columnCount) {
+                        coveredThroughRow[c] = rowIndex + rowSpan
+                        coveredSpan[c] = columnSpan
                     }
                 }
-                column += cell.columnSpan
+                column += columnSpan
             }
             return slots
         }
@@ -487,7 +492,7 @@ final class DocumentBlock {
         var column = 0
         for cell in row.sortedCells {
             starts[ObjectIdentifier(cell)] = column
-            column += cell.columnSpan
+            column += cell.layoutColumnSpan
         }
         return starts
     }
@@ -568,6 +573,17 @@ final class DocumentTableCell {
     /// longer exist in `row.cells` at all.
     var columnSpan: Int = 1
     var rowSpan: Int = 1
+
+    /// The largest span layout will honour. Far above anything the editor can
+    /// produce; it only bounds values that came from outside the app.
+    static let maxColumnSpan = 100
+    static let maxRowSpan = 1_000
+    /// The spans to lay the table out with: the stored values held to
+    /// 1...max. Layout must use these, because a stored span can come from a
+    /// shared snapshot or an imported file, and a zero, negative or huge one
+    /// would trap (an inverted range, an integer overflow) or never finish.
+    var layoutColumnSpan: Int { min(max(columnSpan, 1), Self.maxColumnSpan) }
+    var layoutRowSpan: Int { min(max(rowSpan, 1), Self.maxRowSpan) }
     @Attribute(.externalStorage) var bodyData: Data?
     var row: DocumentTableRow?
 
@@ -1051,7 +1067,7 @@ extension TextDocument {
         switch kind {
         case .bulleted:
             let glyphs = ["•", "◦", "▪"]
-            return glyphs[min(block.listLevel, glyphs.count - 1)]
+            return glyphs[max(0, min(block.listLevel, glyphs.count - 1))]
         case .numbered:
             switch block.listLevel {
             case 0: return "\(position)."

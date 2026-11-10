@@ -72,9 +72,58 @@ struct DocumentSnapshot: Codable, Equatable {
     }
 
     func encoded() -> Data? { try? JSONEncoder().encode(self) }
+    /// A snapshot is written by another member of the room, so nothing in it is
+    /// trusted: every snapshot read here goes through `validated()`.
     static func decoded(_ data: Data?) -> DocumentSnapshot? {
         guard let data else { return nil }
-        return try? JSONDecoder().decode(DocumentSnapshot.self, from: data)
+        return (try? JSONDecoder().decode(DocumentSnapshot.self, from: data))?.validated()
+    }
+
+    /// Bounds on what one snapshot may hold. All far above what the editor
+    /// produces; they exist so that a snapshot made by hand cannot make this
+    /// device crash, hang or run out of memory when it is applied and drawn.
+    enum Limits {
+        static let maxBlocks = 5_000
+        static let maxTableRows = 1_000
+        static let maxCellsPerRow = DocumentTableCell.maxColumnSpan
+        static let maxCommentsPerBlock = 1_000
+        static let maxFootnotesPerBlock = 1_000
+        static let maxListLevel = 8
+        static let columnCounts = 1...3
+    }
+
+    /// The snapshot with its numbers held to the ranges the app can draw, or
+    /// nil when it holds more than `Limits` allows.
+    ///
+    /// Numbers out of range are corrected rather than refused: no editor writes
+    /// them, and the document is still usable with the nearest valid value.
+    /// Too many blocks, rows, cells or notes refuse the whole snapshot instead
+    /// of cutting it short, because a member who can write would then send the
+    /// shortened document back to the room as if the rest had been deleted.
+    func validated() -> DocumentSnapshot? {
+        guard blocks.count <= Limits.maxBlocks else { return nil }
+        var result = self
+        result.columnCount = min(max(columnCount, Limits.columnCounts.lowerBound), Limits.columnCounts.upperBound)
+        for index in result.blocks.indices {
+            var block = result.blocks[index]
+            guard block.comments.count <= Limits.maxCommentsPerBlock,
+                  block.footnotes.count <= Limits.maxFootnotesPerBlock else { return nil }
+            block.listLevel = min(max(block.listLevel, 0), Limits.maxListLevel)
+            if var rows = block.rows {
+                guard rows.count <= Limits.maxTableRows else { return nil }
+                for rowIndex in rows.indices {
+                    guard rows[rowIndex].count <= Limits.maxCellsPerRow else { return nil }
+                    for cellIndex in rows[rowIndex].indices {
+                        let cell = rows[rowIndex][cellIndex]
+                        rows[rowIndex][cellIndex].columnSpan = min(max(cell.columnSpan, 1), DocumentTableCell.maxColumnSpan)
+                        rows[rowIndex][cellIndex].rowSpan = min(max(cell.rowSpan, 1), DocumentTableCell.maxRowSpan)
+                    }
+                }
+                block.rows = rows
+            }
+            result.blocks[index] = block
+        }
+        return result
     }
 }
 
@@ -150,7 +199,11 @@ enum DocumentSnapshotCodec {
     /// sync id (so the objects the editor holds stay valid where they can),
     /// added, removed and reordered. `assets` supplies image bytes by hash; an
     /// image whose bytes are unavailable keeps what the block already has.
-    static func apply(_ snapshot: DocumentSnapshot, to document: TextDocument, assets: [String: Data]) {
+    static func apply(_ unchecked: DocumentSnapshot, to document: TextDocument, assets: [String: Data]) {
+        // Checked again here, whatever the caller did: this is the one place a
+        // snapshot's values reach the stored document. One that is over the
+        // limits changes nothing.
+        guard let snapshot = unchecked.validated() else { return }
         if document.title != snapshot.title { document.title = snapshot.title }
         if document.pageSizeRawValue != snapshot.pageSize { document.pageSizeRawValue = snapshot.pageSize }
         if document.columnCount != snapshot.columnCount { document.columnCount = snapshot.columnCount }

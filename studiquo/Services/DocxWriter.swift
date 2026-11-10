@@ -61,7 +61,7 @@ enum DocxWriter {
         var pPr = "<w:pPr>"
         pPr += "<w:pStyle w:val=\"\(wordStyleID(for: block.paragraphStyle))\"/>"
         if let listKind = block.listKind {
-            pPr += "<w:numPr><w:ilvl w:val=\"\(block.listLevel)\"/><w:numId w:val=\"\(listKind == .bulleted ? 1 : 2)\"/></w:numPr>"
+            pPr += "<w:numPr><w:ilvl w:val=\"\(max(0, min(block.listLevel, 8)))\"/><w:numId w:val=\"\(listKind == .bulleted ? 1 : 2)\"/></w:numPr>"
         }
         let text = DocumentBody.decode(block.bodyData)
         if let alignment = paragraphAlignment(of: text) {
@@ -169,7 +169,7 @@ enum DocxWriter {
                 let cellText = DocumentBody.decode(cell.bodyData)
                 let runsXML = runs(of: cellText).map { runXML($0, hyperlinkURLs: &hyperlinkURLs) }.joined()
                 let paragraph = "<w:p><w:pPr><w:pStyle w:val=\"Normal\"/></w:pPr>\(runsXML)</w:p>"
-                let spanXML = cell.columnSpan > 1 ? "<w:gridSpan w:val=\"\(cell.columnSpan)\"/>" : ""
+                let spanXML = cell.layoutColumnSpan > 1 ? "<w:gridSpan w:val=\"\(cell.layoutColumnSpan)\"/>" : ""
                 return "<w:tc><w:tcPr>\(spanXML)</w:tcPr>\(paragraph)</w:tc>"
             }.joined()
             return "<w:tr>\(cellsXML)</w:tr>"

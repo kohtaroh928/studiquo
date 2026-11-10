@@ -111,7 +111,7 @@ enum DocxReader {
             block.paragraphStyle = documentParagraphStyle(forWordStyleID: paragraph.styleID)
             if let numId = paragraph.numId, let kind = numbering.listKind(forNumId: numId) {
                 block.listKind = kind
-                block.listLevel = paragraph.ilvl
+                block.listLevel = max(0, min(paragraph.ilvl, 8))
             }
             return block
         case .table(let table):
@@ -122,7 +122,7 @@ enum DocxReader {
                 var cells: [DocumentTableCell] = []
                 for (cellIndex, parsedCell) in parsedRow.cells.enumerated() {
                     let cell = DocumentTableCell(order: cellIndex)
-                    cell.columnSpan = max(1, parsedCell.gridSpan)
+                    cell.columnSpan = min(max(1, parsedCell.gridSpan), DocumentTableCell.maxColumnSpan)
                     let combinedText = parsedCell.paragraphs.map { attributedString(from: $0).string }.joined(separator: "\n")
                     cell.text = combinedText
                     cells.append(cell)

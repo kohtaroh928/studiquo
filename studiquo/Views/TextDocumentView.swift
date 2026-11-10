@@ -2394,7 +2394,7 @@ private struct DocumentTableBlockView: View {
                                 // `row.cells` at all, see
                                 // `mergeCellWithRight`/`mergeCellWithBelow`.
                                 .frame(
-                                    width: cellWidth * CGFloat(cell.columnSpan) + CGFloat(cell.columnSpan - 1),
+                                    width: cellWidth * CGFloat(cell.layoutColumnSpan) + CGFloat(cell.layoutColumnSpan - 1),
                                     alignment: .topLeading
                                 )
                                 .background(Theme.Palette.canvas)
