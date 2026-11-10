@@ -794,6 +794,35 @@ final class CollabSnapshotLimitsSyncTests: XCTestCase {
         XCTAssertEqual(sent.blocks[1].rows?.flatMap { $0 }.map(\.rowSpan), Array(repeating: DocumentTableCell.maxRowSpan, count: 4))
     }
 
+    /// The same device after it has already shared: the room and its own record of the
+    /// room both hold the raw values, as an app from before the check would have left them.
+    func testADeviceWhoseRoomAndBaseHoldOutOfRangeValuesDoesNotSendThemAgain() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["項目"])
+        document.collabRoomID = "room"
+        document.sortedBlocks[0].listKind = .bulleted
+        document.sortedBlocks[0].listLevel = -1
+        let table = DocumentBlock.makeTable(order: 1, rows: 1, columns: 2)
+        table.document = document
+        for cell in table.sortedTableRows[0].sortedCells { cell.columnSpan = -5; cell.rowSpan = .max }
+        document.blocks = (document.blocks ?? []) + [table]
+        // What that app wrote: the document as it is stored, numbers untouched.
+        var raw = DocumentSnapshotCodec.make(from: document).snapshot
+        raw.blocks[0].listLevel = -1
+        raw.blocks[1].rows = raw.blocks[1].rows?.map { $0.map { .init(body: $0.body, columnSpan: -5, rowSpan: .max) } }
+        let rawData = try XCTUnwrap(raw.encoded())
+        XCTAssertEqual(DocumentSnapshot.decodedUnchecked(rawData)?.blocks[0].listLevel, -1)
+        room.snapshotText = String(data: rawData, encoding: .utf8)
+        room.revision = 1
+        document.collabBaseSnapshot = rawData
+        document.collabRevision = 1
+
+        for _ in 0..<3 { let outcome = try await sync(document, room); XCTAssertTrue(isUpToDate(outcome)) }
+
+        XCTAssertEqual(room.putAttempts, 0, "nothing changed, so nothing is sent: not once, and not on every round")
+        XCTAssertEqual(room.revision, 1)
+    }
+
     func testADocumentOverTheLimitsIsReportedAndNeverSent() async throws {
         let room = FakeRoom()
         let document = makeDocument(["本文"])

@@ -175,17 +175,59 @@ final class CollabSnapshotValidationTests: XCTestCase {
             table.mergeCellWithBelow(row: table.sortedTableRows[0], cellIndex: 0)
             table.mergeCellWithRight(row: table.sortedTableRows[0], cellIndex: 0)
 
-            for cell in table.sortedTableRows.flatMap(\.sortedCells) {
-                XCTAssertLessThanOrEqual(cell.layoutColumnSpan, DocumentTableCell.maxColumnSpan)
-                XCTAssertLessThanOrEqual(cell.layoutRowSpan, DocumentTableCell.maxRowSpan)
-            }
+            // The merged cell's stored spans are now in range, whatever they were before:
+            // the sum is taken from the bounded values and bounded again.
+            let merged = table.sortedTableRows[0].sortedCells[0]
+            XCTAssertEqual(table.sortedTableRows[0].sortedCells.count, 1, "stored \(stored)")
+            XCTAssertEqual(table.sortedTableRows[1].sortedCells.count, 1, "stored \(stored)")
+            XCTAssertTrue((2...DocumentTableCell.maxColumnSpan).contains(merged.columnSpan), "stored \(stored): \(merged.columnSpan)")
+            XCTAssertTrue((2...DocumentTableCell.maxRowSpan).contains(merged.rowSpan), "stored \(stored): \(merged.rowSpan)")
             XCTAssertEqual(table.tableGridRows.count, 2, "stored \(stored)")
         }
     }
 
     // MARK: .docx
 
-    func testDocxKeepsListLevelsAndSpansWithinBounds() throws {
+    /// A .docx written by something else: the values in its XML are whatever that program put there.
+    func testReadingADocxHoldsListLevelsAndSpansWithinBounds() throws {
+        let document = TextDocument(title: "テスト")
+        var blocks: [DocumentBlock] = []
+        for (index, level) in [1, 2].enumerated() {
+            let item = DocumentBlock(order: index, kind: .paragraph)
+            item.bodyData = DocumentBody.encode(NSAttributedString(string: "項目", attributes: DocumentBody.defaultAttributes()))
+            item.listKind = .bulleted
+            item.listLevel = level
+            blocks.append(item)
+        }
+        let table = DocumentBlock.makeTable(order: 2, rows: 1, columns: 2)
+        table.sortedTableRows[0].sortedCells[0].columnSpan = 2
+        blocks.append(table)
+        for item in blocks { item.document = document }
+        document.blocks = blocks
+        let written = try XCTUnwrap(DocxWriter.makeDocxData(from: document))
+
+        // Rewrite the values inside the file itself, past anything the writer would produce.
+        var replaced = 0
+        let entries = try DocxZip.read(written).map { entry -> DocxZip.Entry in
+            guard entry.path == "word/document.xml", var xml = String(data: entry.data, encoding: .utf8) else { return entry }
+            for (from, to) in [("<w:ilvl w:val=\"1\"/>", "<w:ilvl w:val=\"-3\"/>"), ("<w:ilvl w:val=\"2\"/>", "<w:ilvl w:val=\"99\"/>"),
+                               ("<w:gridSpan w:val=\"2\"/>", "<w:gridSpan w:val=\"500\"/>")] where xml.contains(from) {
+                xml = xml.replacingOccurrences(of: from, with: to)
+                replaced += 1
+            }
+            return DocxZip.Entry(path: entry.path, data: Data(xml.utf8))
+        }
+        XCTAssertEqual(replaced, 3, "the file must really carry the out-of-range values")
+
+        let readBack = try DocxReader.read(from: try DocxZip.write(entries)).blocks
+
+        XCTAssertEqual(readBack[0].listLevel, 0)
+        XCTAssertEqual(readBack[1].listLevel, DocumentBlock.maxListLevel)
+        let spans = try XCTUnwrap(readBack.first { $0.kind == .table }).sortedTableRows[0].sortedCells.map(\.columnSpan)
+        XCTAssertEqual(spans.first, DocumentTableCell.maxColumnSpan)
+    }
+
+    func testWritingADocxHoldsListLevelsAndSpansWithinBounds() throws {
         let document = TextDocument(title: "テスト")
         var blocks: [DocumentBlock] = []
         for (index, level) in [-3, 99].enumerated() {
