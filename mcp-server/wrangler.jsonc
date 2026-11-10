@@ -142,6 +142,8 @@
     "PRIVACY_RETENTION_ENABLED": "false",
     // Approve the provider's audience/contract before enabling AI requests.
     "AI_PROVIDER_APPROVED": "false",
+    // New AI/RAG consent remains closed until production rollout is approved.
+    "PAYWALL_ENABLED": "false",
     // RevenueCat sandbox purchases are free; only staging may grant a plan from one.
     "ALLOW_SANDBOX_PURCHASES": "false",
     "APNS_TOPIC": "com.yabuko.studiquo",
@@ -301,6 +303,9 @@
         "OPENAI_ASTRA_MODEL": "gpt-6-astra",
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "true",
+        // Enabling RAG consent begins AI data transfer, so it is also protected
+        // by the AI paywall gate. Keep it explicit for every staging deploy.
+        "PAYWALL_ENABLED": "true",
         "ALLOW_SANDBOX_PURCHASES": "true",
         // Marks every Slack message, push, e-mail subject and admin page from this Worker
         // as staging (environment.ts). Production leaves it unset, so nothing is marked there.

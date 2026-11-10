@@ -64,7 +64,7 @@ test("wrangler.jsonc keeps document search on in staging and off in production",
   const config = readFileSync(join(import.meta.dirname, "..", "wrangler.jsonc"), "utf8");
   const staging = config.indexOf('"DEPLOYMENT_ENVIRONMENT": "staging"');
   assert.ok(staging > 0);
-  for (const flag of ["RAG_ENABLED", "RAG_AUTO_INDEX_ENABLED", "RAG_PDF_PROCESSING_ENABLED", "RAG_PDF_CLEANUP_ENABLED", "AI_PROVIDER_APPROVED"]) {
+  for (const flag of ["RAG_ENABLED", "RAG_AUTO_INDEX_ENABLED", "RAG_PDF_PROCESSING_ENABLED", "RAG_PDF_CLEANUP_ENABLED", "AI_PROVIDER_APPROVED", "PAYWALL_ENABLED"]) {
     const first = config.indexOf(`"${flag}":`), second = config.indexOf(`"${flag}":`, first + 1);
     assert.ok(first < staging && second > staging, flag);
     assert.ok(config.startsWith(`"${flag}": "false"`, first), `${flag} in production`);

@@ -12,6 +12,28 @@
 
 次の一手: ローカルブランチのテスト差分を確認し、依頼があればPR・統合へ進む。今回push/merge/deploy、staging/本番データ操作、有料評価、自動スケジュール再開なし。テストは一時runtimeをdisposeし、常駐processなし。GitHub Projectは既存「認可の網羅テスト」に結果・制約・次の一手を追記し、担当Codex・統合前の「あなた待ち」へ更新済み。既存のRAG評価・実機待ちはこの検証で完了扱いにしない。Projectの資料の更新: なし（テスト追加のみ）。
 
+## 2026-11-09 自動登録失敗の理由表示を修正
+
+ユーザー報告の「対象PDFの自動登録を許可」後の一般エラーを調査した。現在の staging Worker は版 `35aa4afd-055c-4c35-9641-5f45f3ff9592` が100%稼働し、設定ファイル上の `RAG_ENABLED`・`RAG_AUTO_INDEX_ENABLED`・`RAG_PDF_PROCESSING_ENABLED`・`RAG_PDF_CLEANUP_ENABLED`・`AI_PROVIDER_APPROVED` はすべて `true`。前回の古いローカル再試行待機を解除する修正（PR #117）も最新統合HEADに含まれる。一方、アプリ画面は `grant` のHTTP認証・レート制限・送信先停止などをすべて同じ「通信と送信許可を確認してください」に丸めており、原因を画面から区別できなかった。端末ログはCoreDevice接続タイムアウト、Workerの履歴ログは利用できず、今回の個別HTTPステータスは未確定。
+
+`codex/rag-auto-register-error`（commit `8e2330c`）で、既存の安全なローカライズ済み例外理由をそのまま表示するようにした。サーバー制限は迂回しない。`xcodegen generate`、`git diff --check`、`xcodebuild test -project studiquo.xcodeproj -scheme studiquo -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' -only-testing:studiquoTests/RAGLibrarySyncTests -quiet` は成功。実機再現は未実施。GitHub Projectは `gh project item-list 1 --owner kohtaroh928 --format json` が `unknown owner type` で失敗し未記録。常駐processなし。次はこのブランチを確認枠で staging 実機Runし、表示された具体的な理由とWorkerリクエストを照合する。Projectの資料の更新: なし。
+
+追記: `origin/main` の最新 `e9e1f26` をマージした `5ccd4b9` で、同じ生成・関連テストを再実行して成功。確認枠は `codex/rag-auto-register-error` の `5ccd4b9` で使用中。次の一手はユーザーが `~/studiquo` の `studiquo-staging` をRunし、資料検索設定の「対象PDFの自動登録を許可」を再試行すること。実機結果が出たら札を返却し、表示内容とWorker観測を引き継ぎへ追記する。
+
+追記2: 実機再試行で「AIに接続できませんでした」と表示された（HTTP番号は未採取）。版115の実際のbindingを読み取り、RAG有効フラグ5項目は `true`、`ADMIN_DB`・`RAG_VECTORIZE`・`RATE_LIMIT_RAG_INDEX` は存在することを確認。staging D1の `rag_accounts`、`rag_sources`、`rag_controls`、`rag_documents`、`rag_cleanup_jobs`、`rag_cleanup_vectors` と、同意に必要な `rag_accounts`/`rag_controls` の列も存在する。Workerの履歴ログは利用できず、`wrangler tail` は接続直後に出力なく終了したため、HTTPステータスまたは端末ログをまだ取得できていない。次は画面に出るエラー全文（ステータス番号を含む）を確認し、認証・レート制限・Worker 503を分ける。
+
+追記3: ユーザーの再試行では再び旧一般文言「自動登録を開始できませんでした」が出た。Xcodeは正しい `/Users/yabukohtarohgmail.com/studiquo/studiquo.xcodeproj` を開いているが、確認枠は18:19 JSTに `claude/collab-invite-screen` の `6e03911` へ切り替わっており、修正版 `5ccd4b9` をRunしていなかったことを確認。現在の共同編集確認を勝手に返却せず、ユーザーが明示的に返却を指示した後に `codex/rag-auto-register-error` を再取得して再試行する。Project記録は引き続き `unknown owner type` で未記録。
+
+追記4: 修正版 `e6b59b2` をRunした再試行でHTTP `503` を確認。手動許可は、古いローカルの `pendingState` 無効化を `flushInvalidations()` で完了してから同意APIへ進むため、その古いキューの一時的503が新しい明示許可まで止めることが判明した。サーバー側 `updateConsent` は同じアカウントの旧 `rag_sources` を削除対象にし、`rag_documents` の接続も切るため、`e476e7a` で新しい許可前のこの同期を外した。回帰テストは古い文書同期が503でも `GET/POST /api/rag/consent` のみで許可が完了することを確認し、関連 `xcodebuild` は成功。独立レビューは問題なし（旧資料を検索対象のまま残さず、認可・レート制限・サーバー世代管理に変更なし）。次は確認枠を `e476e7a` 以降へ更新し、studiquo-staging実機で許可を再試行する。Projectの資料の更新: なし。
+
+追記5: 実機で仍 `503` のため、Worker版115の実bindingと `ai-privacy.ts` を照合。`POST /api/rag/consent`（`enabled:true`）はAI送信開始として `PAYWALL_ENABLED === "true"` を必須にするが、版115にはこのbindingがなかった。これは `AI_PROVIDER_APPROVED=true` とRAG5フラグが有効でも503になる直接原因。`097c78e` で staging に `PAYWALL_ENABLED=true`、production に明示的な `PAYWALL_ENABLED=false` を追加し、環境設定テストを更新。環境・AIプライバシー・RAG安全性テスト42件成功。`wrangler deploy --env staging --dry-run --keep-vars` は成功し、stagingだけで同フラグが `true` になることを確認。本番・D1・Vectorizeの内容は未変更。実際の staging deploy は明示承認待ち。GitHub Projectは未記録（`unknown owner type`）。
+
+追記6: ユーザー承認後、`wrangler deploy --env staging --keep-vars` を実行し、staging Worker版118（`1bc17f6f-3c35-475c-927b-654993872043`）を100%配備。`wrangler deployments status` と `wrangler versions view` で `PAYWALL_ENABLED=true`、RAG有効フラグ、staging D1/Vectorize bindingを読み取り確認した。本番Worker・本番データ・D1/Vectorize内容は変更なし。次は確認枠の `studiquo-staging` で自動登録許可を再試行し、成功後に札を返却する。
+
+追記7: ユーザーが staging 実機で自動登録の成功を確認。確認枠は返却済み。最新 `origin/main`（PR #134まで）を取り込み、環境・AIプライバシー・RAG安全性テスト42件と `RAGLibrarySyncTests` を再実行して成功。独立セキュリティレビューは指摘なし。次は `codex/rag-auto-register-error` をpushしてPRを作成する。Project資料の更新: `docs/RAG_CLAUDE_HANDOFF.md`。
+
+追記8: PR #139（https://github.com/kohtaroh928/studiquo/pull/139）を作成し、`codex/rag-auto-register-error` をpushした。staging版118の実機成功済み。PRの必須チェック・レビュー・mainへのマージは未実施で、確認後にのみ進める。GitHub Projectは引き続き `unknown owner type` のため未記録。
+
 ## 2026-10-27 ローカルブランチの統合とマージ済みブランチ・worktreeの整理
 
 ユーザー依頼により、`origin/main`（`1836e04`）とローカルの未マージ6ブランチ（`claude/rag-judge-single-fix` `1cd82bf`、`claude/rag-judge-validation-plan` `db762d1`、`codex/ai-chat-replace-position` `674ced5`、`codex/friend-refresh-cancellation` `c5a260b`、`codex/login-ui-fields` `50df209`、`codex/pen-polyline-priority` `2d66241`）をローカル`main`へ統合し、マージ済みのローカルブランチとworktreeを削除した（未コミット変更がある `.worktrees/vuln-watch-permissions` と確認枠のルートは保持）。検証: `rag-comparison.test.ts`・`rag-judge.test.ts` 28件成功。未実施: iOS実機確認・GitHub `origin/main` へのpush/PRマージ。常駐processなし。次の一手: ローカル`main`の統合分を必要に応じてPR経由で`origin/main`へ反映し、確認枠の`codex/login-ui-fields`実機確認後に`scripts/verify-slot release`を実行する。
