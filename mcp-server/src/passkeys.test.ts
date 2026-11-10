@@ -696,6 +696,7 @@ test("registering a passkey stores it under the account, lists it for deletion, 
     const body = JSON.stringify(mail[0]);
     assert.ok(body.includes("これまでどおりできます"), "says the other sign-in methods keep working");
     assert.ok(body.includes("アカウントの削除") && body.includes("AIアプリの接続の承認"), "names what the passkey protects");
+    assert.ok(body.includes("すべてのパスキーが削除") && body.includes("48時間"), "says what a password reset does");
     assert.ok(!body.includes("できなくなります"), "does not claim the other sign-in methods stop working");
     assert.ok(!JSON.stringify(mail[0]).includes(credential.id), "the e-mail doesn't carry the credential");
     assert.equal((await verify(credential)).status, 400, "the same attempt can't be replayed");
