@@ -75,8 +75,15 @@ struct DocumentSnapshot: Codable, Equatable {
     /// A snapshot is written by another member of the room, so nothing in it is
     /// trusted: every snapshot read here goes through `validated()`.
     static func decoded(_ data: Data?) -> DocumentSnapshot? {
+        decodedUnchecked(data)?.validated()
+    }
+
+    /// The snapshot exactly as it was written, for a caller that has to tell
+    /// "not a snapshot" from "a snapshot over the limits". Pass the result
+    /// through `validated()` before using anything in it.
+    static func decodedUnchecked(_ data: Data?) -> DocumentSnapshot? {
         guard let data else { return nil }
-        return (try? JSONDecoder().decode(DocumentSnapshot.self, from: data))?.validated()
+        return try? JSONDecoder().decode(DocumentSnapshot.self, from: data)
     }
 
     /// Bounds on what one snapshot may hold. All far above what the editor
@@ -88,7 +95,13 @@ struct DocumentSnapshot: Codable, Equatable {
         static let maxCellsPerRow = DocumentTableCell.maxColumnSpan
         static let maxCommentsPerBlock = 1_000
         static let maxFootnotesPerBlock = 1_000
-        static let maxListLevel = 8
+        /// Across the whole document. A table is drawn with every cell on screen
+        /// at once, so the per-table bounds alone would still let a few tables
+        /// add up to more cells than a device can lay out.
+        static let maxTotalTableCells = 10_000
+        static let maxTotalComments = 5_000
+        static let maxTotalFootnotes = 5_000
+        static let maxListLevel = DocumentBlock.maxListLevel
         static let columnCounts = 1...3
     }
 
@@ -101,18 +114,46 @@ struct DocumentSnapshot: Codable, Equatable {
     /// of cutting it short, because a member who can write would then send the
     /// shortened document back to the room as if the rest had been deleted.
     func validated() -> DocumentSnapshot? {
-        guard blocks.count <= Limits.maxBlocks else { return nil }
+        isWithinLimits ? normalized() : nil
+    }
+
+    /// Whether the snapshot holds no more than `Limits` allows. The same rule
+    /// decides what this device accepts and what it sends, so a document that
+    /// its peers would refuse is never written to the room.
+    var isWithinLimits: Bool {
+        guard blocks.count <= Limits.maxBlocks else { return false }
+        var cells = 0, comments = 0, footnotes = 0
+        for block in blocks {
+            guard block.comments.count <= Limits.maxCommentsPerBlock,
+                  block.footnotes.count <= Limits.maxFootnotesPerBlock else { return false }
+            comments += block.comments.count
+            footnotes += block.footnotes.count
+            if let rows = block.rows {
+                guard rows.count <= Limits.maxTableRows else { return false }
+                for row in rows {
+                    guard row.count <= Limits.maxCellsPerRow else { return false }
+                    cells += row.count
+                }
+            }
+            guard cells <= Limits.maxTotalTableCells, comments <= Limits.maxTotalComments,
+                  footnotes <= Limits.maxTotalFootnotes else { return false }
+        }
+        return true
+    }
+
+    /// The snapshot with every number held to the range the app can draw.
+    /// Applied to what is received and to what is sent: the two are compared
+    /// to decide whether there is anything to send, so a stored value that is
+    /// out of range must read the same on both sides, or a device holding one
+    /// would send its document again on every round.
+    func normalized() -> DocumentSnapshot {
         var result = self
         result.columnCount = min(max(columnCount, Limits.columnCounts.lowerBound), Limits.columnCounts.upperBound)
         for index in result.blocks.indices {
             var block = result.blocks[index]
-            guard block.comments.count <= Limits.maxCommentsPerBlock,
-                  block.footnotes.count <= Limits.maxFootnotesPerBlock else { return nil }
             block.listLevel = min(max(block.listLevel, 0), Limits.maxListLevel)
             if var rows = block.rows {
-                guard rows.count <= Limits.maxTableRows else { return nil }
                 for rowIndex in rows.indices {
-                    guard rows[rowIndex].count <= Limits.maxCellsPerRow else { return nil }
                     for cellIndex in rows[rowIndex].indices {
                         let cell = rows[rowIndex][cellIndex]
                         rows[rowIndex][cellIndex].columnSpan = min(max(cell.columnSpan, 1), DocumentTableCell.maxColumnSpan)
@@ -192,18 +233,19 @@ enum DocumentSnapshotCodec {
             footer: headerFooter(document.footer),
             blocks: blocks
         )
-        return (snapshot, assets)
+        return (snapshot.normalized(), assets)
     }
 
     /// Makes `document` match `snapshot`: blocks are updated in place by their
     /// sync id (so the objects the editor holds stay valid where they can),
     /// added, removed and reordered. `assets` supplies image bytes by hash; an
     /// image whose bytes are unavailable keeps what the block already has.
-    static func apply(_ unchecked: DocumentSnapshot, to document: TextDocument, assets: [String: Data]) {
+    /// Returns false, having changed nothing, for a snapshot over `DocumentSnapshot.Limits`.
+    @discardableResult
+    static func apply(_ unchecked: DocumentSnapshot, to document: TextDocument, assets: [String: Data]) -> Bool {
         // Checked again here, whatever the caller did: this is the one place a
-        // snapshot's values reach the stored document. One that is over the
-        // limits changes nothing.
-        guard let snapshot = unchecked.validated() else { return }
+        // snapshot's values reach the stored document.
+        guard let snapshot = unchecked.validated() else { return false }
         if document.title != snapshot.title { document.title = snapshot.title }
         if document.pageSizeRawValue != snapshot.pageSize { document.pageSizeRawValue = snapshot.pageSize }
         if document.columnCount != snapshot.columnCount { document.columnCount = snapshot.columnCount }
@@ -236,6 +278,7 @@ enum DocumentSnapshotCodec {
         for (index, block) in result.enumerated() { block.order = index }
         document.blocks = result
         document.updatedAt = .now
+        return true
     }
 
     private static func applyHeaderFooter(_ value: DocumentSnapshot.HeaderFooter?, kind: DocumentHeaderFooterKind, to document: TextDocument) {

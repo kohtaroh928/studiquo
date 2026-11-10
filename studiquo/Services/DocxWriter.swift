@@ -61,7 +61,7 @@ enum DocxWriter {
         var pPr = "<w:pPr>"
         pPr += "<w:pStyle w:val=\"\(wordStyleID(for: block.paragraphStyle))\"/>"
         if let listKind = block.listKind {
-            pPr += "<w:numPr><w:ilvl w:val=\"\(max(0, min(block.listLevel, 8)))\"/><w:numId w:val=\"\(listKind == .bulleted ? 1 : 2)\"/></w:numPr>"
+            pPr += "<w:numPr><w:ilvl w:val=\"\(max(0, min(block.listLevel, DocumentBlock.maxListLevel)))\"/><w:numId w:val=\"\(listKind == .bulleted ? 1 : 2)\"/></w:numPr>"
         }
         let text = DocumentBody.decode(block.bodyData)
         if let alignment = paragraphAlignment(of: text) {

@@ -275,6 +275,9 @@ final class DocumentBlock {
     /// this for a list-item paragraph instead of (or alongside) its text
     /// indent.
     var listLevel: Int = 0
+    /// The deepest list level kept from outside the app (a shared snapshot, a
+    /// .docx). The editor itself only makes 0...2.
+    static let maxListLevel = 8
     /// `nil` = never explicitly styled (treated as `.body`). Stored
     /// separately from the visual formatting `apply(style:)` also applies
     /// (font size/weight, paragraph spacing) so "is this a heading, and at
@@ -470,7 +473,9 @@ final class DocumentBlock {
         let left = cells[cellIndex]
         let right = cells[cellIndex + 1]
         left.text = [left.text, right.text].filter { !$0.isEmpty }.joined(separator: " ")
-        left.columnSpan += right.columnSpan
+        // From the bounded spans, and bounded again: a stored span from outside
+        // the app can be large enough for a plain sum to overflow.
+        left.columnSpan = min(left.layoutColumnSpan + right.layoutColumnSpan, DocumentTableCell.maxColumnSpan)
         row.cells?.removeAll { $0 === right }
         for (index, cell) in row.sortedCells.enumerated() { cell.order = index }
     }
@@ -522,10 +527,10 @@ final class DocumentBlock {
         let belowRow = rows[rowIndex + 1]
         let belowStarts = visualColumnStarts(of: belowRow)
         guard let below = belowRow.sortedCells.first(where: { belowStarts[ObjectIdentifier($0)] == upperColumn }),
-              below.columnSpan == upper.columnSpan else { return }
+              below.layoutColumnSpan == upper.layoutColumnSpan else { return }
 
         upper.text = [upper.text, below.text].filter { !$0.isEmpty }.joined(separator: " ")
-        upper.rowSpan += below.rowSpan
+        upper.rowSpan = min(upper.layoutRowSpan + below.layoutRowSpan, DocumentTableCell.maxRowSpan)
         belowRow.cells?.removeAll { $0 === below }
         for (index, cell) in belowRow.sortedCells.enumerated() { cell.order = index }
     }

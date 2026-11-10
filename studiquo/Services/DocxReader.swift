@@ -111,7 +111,7 @@ enum DocxReader {
             block.paragraphStyle = documentParagraphStyle(forWordStyleID: paragraph.styleID)
             if let numId = paragraph.numId, let kind = numbering.listKind(forNumId: numId) {
                 block.listKind = kind
-                block.listLevel = max(0, min(paragraph.ilvl, 8))
+                block.listLevel = max(0, min(paragraph.ilvl, DocumentBlock.maxListLevel))
             }
             return block
         case .table(let table):
