@@ -712,3 +712,182 @@ final class CollabReviewFindingsTests: XCTestCase {
         XCTAssertEqual(new.map(\.collabID), ["id-1", "id-2", nil])
     }
 }
+
+/// The sync engine with snapshots and stored values that are out of range or over
+/// `DocumentSnapshot.Limits`: nothing crashes, nothing is sent round after round,
+/// and what is refused is reported rather than shown as "in step".
+@MainActor
+final class CollabSnapshotLimitsSyncTests: XCTestCase {
+    override func setUp() { installInMemoryCollabState() }
+
+    private func sync(_ document: TextDocument, _ room: FakeRoom, canWrite: Bool = true) async throws -> CollabSyncEngine.Outcome {
+        document.collabRoomID = document.collabRoomID ?? "room"
+        return try await CollabSyncEngine.sync(document: document, canWrite: canWrite, client: room, flush: {}, stillCurrent: { true }, didApply: {}, save: {})
+    }
+
+    private func isTooLarge(_ outcome: CollabSyncEngine.Outcome) -> Bool {
+        if case .tooLarge = outcome { return true }
+        return false
+    }
+
+    private func isUpToDate(_ outcome: CollabSyncEngine.Outcome) -> Bool {
+        if case .upToDate = outcome { return true }
+        return false
+    }
+
+    private func block(id: String, kind: String = "paragraph", listKind: String? = nil, listLevel: Int = 0, rows: [[DocumentSnapshot.Cell]]? = nil) -> DocumentSnapshot.Block {
+        .init(id: id, kind: kind, body: nil, imageHash: nil, equationSource: "", listKind: listKind,
+              listLevel: listLevel, paragraphStyle: nil, rows: rows, comments: [], footnotes: [])
+    }
+
+    private func put(_ blocks: [DocumentSnapshot.Block], in room: FakeRoom) {
+        let snapshot = DocumentSnapshot(title: "文書", pageSize: "a4", columnCount: 1, header: nil, footer: nil, blocks: blocks)
+        room.snapshotText = String(data: snapshot.encoded()!, encoding: .utf8)
+        room.revision += 1
+    }
+
+    /// A table whose first row has more cells than one row may hold.
+    private func addOversizedTable(to document: TextDocument) {
+        let table = DocumentBlock.makeTable(order: 99, rows: 1, columns: DocumentSnapshot.Limits.maxCellsPerRow + 1)
+        table.document = document
+        document.blocks = (document.blocks ?? []) + [table]
+    }
+
+    func testAHostileSnapshotIsAppliedWithinBoundsAndNotSentBack() async throws {
+        let room = FakeRoom()
+        put([
+            block(id: "list", listKind: "bulleted", listLevel: -1),
+            block(id: "table", kind: "table", rows: [[.init(body: nil, columnSpan: -5, rowSpan: 3), .init(body: nil, columnSpan: .max, rowSpan: .max)]]),
+        ], in: room)
+        let document = makeDocument([])
+
+        _ = try await sync(document, room)
+        let second = try await sync(document, room)
+
+        XCTAssertEqual(document.sortedBlocks.map(\.listLevel), [0, 0])
+        XCTAssertEqual(document.listMarker(for: document.sortedBlocks[0]), "•")
+        XCTAssertEqual(document.sortedBlocks[1].tableGridRows.count, 1)
+        XCTAssertTrue(isUpToDate(second))
+        XCTAssertEqual(room.putAttempts, 0, "the corrected values must not be written back to the room")
+        XCTAssertEqual(room.revision, 1)
+    }
+
+    /// A device that stored out-of-range values before they were checked on the way in.
+    func testADeviceHoldingOutOfRangeValuesSendsOnceAndSettles() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["項目"])
+        document.sortedBlocks[0].listKind = .bulleted
+        document.sortedBlocks[0].listLevel = -1
+        let table = DocumentBlock.makeTable(order: 1, rows: 2, columns: 2)
+        table.document = document
+        for cell in table.sortedTableRows.flatMap(\.sortedCells) { cell.columnSpan = -5; cell.rowSpan = .max }
+        document.blocks = (document.blocks ?? []) + [table]
+
+        _ = try await sync(document, room)
+        XCTAssertEqual(room.putAttempts, 1)
+        for _ in 0..<3 { let outcome = try await sync(document, room); XCTAssertTrue(isUpToDate(outcome)) }
+
+        XCTAssertEqual(room.putAttempts, 1, "the same document must not be sent again on every round")
+        let sent = try XCTUnwrap(DocumentSnapshot.decodedUnchecked(Data((room.snapshotText ?? "").utf8)))
+        XCTAssertEqual(sent.blocks[0].listLevel, 0, "what is sent is within bounds, so an older app is not sent the bad values")
+        XCTAssertEqual(sent.blocks[1].rows?.flatMap { $0 }.map(\.columnSpan), [1, 1, 1, 1])
+        XCTAssertEqual(sent.blocks[1].rows?.flatMap { $0 }.map(\.rowSpan), Array(repeating: DocumentTableCell.maxRowSpan, count: 4))
+    }
+
+    /// The same device after it has already shared: the room and its own record of the
+    /// room both hold the raw values, as an app from before the check would have left them.
+    func testADeviceWhoseRoomAndBaseHoldOutOfRangeValuesDoesNotSendThemAgain() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["項目"])
+        document.collabRoomID = "room"
+        document.sortedBlocks[0].listKind = .bulleted
+        document.sortedBlocks[0].listLevel = -1
+        let table = DocumentBlock.makeTable(order: 1, rows: 1, columns: 2)
+        table.document = document
+        for cell in table.sortedTableRows[0].sortedCells { cell.columnSpan = -5; cell.rowSpan = .max }
+        document.blocks = (document.blocks ?? []) + [table]
+        // What that app wrote: the document as it is stored, numbers untouched.
+        var raw = DocumentSnapshotCodec.make(from: document).snapshot
+        raw.blocks[0].listLevel = -1
+        raw.blocks[1].rows = raw.blocks[1].rows?.map { $0.map { .init(body: $0.body, columnSpan: -5, rowSpan: .max) } }
+        let rawData = try XCTUnwrap(raw.encoded())
+        XCTAssertEqual(DocumentSnapshot.decodedUnchecked(rawData)?.blocks[0].listLevel, -1)
+        room.snapshotText = String(data: rawData, encoding: .utf8)
+        room.revision = 1
+        document.collabBaseSnapshot = rawData
+        document.collabRevision = 1
+
+        for _ in 0..<3 { let outcome = try await sync(document, room); XCTAssertTrue(isUpToDate(outcome)) }
+
+        XCTAssertEqual(room.putAttempts, 0, "nothing changed, so nothing is sent: not once, and not on every round")
+        XCTAssertEqual(room.revision, 1)
+    }
+
+    func testADocumentOverTheLimitsIsReportedAndNeverSent() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["本文"])
+        addOversizedTable(to: document)
+
+        for _ in 0..<3 { let outcome = try await sync(document, room); XCTAssertTrue(isTooLarge(outcome)) }
+
+        XCTAssertEqual(room.putAttempts, 0)
+        XCTAssertEqual(room.revision, 0)
+    }
+
+    func testADocumentThatGrowsOverTheLimitsAfterSharingStopsBeingSent() async throws {
+        let room = FakeRoom()
+        let document = makeDocument(["本文"])
+        _ = try await sync(document, room)
+        XCTAssertEqual(room.putAttempts, 1)
+        addOversizedTable(to: document)
+
+        for _ in 0..<3 { let outcome = try await sync(document, room); XCTAssertTrue(isTooLarge(outcome)) }
+
+        XCTAssertEqual(room.putAttempts, 1)
+    }
+
+    func testARoomOverTheLimitsIsReportedAndChangesNothingHere() async throws {
+        let room = FakeRoom()
+        put((0...DocumentSnapshot.Limits.maxBlocks).map { block(id: "b\($0)") }, in: room)
+
+        for canWrite in [true, false] {
+            let document = makeDocument(["自分の文"])
+            document.collabRoomID = "room-\(canWrite)"
+
+            for _ in 0..<2 { let outcome = try await sync(document, room, canWrite: canWrite); XCTAssertTrue(isTooLarge(outcome)) }
+
+            XCTAssertEqual(texts(document), ["自分の文"])
+            XCTAssertEqual(document.collabRevision, 0)
+        }
+        XCTAssertEqual(room.putAttempts, 0)
+    }
+
+    func testAMergeThatWouldGoOverTheLimitsIsReportedAndLosesNothing() async throws {
+        let room = FakeRoom()
+        let mine = makeDocument(["共通"])
+        _ = try await sync(mine, room)   // revision 1, the common base
+        let half = DocumentSnapshot.Limits.maxBlocks / 2 + 1
+
+        // The other member adds just over half the limit...
+        var theirs = try XCTUnwrap(DocumentSnapshot.decoded(Data((room.snapshotText ?? "").utf8)))
+        theirs.blocks += (0..<half).map { block(id: "theirs-\($0)") }
+        room.snapshotText = String(data: theirs.encoded()!, encoding: .utf8)
+        room.revision += 1
+        // ...and so does this device, so each side fits and the merge does not.
+        let added = (0..<half).map { index -> DocumentBlock in
+            let item = DocumentBlock(order: index + 1, kind: .paragraph)
+            item.collabID = "mine-\(index)"
+            item.document = mine
+            return item
+        }
+        mine.blocks = (mine.blocks ?? []) + added
+        let putsBefore = room.putAttempts
+
+        let outcome = try await sync(mine, room)
+
+        XCTAssertTrue(isTooLarge(outcome))
+        XCTAssertEqual(room.putAttempts, putsBefore)
+        XCTAssertEqual(mine.sortedBlocks.count, 1 + half, "this device's additions are still here")
+        XCTAssertEqual(mine.collabRevision, 1, "the room's version was not recorded as merged")
+    }
+}

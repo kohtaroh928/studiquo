@@ -126,7 +126,12 @@ struct CollabInvitesSection: View {
         do {
             let document: TextDocument
             let reply = try await DocumentCollabService.snapshot(roomID: invite.roomID, since: -1)
-            if reply.revision > 0, let text = reply.snapshot, let snapshot = DocumentSnapshot.decoded(Data(text.utf8)) {
+            if reply.revision > 0, let text = reply.snapshot, let written = DocumentSnapshot.decodedUnchecked(Data(text.utf8)) {
+                // A snapshot over the limits is not imported, and must not fall through to
+                // the older text-only path below, which would bring in a partial document.
+                guard let snapshot = written.validated() else {
+                    throw DocumentCollabService.ServerError(status: 413, message: "Snapshot over limits")
+                }
                 var assets: [String: Data] = [:]
                 for hash in Set(snapshot.blocks.compactMap(\.imageHash)) {
                     if let data = try await DocumentCollabService.asset(roomID: invite.roomID, hash: hash) { assets[hash] = data }

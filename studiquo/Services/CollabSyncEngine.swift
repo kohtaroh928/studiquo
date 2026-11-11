@@ -130,12 +130,11 @@ enum CollabSyncEngine {
             }
 
             // The room moved on.
-            guard let text = reply.snapshot, let remote = DocumentSnapshot.decoded(Data(text.utf8)) else { return .upToDate }
-            var assets = localAssets
-            for hash in Set(remote.blocks.compactMap(\.imageHash)) where assets[hash] == nil {
-                if let data = try await client.asset(roomID: roomID, hash: hash) { assets[hash] = data }
-            }
-            guard stillCurrent() else { return .skipped }
+            guard let text = reply.snapshot, let written = DocumentSnapshot.decodedUnchecked(Data(text.utf8)) else { return .upToDate }
+            // The room holds more than this app accepts (DocumentSnapshot.Limits). Nothing
+            // of it is applied, and nothing is sent on top of it: say so instead of
+            // reporting the document as in step with the room.
+            guard let remote = written.validated() else { return .tooLarge }
 
             let target: DocumentSnapshot
             if !canWrite || base == nil {
@@ -145,6 +144,15 @@ enum CollabSyncEngine {
                 conflicts += merged.conflicts
                 target = merged.snapshot
             }
+            // Two versions that each fit can merge into one that does not. Stop before
+            // anything is applied or recorded, so neither side's additions are lost,
+            // and before the pictures are fetched: this is decided again on every round.
+            guard target.isWithinLimits else { return .tooLarge }
+            var assets = localAssets
+            for hash in Set(remote.blocks.compactMap(\.imageHash)) where assets[hash] == nil {
+                if let data = try await client.asset(roomID: roomID, hash: hash) { assets[hash] = data }
+            }
+            guard stillCurrent() else { return .skipped }
             if target != local {
                 DocumentSnapshotCodec.apply(target, to: document, assets: assets)
                 didApply()
@@ -177,6 +185,8 @@ enum CollabSyncEngine {
         _ snapshot: DocumentSnapshot, assets: [String: Data], base: Int, roomID: String,
         client: DocumentSnapshotClient, document: TextDocument, save: () -> Void
     ) async throws -> PushResult {
+        // What the other members' devices would refuse is not sent at all.
+        guard snapshot.isWithinLimits else { return .tooLarge }
         let hashes = Array(Set(snapshot.blocks.compactMap(\.imageHash)))
         if !hashes.isEmpty {
             for batch in stride(from: 0, to: hashes.count, by: 100).map({ Array(hashes[$0..<min($0 + 100, hashes.count)]) }) {
