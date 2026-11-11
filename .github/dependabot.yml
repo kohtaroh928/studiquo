@@ -26,6 +26,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # init and analyze must run the same version, or CodeQL fails.
+      codeql-action:
+        patterns: ["github/codeql-action/*"]
 # The Swift packages (GoogleSignIn, RevenueCat, SwiftMath) are declared in
 # project.yml for XcodeGen, which Dependabot does not read. Update them by hand:
 # see docs/notes/ci-setup.md.
