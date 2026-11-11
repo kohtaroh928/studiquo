@@ -71,7 +71,7 @@ jobs:
           count=$(jq -er '[.runs[].results[]?] | length' "$result")
           {
             echo "### CodeQL (${{ matrix.language }})"
-            echo "検出件数: $count。詳細はこの実行の成果物を確認してください。"
+            echo "検出件数: ${count}。詳細はこの実行の成果物を確認してください。"
             echo "Securityタブへの登録と過去の結果との差分判定は行われません。"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Save CodeQL results
