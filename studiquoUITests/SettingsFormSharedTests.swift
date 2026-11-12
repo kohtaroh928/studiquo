@@ -143,7 +143,7 @@ final class SettingsFormSharedTests: XCTestCase {
             ("account", ["プランとお支払い", "アカウントを削除"]),
             ("study", ["勉強時間を記録する", "左利きモード", "翌日復習を作成する"]),
             ("notifications", ["通知"]),
-            ("privacy", ["エラー情報を自動送信", "AI機能とデータ送信について", "プライバシーポリシーを見る", "利用規約を見る"]),
+            ("privacy", ["エラー情報を自動送信", "規約・プライバシー"]),
         ]
         for category in categories {
             openCategory(category.id)

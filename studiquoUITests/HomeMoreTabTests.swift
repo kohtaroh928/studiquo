@@ -59,7 +59,7 @@ final class HomeMoreTabTests: XCTestCase {
                 "MCP連携データを書き出す",
                 "MCPの変更を読み込む",
             ]),
-            ("privacy", ["エラー情報を自動送信", "プライバシーポリシーを見る", "フレンド設定"]),
+            ("privacy", ["エラー情報を自動送信", "規約・プライバシー", "フレンド設定"]),
             ("app", ["問題を報告", "バージョン"]),
         ]
         for category in categories {
