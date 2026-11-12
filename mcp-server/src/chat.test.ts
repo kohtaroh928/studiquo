@@ -4381,3 +4381,91 @@ test("a chat user that already existed is left for the deletion to erase, not ta
   const kept = [...(env._kv as Map<string, string>).keys()].filter(key => key.startsWith("chat"));
   for (const key of before) assert.ok(kept.includes(key), `${key} is still there for the deletion`);
 });
+
+test("a session whose account completes deletion or is linked to a deleting canonical identity during registration leaves no chat or identity-link record", async () => {
+  const canonicalOwnerHash = createHash("sha256").update("apple:canonical-owner").digest("hex");
+  for (const mode of ["deleted", "linked-canonical-deleting", "suspended"] as const) {
+    const env = environment();
+    const token = freshToken(`dn-${mode}`);
+    let flipped = false;
+    const data = env.STUDIQUO_DATA;
+    const originalGet = data.get.bind(data);
+    data.get = async (key: string, type?: string) => {
+      if (flipped) {
+        if (mode === "deleted" && key.startsWith("account-deletion:")) {
+          return type === "json" ? { status: "deleted", generation: 1 } : JSON.stringify({ status: "deleted", generation: 1 });
+        }
+        if (mode === "linked-canonical-deleting" && key.startsWith("identity-canonical:test:")) {
+          return "apple:canonical-owner";
+        }
+        if (mode === "linked-canonical-deleting" && key === `account-deletion:${canonicalOwnerHash}`) {
+          return type === "json" ? { status: "deleting", generation: 0 } : JSON.stringify({ status: "deleting", generation: 0 });
+        }
+        if (mode === "suspended" && key.startsWith("account-suspended:")) {
+          return "1";
+        }
+      }
+      return originalGet(key, type);
+    };
+    const registry = env.USER_REGISTRY;
+    const originalGetByName = registry.getByName.bind(registry);
+    registry.getByName = (name: string) => {
+      const stub = originalGetByName(name);
+      const ensureUser = stub.ensureUser.bind(stub);
+      return Object.assign(Object.create(stub), {
+        ensureUser: async (...args: unknown[]) => {
+          const user = await ensureUser(...args);
+          flipped = true;
+          return user;
+        },
+      });
+    };
+    const response = await worker.fetch(request("/api/chat/me", { method: "POST", token, body: { name: "LateMode" } }), env, noopCtx);
+    assert.equal(response.status, 401, mode);
+    flipped = false;
+    const left = [...(env._kv as Map<string, string>).keys()].filter(key => key.startsWith("chat:") || key.startsWith("chat-identity-of:"));
+    assert.deepEqual(left, [], `${mode}: neither chat records nor chat-identity-of link may remain`);
+  }
+});
+
+test("concurrent initial /api/chat/me calls that race with account deletion both return 401 and leave no chat records", async () => {
+  const env = environment();
+  const token = freshToken("dp");
+  let flipped = false;
+  const data = env.STUDIQUO_DATA;
+  const originalGet = data.get.bind(data);
+  data.get = async (key: string, type?: string) => {
+    if (flipped && key.startsWith("account-deletion:")) {
+      return type === "json" ? { status: "deleting", generation: 0 } : "{}";
+    }
+    return originalGet(key, type);
+  };
+  let releaseBarrier!: () => void;
+  const barrier = new Promise<void>(resolve => { releaseBarrier = resolve; });
+  let entered = 0;
+  const registry = env.USER_REGISTRY;
+  const originalGetByName = registry.getByName.bind(registry);
+  registry.getByName = (name: string) => {
+    const stub = originalGetByName(name);
+    const ensureUser = stub.ensureUser.bind(stub);
+    return Object.assign(Object.create(stub), {
+      ensureUser: async (...args: unknown[]) => {
+        entered += 1;
+        if (entered === 2) releaseBarrier();
+        await barrier;
+        const user = await ensureUser(...args);
+        flipped = true;
+        return user;
+      },
+    });
+  };
+  const [res1, res2] = await Promise.all([
+    worker.fetch(request("/api/chat/me", { method: "POST", token, body: { name: "ConcurrentA" } }), env, noopCtx),
+    worker.fetch(request("/api/chat/me", { method: "POST", token, body: { name: "ConcurrentB" } }), env, noopCtx),
+  ]);
+  assert.equal(res1.status, 401);
+  assert.equal(res2.status, 401);
+  flipped = false;
+  const left = [...(env._kv as Map<string, string>).keys()].filter(key => key.startsWith("chat:") || key.startsWith("chat-identity-of:"));
+  assert.deepEqual(left, [], "concurrent registrations racing with deletion leave no orphan records");
+});

@@ -571,4 +571,59 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertTrue(saved.pendingRevoke, "interrupted grant persists pendingRevoke so remote consent is cleaned up")
     }
 
+    func testRevokeFailureFollowedByManualGrantDrainsPendingRevokeThenEnablesCleanly() async throws {
+        let container = try ModelContainer(
+            for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        var saved = RAGLibrarySyncState()
+        saved.processorConsentVersion = RAGConsent.version
+        saved.enabled = true
+        saved.consentEpoch = 2
+        defaults.set(try JSONEncoder().encode(saved), forKey: "ragManaged-owner")
+
+        var failDisableOnce = true
+        var epoch = 2
+        var remoteEnabled = true
+        var postedStates: [Bool] = []
+        let client = RAGControlClient(transport: { request in
+            if request.httpMethod == "GET" {
+                let reply: [String: Any] = ["enabled": remoteEnabled, "consentEpoch": epoch, "available": true]
+                return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
+            let targetEnabled = body?["enabled"] as? Bool ?? false
+            if !targetEnabled && failDisableOnce {
+                failDisableOnce = false
+                throw WorkerAIProvider.ProviderError.http(status: 503, message: "temporary outage")
+            }
+            remoteEnabled = targetEnabled
+            epoch += 1
+            postedStates.append(targetEnabled)
+            let reply: [String: Any] = ["enabled": remoteEnabled, "consentEpoch": epoch, "available": true]
+            return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        })
+        let service = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" })
+
+        // 1. User revokes while server is temporarily down -> local enabled is false and pendingRevoke is true.
+        await service.revoke()
+        XCTAssertFalse(service.enabled)
+        let afterFailedRevoke = try JSONDecoder().decode(RAGLibrarySyncState.self, from: try XCTUnwrap(defaults.data(forKey: "ragManaged-owner")))
+        XCTAssertTrue(afterFailedRevoke.pendingRevoke)
+
+        // 2. User manually grants again once connectivity returns -> drains the pending revoke (false) and then grants (true).
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [])
+        XCTAssertTrue(service.enabled)
+        XCTAssertEqual(postedStates, [false, true], "must complete pending revoke first and then enable consent")
+        let afterRegrant = try JSONDecoder().decode(RAGLibrarySyncState.self, from: try XCTUnwrap(defaults.data(forKey: "ragManaged-owner")))
+        XCTAssertTrue(afterRegrant.enabled)
+        XCTAssertFalse(afterRegrant.pendingRevoke)
+        XCTAssertEqual(afterRegrant.consentEpoch, 4)
+    }
+
 }

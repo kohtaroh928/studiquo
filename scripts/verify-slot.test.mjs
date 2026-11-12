@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -20,7 +20,7 @@ function runVerifySlot(cwd, args, extraEnv = {}) {
   return spawnSync('sh', [SCRIPT_PATH, ...args], {
     cwd,
     encoding: 'utf8',
-    env: {...process.env, AGENT_NAME: 'test-agent', ...extraEnv},
+    env: {...process.env, AGENT_NAME: 'test-agent', STUDIQUO_NO_XCODE_RELOAD: '1', ...extraEnv},
   });
 }
 
@@ -187,4 +187,76 @@ test('release discards only the catalog synchronization produced during verifica
   assert.equal(readFileSync(catalog, 'utf8'), 'base-catalog\n');
   assert.equal(runGit(dir, ['status', '--porcelain']), '');
   assert.equal(runGit(dir, ['symbolic-ref', '--short', 'HEAD']), 'main');
+});
+
+test('reload_xcode_project closes and reopens the main project when Xcode has it open, and respects STUDIQUO_NO_XCODE_RELOAD=1', (t) => {
+  const dir = createTempRepo();
+  const binDir = mkdtempSync(path.join(tmpdir(), 'verify-slot-bin-'));
+  t.after(() => {
+    rmSync(dir, {recursive: true, force: true});
+    rmSync(binDir, {recursive: true, force: true});
+  });
+
+  const logFile = path.join(binDir, 'calls.log');
+  writeFileSync(logFile, '');
+
+  // Stub pgrep, sleep, osascript, and open so reload_xcode_project runs deterministically without touching a real Xcode session.
+  writeFileSync(path.join(binDir, 'pgrep'), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+  writeFileSync(path.join(binDir, 'sleep'), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+  writeFileSync(
+    path.join(binDir, 'osascript'),
+    `#!/bin/sh
+echo "osascript:$*" >> "${logFile}"
+case "$*" in
+  *"get path of every workspace document"*)
+    echo "\${FAKE_XCODE_OPEN_PATH:-}"
+    ;;
+  *"close (first workspace document"*)
+    [ "\${FAKE_XCODE_CLOSE_FAIL:-0}" = "1" ] && exit 1
+    exit 0
+    ;;
+esac
+`,
+    {mode: 0o755},
+  );
+  writeFileSync(
+    path.join(binDir, 'open'),
+    `#!/bin/sh
+echo "open:$*" >> "${logFile}"
+exit 0
+`,
+    {mode: 0o755},
+  );
+
+  const realDir = realpathSync(dir);
+  const envWithStubs = (extra = {}) => ({
+    PATH: `${binDir}:${process.env.PATH}`,
+    FAKE_XCODE_OPEN_PATH: `${realDir}/studiquo.xcodeproj`,
+    ...extra,
+  });
+
+  // 1) When STUDIQUO_NO_XCODE_RELOAD=1, neither osascript nor open is invoked.
+  const disabledAcq = runVerifySlot(dir, ['acquire', 'claude/branch-a'], envWithStubs({STUDIQUO_NO_XCODE_RELOAD: '1'}));
+  assert.equal(disabledAcq.status, 0, disabledAcq.stderr);
+  assert.equal(readFileSync(logFile, 'utf8'), '');
+  assert.equal(runVerifySlot(dir, ['release'], envWithStubs({STUDIQUO_NO_XCODE_RELOAD: '1'})).status, 0);
+
+  // 2) When Xcode has the main project open and reload is enabled, acquire closes and reopens it.
+  const enabledAcq = runVerifySlot(dir, ['acquire', 'claude/branch-a'], envWithStubs({STUDIQUO_NO_XCODE_RELOAD: ''}));
+  assert.equal(enabledAcq.status, 0, enabledAcq.stderr);
+  assert.match(enabledAcq.stdout, /Xcodeで開いていた確認枠のプロジェクトを開き直しました/);
+  const callsAfterAcq = readFileSync(logFile, 'utf8');
+  assert.match(callsAfterAcq, /osascript:-e tell application "Xcode" to close/);
+  assert.match(callsAfterAcq, /open:-a Xcode .*studiquo\.xcodeproj/);
+
+  // 3) When closing fails on release, a helpful notice is printed without failing release.
+  writeFileSync(logFile, '');
+  const closeFailRel = runVerifySlot(
+    dir,
+    ['release'],
+    envWithStubs({STUDIQUO_NO_XCODE_RELOAD: '', FAKE_XCODE_CLOSE_FAIL: '1'}),
+  );
+  assert.equal(closeFailRel.status, 0, closeFailRel.stderr);
+  assert.match(closeFailRel.stdout, /Xcodeのプロジェクトを自動で閉じられませんでした/);
+  assert.doesNotMatch(readFileSync(logFile, 'utf8'), /open:-a Xcode/);
 });

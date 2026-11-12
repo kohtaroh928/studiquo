@@ -1,5 +1,24 @@
 > タスク管理の正本は、2026-10-25からGitHub Project「Studiquo タスク」(https://github.com/users/kohtaroh928/projects/1)。以下の記録にある「Notion既存カード」「Notionを更新」は移行前の記録で、今後はGitHub Projectの既存項目を更新する(`AGENTS.md`の「GitHub Projectでのタスク管理」)。
 
+## 2026-11-12 直近PR（#131〜#155）に対する回帰・単体テスト追加（Antigravity）
+
+最終更新: 2026-11-12。今回行ったこと: ユーザー依頼により、直近マージされたPR（#131〜#155）に対するテストケース・回帰テストを1〜7のカテゴリ別に列挙し、`origin/main`（`1ece132`）基点の専用worktree `.worktrees/recent-impl-tests-4`（ブランチ `antigravity/recent-impl-tests-4`）で1つずつ作成・実行した。
+
+- **追加・拡充したテスト**:
+  1. アカウント削除・セッション再発行・チャット/RevenueCat競合（PR #154）: `mcp-server/src/chat.test.ts`（`ensureRegistered()` の再チェック分岐で自身の `deletingAccount` または紐付け先 `canonicalOwner` の削除中が検出された際に KV の `chat-user:*`・`chat-handle:*`・`identity-canonical:*` がロールバックされる検証、および並列初回 `/api/chat/me` とアカウント削除の競合で両方が401となりゴミが残らない検証）、`mcp-server/src/edge-cases.test.ts`（`mintSession` による全紐付けIDの `rc-delete:*` クリア後に進行中の `retryRevenueCatDeletion` が走っても削除されない検証）。
+  2. 共同編集スナップショット検証・ブロック/表上限・招待インポート（PR #151, #144, #136）: `studiquoTests/CollabSnapshotValidationTests.swift`（ブロック・表セル・文字数・変更履歴・表行/列の境界値ちょうどの通過と+1超過の拒否、および `CollabInviteImporter.importIfNeeded` 経由での範囲外 `listLevel`/`rowSpan`/`colSpan` 正規化）、`studiquoTests/CollabSnapshotTests.swift`（`CollabSnapshotLimitsSyncTests` にて3方向マージ後の総セル数が `maxTotalTableCells` を超える場合にリモートアセット取得前に中断しローカル文書を保持する検証）。
+  3. パスワード認証の古いKVレコード拒否・DO世代管理（PR #145）: `mcp-server/src/local-auth.test.ts`（成功・誤パスワード・未登録メールの各経路で `committedAccountGeneration` が1回ずつ呼ばれ、DO世代確定後は `gen` 欠落や非整数 `gen` のKVレコードが世代0扱いで `401` 拒否される検証）。
+  4. パスキー登録通知メール・環境別パスキー既知フラグ（PR #150, #138）: `mcp-server/src/passkeys.test.ts`（登録通知メールの継続ログイン手段4種・パスキー必須操作3種・端末紛失時復旧手順と48時間保護の文言検証）、`studiquoTests/GoogleSignInConfigurationTests.swift`（`AuthenticationStore.checkPasskeyRequirement()` の `true`/`nil`/`false` 応答が現環境の `passkeyKnownKey` のみを更新し別環境キーを汚染しない検証）。
+  5. RAG同意失敗後の手動許可再試行・数量質問のリランカー同点/無関係単位拒否（PR #139, #133）: `studiquoTests/RAGLibrarySyncTests.swift`（`revoke()` 通信失敗で `pendingRevoke = true` が残った状態から `grant()` を呼んだ際に `drainPendingRevokeIfNeeded()` 後に同意API・同期が完走する検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー上位2件が同点または勝者ページに質問の単位語が無い場合に2ページ目の数値を採用しない検証）。
+  6. Worker AI構造化出力検証のプロトタイプ汚染耐性・`$schema` 除去（PR #155）: `mcp-server/src/ai-output-validation.test.ts`（`rubric`/`grade`/`review` 全スキーマのトップレベル `$schema` 除去と、`__proto__`/`constructor`/`toString` 等の不正タスク名拒否）。
+  7. 開発・運用スクリプト（PR #153, #137, #138）: `scripts/verify-slot.test.mjs`（`STUDIQUO_NO_XCODE_RELOAD=1` によるテスト時の実Xcode干渉防止と、スタブ `pgrep`/`osascript`/`open` を用いた `reload_xcode_project` の再読込検証）。
+
+- **今回の検証と未実施項目**:
+  - Worker / スクリプト単体テスト: `node --test src/chat.test.ts src/edge-cases.test.ts src/local-auth.test.ts src/passkeys.test.ts src/rag-detail-presence.test.ts src/ai-output-validation.test.ts`（322件全通過）、`node --test scripts/verify-slot.test.mjs scripts/vuln-watch/test/*.test.ts`（101件全通過）、`npm --prefix mcp-server run typecheck`（エラー0）。
+  - iOS単体テスト: `xcodebuild test -project studiquo.xcodeproj -scheme studiquo-staging -destination 'platform=iOS Simulator,id=A1B1D084-1ABD-407B-9C06-3BD80F48DB8B' -only-testing:studiquoTests/CollabSnapshotValidationTests -only-testing:studiquoTests/CollabSnapshotTests -only-testing:studiquoTests/CollabSnapshotLimitsSyncTests -only-testing:studiquoTests/CollabInviteImporterTests -only-testing:studiquoTests/RAGLibrarySyncTests -only-testing:studiquoTests/GoogleSignInConfigurationTests -quiet`（74件全通過）。
+  - 未実施: 実機確認、リモートへのpush・PR作成・merge・deploy。
+- **現在地・次の一手**: `.worktrees/recent-impl-tests-4`（`antigravity/recent-impl-tests-4`）にコミット済み。常駐・実行中processなし。GitHub Projectの既存テスト項目（`PVTI_lAHODtsRbs4Bom7vzhHKyNw`）を更新済み。次はユーザー確認後、必要に応じてPR作成・統合へ進む。Projectの資料の更新: なし。
+
 ## 2026-11-09 最近のRAG・共同編集・セキュリティ実装に対するテストケース12項目の追加・PR作成（Antigravity）
 
 ユーザー依頼により、ここ最近の実装（PR #123〜#139）に対する優先度順（P0〜P3）の12項目のテストケースを作成・検証し、最新 `origin/main`（`995721f`）へリベースしたうえでPRを作成した（PR #143: https://github.com/kohtaroh928/studiquo/pull/143 、PR #144: https://github.com/kohtaroh928/studiquo/pull/144 ）。またCIの `Worker tests` で `src/rag-pdf-process.test.ts` の `failure after success cleanup timeout does not create a second grace window` が `setTimeout` の1ms早期発火（`Date.now() < cleanupEnd`）により失敗していたため、`mcp-server/src/rag/pdf-process.ts` の `clean()` で `pdf_processing_timeout` 発生時に `cleanupEnd = 0` として猶予期限切れを確定させる修正を加えた。RAG関連では `.worktrees/recent-impl-tests-3`（ブランチ `antigravity/recent-impl-tests-3`、PR #143）にて、`studiquoTests/RAGLibrarySyncTests.swift`（`GrantError.localPersistence` の文言と同意API 503失敗時の非有効化・`pendingRevoke` 設定）、`mcp-server/src/rag-control.test.ts`（`ragPrivacyRejection` における `PAYWALL_ENABLED` ゲートと同意撤回・ロック変更の非ブロック検証）、`mcp-server/src/rag-detail-presence.test.ts`（`retrieve()` でリランカー独走ページ `clearRerankWinnerPage`・`rerankTop` が数量質問の根拠になるケースと、質問固有のラテン文字/カタカナ主題語が欠落する場合に棄却されるケースの統合検証）を追加し、すべてパスすることを確認した。GitHub Project 項目 `PVTI_lAHODtsRbs4Bom7vzhHKyNw` にPRリンクを記録済み。常駐processなし。本番・ステージングへの配備やデータ変更は行っていない。次の一手: CI通過確認とユーザーレビュー後のPR #143・#144マージ。

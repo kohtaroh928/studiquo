@@ -336,3 +336,48 @@ test('retrieve promotes a clear reranker winner for a quantity question only whe
   assert.equal(rejected.detail, 'quantity');
   assert.deepEqual(rejected.citations, []);
 });
+
+test('retrieve refuses a second-page number when the reranker top scores tie or when the reranker winner only holds an unrelated unit', async () => {
+  // 1) Reranker tie (0.85 vs 0.85): clearRerankWinnerPage returns null, so Page 2 is not promoted as rerankTop.
+  const tiedReranker = (env: any) => {
+    env.AI.run = async (model: string, input: any) => {
+      if (model.includes('reranker')) {
+        return {
+          response: input.contexts.map((_ctx: any, id: number) => ({ id, score: 0.85 })),
+        };
+      }
+      return { data: input.text.map(() => Array(1024).fill(0.1)) };
+    };
+  };
+  const tiePages = numbered(
+    '台風の被害額について述べる。台風の被害額は何倍かという議論がある。',
+    '近年の被害規模は過去の通常の約17.3倍であった。',
+  );
+  const tiedResult = await ask(tiePages, '台風の被害額は何倍でしたか。', 'synthetic-user', tiedReranker);
+  assert.equal(tiedResult.status, 'insufficient');
+  assert.equal(tiedResult.detail, 'quantity');
+  assert.deepEqual(tiedResult.citations, []);
+
+  // 2) Clear reranker winner on Page 2, but Page 2 only has a year/page number ("2024年", "81ページ"), not the asked unit ("何日").
+  const wrongUnitReranker = (env: any) => {
+    env.AI.run = async (model: string, input: any) => {
+      if (model.includes('reranker')) {
+        return {
+          response: input.contexts.map((ctx: any, id: number) => ({
+            id,
+            score: String(ctx?.text ?? ctx).includes('2024年') ? 0.96 : 0.10,
+          })),
+        };
+      }
+      return { data: input.text.map(() => Array(1024).fill(0.1)) };
+    };
+  };
+  const wrongUnitPages = numbered(
+    '特別警報の発表基準と継続期間について述べる。継続期間は何日か。',
+    '2024年の統計資料（81ページ）にまとめられている。',
+  );
+  const wrongUnitResult = await ask(wrongUnitPages, '継続期間は何日ですか。', 'synthetic-user', wrongUnitReranker);
+  assert.equal(wrongUnitResult.status, 'insufficient');
+  assert.equal(wrongUnitResult.detail, 'quantity');
+  assert.deepEqual(wrongUnitResult.citations, []);
+});

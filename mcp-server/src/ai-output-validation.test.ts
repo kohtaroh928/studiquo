@@ -41,6 +41,11 @@ test('Zod wire preserves existing public shape, integer type and enum without ne
   assert.deepEqual(g.properties.issues.items.properties.kindRawValue.enum, ['logical_gap', 'counterexample', 'definition_error', 'calculation_error', 'unjustified_assumption', 'presentation']);
   function check(s) { if (s.type === 'object') { assert.equal(s.additionalProperties, false); assert.deepEqual(s.required, Object.keys(s.properties)); Object.values(s.properties).forEach(check); } if (s.items) check(s.items); }
   [r,g,v].forEach(check);
+  for (const s of [r, g, v]) assert.equal('$schema' in s, false, 'top-level $schema is stripped for OpenAI structured output');
+  for (const invalidName of ['__proto__', 'constructor', 'toString', null, undefined, 123]) {
+    assert.throws(() => schema(invalidName), /invalid_structured_output/);
+    assert.throws(() => parse(invalidName, '{}'), /invalid_structured_output/);
+  }
   v.properties.quiz.items.properties.question.type = 'number';
   assert.equal(schema('review').properties.quiz.items.properties.question.type, 'string');
 });

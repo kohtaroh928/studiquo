@@ -45,6 +45,7 @@ private final class FakeRoom: DocumentSnapshotClient {
     var missingAssetsBatchSizes: [Int] = []
     var putAssetCalls = 0
     var putAttempts = 0
+    var assetFetchCount = 0
 
     func snapshot(roomID: String, since: Int) async throws -> DocumentCollabService.SnapshotReply {
         if revision == 0 { return .init(revision: 0, snapshot: nil, unchanged: nil) }
@@ -76,7 +77,10 @@ private final class FakeRoom: DocumentSnapshotClient {
         putAssetCalls += 1
         assets[hash] = data
     }
-    func asset(roomID: String, hash: String) async throws -> Data? { assets[hash] }
+    func asset(roomID: String, hash: String) async throws -> Data? {
+        assetFetchCount += 1
+        return assets[hash]
+    }
 }
 
 @MainActor
@@ -889,5 +893,48 @@ final class CollabSnapshotLimitsSyncTests: XCTestCase {
         XCTAssertEqual(room.putAttempts, putsBefore)
         XCTAssertEqual(mine.sortedBlocks.count, 1 + half, "this device's additions are still here")
         XCTAssertEqual(mine.collabRevision, 1, "the room's version was not recorded as merged")
+    }
+
+    func testAMergeWhoseTotalTableCellsExceedTheLimitStopsBeforeFetchingRemoteAssetsOrApplying() async throws {
+        let room = FakeRoom()
+        let mine = makeDocument(["共通"])
+        _ = try await sync(mine, room)   // revision 1
+
+        // Remote adds 6 tables of 1,000 cells each (6,000 cells <= 10,000) plus a remote image asset.
+        let imageBytes = Data([0xaa, 0xbb, 0xcc])
+        let imageHash = DocumentSnapshotCodec.sha256Hex(imageBytes)
+        room.assets[imageHash] = imageBytes
+        var theirs = try XCTUnwrap(DocumentSnapshot.decoded(Data((room.snapshotText ?? "").utf8)))
+        let thousandCellRows = Array(repeating: Array(repeating: DocumentSnapshot.Cell(body: nil, columnSpan: 1, rowSpan: 1), count: 100), count: 10)
+        for index in 0..<6 {
+            theirs.blocks.append(block(id: "remote-table-\(index)", kind: "table", rows: thousandCellRows))
+        }
+        theirs.blocks.append(.init(
+            id: "remote-image", kind: "image", body: nil, imageHash: imageHash, equationSource: "",
+            listKind: nil, listLevel: 0, paragraphStyle: nil, rows: nil, comments: [], footnotes: []
+        ))
+        XCTAssertTrue(theirs.isWithinLimits, "remote alone fits within maxTotalTableCells (6,000 <= 10,000)")
+        room.snapshotText = String(data: theirs.encoded()!, encoding: .utf8)
+        room.revision += 1
+
+        // Local also adds 5 tables of 1,000 cells each (5,000 cells <= 10,000).
+        // Combined merge has 11,000 cells > maxTotalTableCells (10,000).
+        for index in 0..<5 {
+            let table = DocumentBlock.makeTable(order: index + 1, rows: 10, columns: 100)
+            table.collabID = "local-table-\(index)"
+            table.document = mine
+            mine.blocks = (mine.blocks ?? []) + [table]
+        }
+        XCTAssertTrue(DocumentSnapshotCodec.make(from: mine).snapshot.isWithinLimits, "local alone fits within maxTotalTableCells")
+        room.assetFetchCount = 0
+        let putsBefore = room.putAttempts
+
+        let outcome = try await sync(mine, room)
+
+        XCTAssertTrue(isTooLarge(outcome))
+        XCTAssertEqual(room.assetFetchCount, 0, "must reject oversized merge before downloading remote image assets")
+        XCTAssertEqual(room.putAttempts, putsBefore)
+        XCTAssertEqual(mine.collabRevision, 1)
+        XCTAssertFalse(mine.sortedBlocks.contains { $0.collabID == "remote-image" })
     }
 }

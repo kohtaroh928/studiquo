@@ -72,4 +72,45 @@ final class GoogleSignInConfigurationTests: XCTestCase {
             "GIDServerClientID": 999,
         ]))
     }
+
+    @MainActor
+    func testCheckPasskeyRequirementUpdatesOnlyCurrentEnvironmentKnownFlag() async {
+        let currentKey = LaunchStoreEnvironment.namespaced("authenticationPasskeyKnownOnDevice")
+        let otherKey = currentKey.hasSuffix(".staging") ? "authenticationPasskeyKnownOnDevice" : "authenticationPasskeyKnownOnDevice.staging"
+        let onboardingKey = LaunchStoreEnvironment.namespaced("authenticationOnboardingComplete")
+        let suite = "passkey-check-env-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let serviceName = "test.auth.\(UUID().uuidString)"
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: serviceName] as CFDictionary)
+        }
+
+        defaults.set(true, forKey: onboardingKey)
+        defaults.set(true, forKey: otherKey)
+        KeychainCredentialFixtures.seedSignedInDevice(service: serviceName, email: "user@example.com")
+        var remoteRegistered: Bool? = true
+        let store = AuthenticationStore(
+            service: serviceName,
+            defaults: defaults,
+            passkeyRegistered: { remoteRegistered }
+        )
+
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.knowsPasskeyOnThisDevice, "remote true sets the current environment flag")
+        XCTAssertFalse(store.needsPasskeyEnrollment)
+        XCTAssertTrue(defaults.bool(forKey: otherKey))
+
+        // Offline (nil) preserves the current flag without clearing it.
+        remoteRegistered = nil
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.knowsPasskeyOnThisDevice)
+
+        // Remote false (e.g. after a password reset removed passkeys) clears only the current environment's flag.
+        remoteRegistered = false
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.knowsPasskeyOnThisDevice)
+        XCTAssertTrue(store.needsPasskeyEnrollment)
+        XCTAssertTrue(defaults.bool(forKey: otherKey), "other environment's passkey flag must remain untouched")
+    }
 }

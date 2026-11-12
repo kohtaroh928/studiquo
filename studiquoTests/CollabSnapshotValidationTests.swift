@@ -267,4 +267,38 @@ final class CollabSnapshotValidationTests: XCTestCase {
             }
         }
     }
+
+    func testExactPerBlockAndPerTableBoundariesAreAcceptedBeforeOverflowRefuses() {
+        let limits = DocumentSnapshot.Limits.self
+        let comment = DocumentSnapshot.Comment(author: "a", text: "t", createdAt: 0, isResolved: false)
+        let note = DocumentSnapshot.Footnote(text: "t", createdAt: 0)
+
+        let atMaxRows = snapshot([block(kind: "table", rows: Array(repeating: [cell(1, 1)], count: limits.maxTableRows))])
+        let atMaxCellsPerRow = snapshot([block(kind: "table", rows: [Array(repeating: cell(1, 1), count: limits.maxCellsPerRow)])])
+        let atMaxComments = snapshot([block(comments: Array(repeating: comment, count: limits.maxCommentsPerBlock))])
+        let atMaxFootnotes = snapshot([block(footnotes: Array(repeating: note, count: limits.maxFootnotesPerBlock))])
+
+        for exact in [atMaxRows, atMaxCellsPerRow, atMaxComments, atMaxFootnotes] {
+            XCTAssertNotNil(received(exact))
+        }
+    }
+
+    @MainActor
+    func testCollabInviteImporterNormalizesOutOfRangeSnapshotValuesOnImport() {
+        installInMemoryCollabState()
+        let hostile = snapshot([
+            block(id: "p1", listKind: "bulleted", listLevel: -4),
+            block(id: "t1", kind: "table", rows: [[cell(0, -2), cell(999, 5000)]]),
+        ], columnCount: 99)
+
+        let imported = CollabInviteImporter.makeDocument(
+            roomID: "room-import", inviterName: "高橋", snapshot: hostile, revision: 2, assets: [:]
+        )
+
+        XCTAssertEqual(imported.columnCount, 3)
+        XCTAssertEqual(imported.sortedBlocks[0].listLevel, 0)
+        let cells = imported.sortedBlocks[1].sortedTableRows[0].sortedCells
+        XCTAssertEqual(cells.map(\.columnSpan), [1, DocumentTableCell.maxColumnSpan])
+        XCTAssertEqual(cells.map(\.rowSpan), [1, DocumentTableCell.maxRowSpan])
+    }
 }

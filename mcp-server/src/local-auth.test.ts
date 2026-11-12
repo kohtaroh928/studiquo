@@ -680,3 +680,45 @@ test("setting a password whose generation was overtaken fails so the caller can 
   assert.equal(await verifyLocalAccount(env, "person@example.com", "fast-password-bbb"), true);
   assert.equal(await verifyLocalAccount(env, "person@example.com", "slow-password-aaa"), false);
 });
+
+test("every sign-in path queries committedAccountGeneration once, and a non-integer or missing gen on a record is treated as generation 0 once a generation is committed", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "modern@example.com", "correct-horse-battery");
+  await seedLegacyAccount(env, "legacy@example.com", "correct-horse-battery");
+
+  const realCounter = env.RATE_COUNTER;
+  let committedReads = 0;
+  env.RATE_COUNTER = {
+    getByName(name: string) {
+      const stub = realCounter.getByName(name);
+      return Object.assign(Object.create(stub), {
+        async committedAccountGeneration() {
+          committedReads += 1;
+          return stub.committedAccountGeneration();
+        },
+      });
+    },
+  };
+  try {
+    for (const [email, password, expected] of [
+      ["nobody@example.com", "wrong-password-123", false],
+      ["modern@example.com", "wrong-password-123", false],
+      ["modern@example.com", "correct-horse-battery", true],
+      ["legacy@example.com", "wrong-password-123", false],
+      ["legacy@example.com", "correct-horse-battery", true],
+    ] as const) {
+      committedReads = 0;
+      assert.equal(await verifyLocalAccount(env, email, password), expected, `${email} (${password})`);
+      assert.equal(committedReads, 1, `${email} must query committedAccountGeneration exactly once`);
+    }
+
+    // Once modern@example.com has a committed generation >= 1, a record whose `gen` is missing or non-integer is treated as 0 and refused.
+    const validRecord = await storedRecord(env, "modern@example.com");
+    for (const badGen of [undefined, null, "1", 1.5, Number.NaN]) {
+      await env.STUDIQUO_DATA.put("account:local:modern@example.com", JSON.stringify({ ...validRecord, gen: badGen }));
+      assert.equal(await verifyLocalAccount(env, "modern@example.com", "correct-horse-battery"), false, `gen=${String(badGen)} must be treated as stale`);
+    }
+  } finally {
+    env.RATE_COUNTER = realCounter;
+  }
+});
