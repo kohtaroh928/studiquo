@@ -38,6 +38,23 @@ final class RAGLibrarySyncService {
     private(set) var busy = false
     /// Stage text for the busy indicator (page text extraction / upload). Never contains document content.
     private(set) var progressText: String?
+    /// In-memory 0...1 progress per document id while it is being registered (text reading 0-50%, upload 50-100%).
+    private(set) var liveProgress: [String: Double] = [:]
+    enum DocumentStatus: Equatable {
+        case excluded, queued, inProgress(Double), waiting, ready
+    }
+    func status(for notebook: Notebook) -> DocumentStatus {
+        load()
+        let id = notebook.ragDocumentID
+        if state.excluded.contains(id) { return .excluded }
+        guard let entry = state.entries[id], entry.pendingState == nil else { return .queued }
+        if entry.completed { return entry.searchState == "ready" ? .ready : .waiting }
+        if let live = liveProgress[id] { return .inProgress(live) }
+        if entry.nextPage > 0, let total = entry.totalPages, total > 0 {
+            return .inProgress(0.5 + 0.5 * min(1, Double(entry.nextPage) / Double(total)))
+        }
+        return .queued
+    }
     private(set) var errorMessage: String?
     private(set) var isManaged = false
     var enabled: Bool { state.enabled && !state.pendingRevoke && state.processorConsentVersion == RAGConsent.version && RAGConsent.isGranted && AIDataDisclosure.hasBeenAcknowledged }
@@ -260,7 +277,7 @@ final class RAGLibrarySyncService {
         if busy { pendingReconciliation = (notebooks, context); return }
         busy = true
         defer {
-            busy = false; progressText = nil
+            busy = false; progressText = nil; liveProgress.removeAll()
             if let next = pendingReconciliation {
                 pendingReconciliation = nil
                 Task { await self.reconcile(notebooks: next.0, context: next.1) }
@@ -423,8 +440,9 @@ final class RAGLibrarySyncService {
         else {
             pages = try await extractor.extractManaged(notebook, whileEligible: check, onProgress: { [weak self] done, total in
                 self?.progressText = "ページの文字を読み取り中 \(done)/\(total)ページ"
+                self?.liveProgress[id] = 0.5 * Double(done) / Double(max(1, total))
             })
-            progressText = nil
+            progressText = nil; liveProgress[id] = 0.5
         }
         try check()
         let hash = try RAGIndexingService.sourceHash(pages)
@@ -449,7 +467,7 @@ final class RAGLibrarySyncService {
         let prepared = try await client.prepare(id, requestId: entry.requestId, generation: entry.expectedGeneration,
             epoch: epoch, hash: hash, title: notebook.title, folder: notebook.folder?.ragID, total: pages.count)
         try check(); guard let source = prepared.sourceId else { throw WorkerAIProvider.ProviderError.malformedResponse }
-        entry.sourceId = source; entry.generation = prepared.generation; entry.settledState = nil; entry.restoreRequested = nil; state.entries[id] = entry
+        entry.totalPages = pages.count; entry.sourceId = source; entry.generation = prepared.generation; entry.settledState = nil; entry.restoreRequested = nil; state.entries[id] = entry
         guard save() else { throw RAGIndexingService.IndexError.disabled }
         while entry.nextPage < pages.count {
             try check(); try Task.checkCancellation()
@@ -474,6 +492,7 @@ final class RAGLibrarySyncService {
             try await client.upload(body(batch)); try check()
             entry.nextPage += batch.count; state.entries[id] = entry
             progressText = "送信中 \(entry.nextPage)/\(pages.count)ページ"
+            liveProgress[id] = 0.5 + 0.5 * Double(entry.nextPage) / Double(max(1, pages.count))
             guard save() else { throw RAGIndexingService.IndexError.disabled }
         }
         try check(); entry.completed = true; entry.searchState = "waiting"; state.entries[id] = entry; _ = save()

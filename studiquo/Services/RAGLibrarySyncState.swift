@@ -11,6 +11,7 @@ struct RAGLibrarySyncState: Codable {
         var requestId: String = ""
         var expectedGeneration: Int = 0
         var nextPage: Int = 0
+        var totalPages: Int? = nil
         var completed: Bool = false
         var searchState: String? = nil
         var readinessAttempts: Int? = nil

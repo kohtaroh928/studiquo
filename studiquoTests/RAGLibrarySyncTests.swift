@@ -53,6 +53,24 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertFalse(service.enabled)
         XCTAssertFalse(service.canSearch)
     }
+    func testDocumentStatusFollowsEntryState() throws {
+        let notebook = pdf(); let id = notebook.ragDocumentID
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        func service(_ edit: (inout RAGLibrarySyncState) -> Void) throws -> RAGLibrarySyncService {
+            var state = RAGLibrarySyncState()
+            state.enabled = true; state.consentEpoch = 1; state.scope = .allPDFs; state.includeFuture = true
+            state.processorConsentVersion = RAGConsent.version
+            edit(&state)
+            defaults.set(try JSONEncoder().encode(state), forKey: "ragManaged-owner")
+            return RAGLibrarySyncService(defaults: defaults, partition: { "owner" })
+        }
+        XCTAssertEqual(try service { _ in }.status(for: notebook), .queued)
+        XCTAssertEqual(try service { $0.excluded = [id] }.status(for: notebook), .excluded)
+        XCTAssertEqual(try service { var e = RAGLibrarySyncState.Entry(); e.nextPage = 25; e.totalPages = 100; $0.entries[id] = e }.status(for: notebook), .inProgress(0.625))
+        XCTAssertEqual(try service { var e = RAGLibrarySyncState.Entry(); e.completed = true; e.searchState = "waiting"; $0.entries[id] = e }.status(for: notebook), .waiting)
+        XCTAssertEqual(try service { var e = RAGLibrarySyncState.Entry(); e.completed = true; e.searchState = "ready"; $0.entries[id] = e }.status(for: notebook), .ready)
+        XCTAssertEqual(try service { var e = RAGLibrarySyncState.Entry(); e.completed = true; e.searchState = "ready"; e.pendingState = "excluded"; $0.entries[id] = e }.status(for: notebook), .queued)
+    }
     func testFingerprintDetectsNativeTextInkOrderAndTitle() {
         let notebook = pdf(); let original = RAGLibrarySyncService.fingerprint(notebook)
         notebook.sortedPages[0].recognizedText += " edited"
