@@ -16,8 +16,8 @@
 - **今回の検証と未実施項目**:
   - Worker / スクリプト単体テスト: `node --test src/chat.test.ts src/edge-cases.test.ts src/local-auth.test.ts src/passkeys.test.ts src/rag-detail-presence.test.ts src/ai-output-validation.test.ts`（322件全通過）、`node --test scripts/verify-slot.test.mjs scripts/vuln-watch/test/*.test.ts`（101件全通過）、`npm --prefix mcp-server run typecheck`（エラー0）。
   - iOS単体テスト: `xcodebuild test -project studiquo.xcodeproj -scheme studiquo-staging -destination 'platform=iOS Simulator,id=A1B1D084-1ABD-407B-9C06-3BD80F48DB8B' -only-testing:studiquoTests/CollabSnapshotValidationTests -only-testing:studiquoTests/CollabSnapshotTests -only-testing:studiquoTests/CollabSnapshotLimitsSyncTests -only-testing:studiquoTests/CollabInviteImporterTests -only-testing:studiquoTests/RAGLibrarySyncTests -only-testing:studiquoTests/GoogleSignInConfigurationTests -quiet`（74件全通過）。
-  - 未実施: 実機確認、リモートへのpush・PR作成・merge・deploy。
-- **現在地・次の一手**: `.worktrees/recent-impl-tests-4`（`antigravity/recent-impl-tests-4`）にコミット済み。常駐・実行中processなし。GitHub Projectの既存テスト項目（`PVTI_lAHODtsRbs4Bom7vzhHKyNw`）を更新済み。次はユーザー確認後、必要に応じてPR作成・統合へ進む。Projectの資料の更新: なし。
+  - 未実施: 実機確認、PRマージ・deploy。
+- **現在地・次の一手**: `.worktrees/recent-impl-tests-4`（`antigravity/recent-impl-tests-4`）を push し、PR #156（https://github.com/kohtaroh928/studiquo/pull/156）を作成済み。常駐・実行中processなし。GitHub Projectの既存テスト項目（`PVTI_lAHODtsRbs4Bom7vzhHKyNw`）にPR #156を記録済み。次はCI通過確認とユーザーレビュー後のPR #156マージ。Projectの資料の更新: なし。
 
 ## 2026-11-09 最近のRAG・共同編集・セキュリティ実装に対するテストケース12項目の追加・PR作成（Antigravity）
 
