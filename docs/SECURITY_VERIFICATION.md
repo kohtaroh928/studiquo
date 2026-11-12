@@ -1,6 +1,6 @@
 # セキュリティ検証チェックリスト(MASVS / ASVS)
 
-作成: 2026-10-18。対象: `main` の `b0c97f3` と、同日までに別ブランチで実装済み(未マージ)の変更。
+作成: 2026-10-18。対象: `main` の `b0c97f3` と、同日までに別ブランチで実装済み(未マージ)の変更。2026-11-09に、うち一部(HSTS、App Attest、CI、アプリスイッチャー、ブラウザデータ)がmainに入ったことを反映した。残りの「未マージ」(鍵の上書き修正、取り込み上限、カスタムスキーム、ポリシー照合表、426表示)は、mainに入ったか未確認。
 
 アプリは **OWASP MASVS v2**、Worker API は **OWASP ASVS 4.0.3** の章立てに沿って、要件ごとに「満たすか」「根拠はどこか」「満たさないとき次は何か」を記録する。脅威の洗い出しは[THREAT_MODEL.md](THREAT_MODEL.md)。
 
@@ -26,7 +26,7 @@
 | 管理項目 | 状態 | 根拠 | 満たさない/一部の点と次の一手 |
 |---|---|---|---|
 | STORAGE-1 機微データを安全に保存する | △ | セッションはKeychain `AfterFirstUnlockThisDeviceOnly`(`AuthenticationStore.swift`)。保護ノートはAES-GCMで暗号化(`NotebookEncryptionService.swift`、`NotebookEncryptionServiceTests`)。書き出し・一時ファイルは`completeFileProtection`(`ExportService.swift`、`StudiquoWorkFiles.swift`、`StudiquoWorkFilesTests`)。自動バックアップは`completeFileProtectionUnlessOpen`(`NotebookBackupService.swift`) | 保護ノートの鍵は`ThisDeviceOnly`ではなく、iCloud Keychainで端末の外へ同期される(意図した設計)。SwiftData本体と共有受信箱の保護クラスが既定のまま(カード「端末上の機微データのData Protectionと復号中データの露出を強化する」)。自動バックアップは保護ノートでも平文JSON(`SECURITY_AND_PRIVACY.md`)。保護ノートの鍵が上書きされうる不具合(ブランチ`claude/key-safety`で修正、**未マージ**) |
-| STORAGE-2 機微データの漏えいを防ぐ | △ | URLキャッシュは退会で消去(`AccountFileEraser.swift`)。ログにノート本文を出さない運用 | 一時計測の`print`(`GestureDiagnostics`)はDEBUGビルドだけに限った(呼び出し自体は残っている)。アプリスイッチャー・ペーストボード・ブラウザデータはブランチ`claude/switcher-privacy`・`claude/net-app`で修正、**未マージ**。ロック画面の通知プレビューを隠す設定が無い(カード「チャット通知のプレビューを隠す設定」)。画面収録の検知は無い(カード「画面収録・スクリーンショット時の保護ノート…」) |
+| STORAGE-2 機微データの漏えいを防ぐ | △ | URLキャッシュは退会で消去(`AccountFileEraser.swift`)。ログにノート本文を出さない運用 | 一時計測の`print`(`GestureDiagnostics`)はDEBUGビルドだけに限った(呼び出し自体は残っている)。アプリスイッチャーは`AppSwitcherPrivacy.swift`、ブラウザデータの消去は`BrowserDataEraser.swift`でmainに入っている(2026-11-09にファイルの存在を確認。ペーストボードは未確認)。ロック画面の通知プレビューを隠す設定が無い(カード「チャット通知のプレビューを隠す設定」)。画面収録の検知は無い(カード「画面収録・スクリーンショット時の保護ノート…」) |
 
 ### CRYPTO
 
@@ -47,7 +47,7 @@
 
 | 管理項目 | 状態 | 根拠 | 満たさない/一部の点と次の一手 |
 |---|---|---|---|
-| NETWORK-1 通信を保護する | ○ | ATSの例外なし(`Info.plist`に`NSAppTransportSecurity`なし)。Releaseは`api.studiquo.app`のhttpsだけ(`WorkerEndpointPolicy`、`WorkerEndpointPolicyTests`) | サーバー側の平文http受付とHSTS無し(ブランチ`claude/net-server`で修正、**未マージ**。Cloudflareの設定はカード「HTTPSの強制とHSTS」) |
+| NETWORK-1 通信を保護する | ○ | ATSの例外なし(`Info.plist`に`NSAppTransportSecurity`なし)。Releaseは`api.studiquo.app`のhttpsだけ(`WorkerEndpointPolicy`、`WorkerEndpointPolicyTests`) | サーバー側の平文httpは308でhttpsへ移し、HSTSを付ける(`transport.ts`、`transport.test.ts`。2026-11-09にmainで確認)。Cloudflare側の設定はカード「HTTPSの強制とHSTS」 |
 | NETWORK-2 相手の身元を確認する(ピン留め) | － | §1の判断 | — |
 
 ### PLATFORM
@@ -56,7 +56,7 @@
 |---|---|---|---|
 | PLATFORM-1 IPCを安全に使う | △ | 招待URLはスキーム・ホスト・パスを検証して確認ダイアログを経る(`FriendStore.add(url:)`、`FriendStoreTests`)。Universal Linkは`/invite`のみ(`invite.test.js`)。共有拡張はApp Group経由で確認画面を経る(`SharedInboxTests`、`SharedImportRunnerTests`) | カスタムスキーム`studiquo://`は他アプリが横取りしうる。不明なURLで画面が移動する(ブランチ`claude/net-*`、**未マージ**。カード「フレンド招待…」) |
 | PLATFORM-2 WebViewを安全に使う | △ | 遷移はhttp/httpsに限る(`webBrowserNavigationPolicy`、`WebBrowserNavigationPolicyTests`)。JavaScriptブリッジなし | 永続のデータストアが退会・サインアウトで消えない(ブランチ`claude/net-app`で修正、**未マージ**) |
-| PLATFORM-3 UIを安全に使う | △ | 保護ノートはバックグラウンドで再封印(`NoteEditorView`) | アプリスイッチャーの画像(ブランチ`claude/switcher-privacy`、**未マージ**) |
+| PLATFORM-3 UIを安全に使う | △ | 保護ノートはバックグラウンドで再封印(`NoteEditorView`) | アプリスイッチャーの画像は`AppSwitcherPrivacy.swift`で対応(2026-11-09にmainで確認。実機の見え方は未確認) |
 
 ### CODE
 
@@ -64,14 +64,14 @@
 |---|---|---|---|
 | CODE-1 最低OSを要求する | ○ | iOS 17.0(`project.yml`) | — |
 | CODE-2 更新を強制できる | △ | サーバーの`MIN_APP_BUILD`が426を返す(`low-priority-hardening.test.js`) | アプリが426を表示しない(ブランチ`claude/kill-switch-app`で修正、**未マージ**) |
-| CODE-3 既知の脆弱性のある部品を使わない | △ | 依存は少ない(GoogleSignIn、RevenueCat、SwiftMath=コミット固定)。Workerの`npm audit`は0件(手動) | 自動の監視が無い(CI・Dependabotはブランチ`claude/ci-setup`、**未マージ**。カード「CIを新設する…」) |
+| CODE-3 既知の脆弱性のある部品を使わない | △ | 依存は少ない(GoogleSignIn、RevenueCat、SwiftMath=コミット固定)。Workerの`npm audit`は0件(手動) | 自動の監視は`.github/dependabot.yml`と`workflows/`(ci・codeql・ios・security-dast・security-sast)がmainにある(2026-11-09にファイルの存在を確認。実行結果は未確認) |
 | CODE-4 信頼できない入力を検証する | △ | docxの1エントリ上限(`DocxZipTests`)。画像・PDF・docxの取り込み上限(ブランチ`claude/import-hardening`、`ImportLimitsTests`、**未マージ**) | `main`には全体の上限が無い。ファジングが無い(カード「ファジング…」) |
 
 ### RESILIENCE(対象外)
 
 | 管理項目 | 状態 | 理由 |
 |---|---|---|
-| RESILIENCE-1 〜 4(プラットフォームの完全性、改ざん対策、静的解析対策、動的解析対策) | － | §1。脱獄端末の検知・難読化は行わない。サーバー側の不正対策(レート制限、App Attest=ブランチ`claude/app-attest`、**未マージ**)で補う |
+| RESILIENCE-1 〜 4(プラットフォームの完全性、改ざん対策、静的解析対策、動的解析対策) | － | §1。脱獄端末の検知・難読化は行わない。サーバー側の不正対策(レート制限、App Attest=`app-attest.ts`がmainにある。`APP_ATTEST_MODE`の本番値は未確認)で補う |
 
 ### PRIVACY
 
@@ -94,8 +94,8 @@
 | V6 保存時の暗号 | △ | スナップショットはAES-256-GCMで鍵名をAADに束縛(`snapshot-crypto.test.js`)、パスワードはArgon2id、トークンはハッシュで保存 | 鍵が未設定だと平文。チャット本文などのサーバー側暗号化は保留(カード「サーバー側の保存データの暗号化方針」)。配備はカード「スナップショット暗号化…」 |
 | V7 エラー処理・ログ | △ | 本文・画像・鍵をログに出さない運用、`invocation_logs`無効、エラー応答は汎用 | OpenAIのエラー本文のログ出力はやめた(`type`と`code`だけ。`ai.test.ts`)。アラートは[MONITORING.md](MONITORING.md)の一覧に拡張した(500・AI上流・スナップショット・保持ジョブ・削除ジョブ・MCPトークン再利用)。Cloudflare側の通知と外部の死活監視は未設定 |
 | V8 データ保護 | △ | 保持期間と削除(`privacy-retention.test.js`、`account-deletion.test.js`)、`store:false`でAIへ送る(`ai.test.js`) | バックアップと復元の訓練が無い(カード「バックアップと復元」) |
-| V9 通信 | △ | TLS、HSTS・平文http拒否はブランチ`claude/net-server`、**未マージ** | `main`はHSTSが無く、平文httpに応答する |
-| V10 悪意あるコード | △ | 秘密スキャンを手動で実施 | CI・静的解析が無い(ブランチ`claude/ci-setup`、**未マージ**。カード「静的解析を入れる…」) |
+| V9 通信 | △ | TLS、HSTS・平文httpの308移行(`transport.ts`) | Cloudflare側のHTTPS強制の設定は未確認 |
+| V10 悪意あるコード | △ | 秘密スキャンを手動で実施 | CI・静的解析は`.github/workflows/`(codeql・security-sast)がmainにある(2026-11-09に存在を確認。実行結果は未確認) |
 | V11 業務ロジック | △ | AI窓ごとの上限+全体上限(`ai-credits.test.js`)、課金の整合(`entitlements.test.js`)、削除の世代管理(`session-revocation.test.js`) | サインアップの自動化への耐性はApp Attest待ち(**未マージ**) |
 | V12 ファイル・リソース | △ | 添付6MB・10回/分(`chat.test.js`)、`nosniff`+sandbox CSP | 添付の種類は形式を検証し(`chat-room.ts`の`CONTENT_TYPE_PATTERN`)、配信は`nosniff`・sandbox・`attachment`で返す(`binaryHeaders`)。アバターは`image/jpeg`・`image/png`の許可リスト。残りの確認はカード「ログに残る秘密値とHTTP周りの細かい指摘」 |
 | V13 API・Webサービス | △ | JSON、レート制限(`app.test.js`の各ルート、`api-hardening.test.js`)、OAuth PKCE(`mcp-oauth.test.js`) | 動的クライアント登録は誰でもできる(カード「OAuth動的登録…」) |
