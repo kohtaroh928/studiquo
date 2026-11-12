@@ -116,7 +116,7 @@ test("moderation: with the switch off, no key or nothing to check, nothing is as
 
 test("a RevenueCat erasure job: no key keeps it, 404 counts as erased, another failure keeps it for the next sweep", async () => {
   const values = new Map([["privacy-revenuecat:a", JSON.stringify({ identity: "user@example.test" })]]);
-  const base = { STUDIQUO_DATA: { async delete(key: string) { values.delete(key); } } };
+  const base = { STUDIQUO_DATA: { async get(key: string) { return values.get(key) ?? null; }, async delete(key: string) { values.delete(key); } } };
   const job = { identity: "user/with space" };
   const fetchWith = (status: number) => (async () => new Response("{}", { status })) as unknown as typeof fetch;
 
@@ -131,7 +131,7 @@ test("a RevenueCat erasure job: no key keeps it, 404 counts as erased, another f
 });
 
 test("the RevenueCat erasure request names the subscriber, escaped, with the secret in the header only", async () => {
-  const env = partialEnv({ STUDIQUO_DATA: { async delete() {} }, REVENUECAT_SECRET_API_KEY: "sk_test" });
+  const env = partialEnv({ STUDIQUO_DATA: { async get() { return "{}"; }, async delete() {} }, REVENUECAT_SECRET_API_KEY: "sk_test" });
   let seen: { url: string; init: Untyped } | undefined;
   const fetcher = (async (url: string, init: Untyped) => { seen = { url, init }; return new Response(null, { status: 200 }); }) as unknown as typeof fetch;
   await retryRevenueCatDeletion(env, "k", { identity: "a/b c" }, fetcher);
@@ -252,4 +252,12 @@ test("removing a device needs a well-formed token, and any other method is refus
   assert.equal((await send("GET")).status, 405);
   assert.equal((await send("PUT", {})).status, 405);
   assert.equal(await handleDeviceRoutes(new URL("https://example.test/api/chat/other"), new Request(url), env, "user-a"), null);
+});
+
+test("a RevenueCat erasure job dropped after the sweep picked it up (the person signed up again) sends no DELETE", async () => {
+  const env = partialEnv({ STUDIQUO_DATA: { async get() { return null; }, async delete() {} }, REVENUECAT_SECRET_API_KEY: "sk_test" });
+  let calls = 0;
+  const fetcher = (async () => { calls += 1; return new Response(null, { status: 200 }); }) as unknown as typeof fetch;
+  assert.equal(await retryRevenueCatDeletion(env, "privacy-rc-delete:a", { identity: "email:x@example.com" }, fetcher), true);
+  assert.equal(calls, 0, "the new subscription is not erased");
 });
