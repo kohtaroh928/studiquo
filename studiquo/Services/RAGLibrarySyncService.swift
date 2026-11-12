@@ -43,6 +43,10 @@ final class RAGLibrarySyncService {
     private(set) var liveProgress: [String: Double] = [:]
     enum DocumentStatus: Equatable {
         case excluded, queued, inProgress(Double), waiting, ready
+        /// The server found no searchable text (for example a scan whose text reading returned nothing).
+        case empty
+        /// Registered, but too large for the server to confirm search visibility.
+        case unverified
     }
     func status(for notebook: Notebook) -> DocumentStatus {
         load()
@@ -50,7 +54,14 @@ final class RAGLibrarySyncService {
         if state.excluded.contains(id) { return .excluded }
         let entry = state.entries[id]
         if entry?.pendingState != nil { return .queued }
-        if entry?.completed == true { return entry?.searchState == "ready" ? .ready : .waiting }
+        if entry?.completed == true {
+            switch entry?.searchState {
+            case "ready": return .ready
+            case "empty": return .empty
+            case "limited": return .unverified
+            default: return .waiting
+            }
+        }
         // The first run has no entry until text reading finishes, so live progress comes first.
         if let live = liveProgress[id] { return .inProgress(live) }
         guard let entry else { return .queued }
@@ -64,7 +75,12 @@ final class RAGLibrarySyncService {
     var enabled: Bool { state.enabled && !state.pendingRevoke && state.processorConsentVersion == RAGConsent.version && RAGConsent.isGranted && AIDataDisclosure.hasBeenAcknowledged }
     var canSearch: Bool { load(); return enabled && !state.entries.values.contains(where: { $0.pendingState != nil }) }
     var pendingCount: Int { state.entries.values.filter { $0.pendingState != nil || !$0.completed }.count + (state.pendingRevoke ? 1 : 0) }
-    var waitingCount: Int { state.entries.values.filter { $0.completed && $0.searchState != "ready" && $0.pendingState == nil }.count }
+    var waitingCount: Int { state.entries.values.filter { $0.completed && !Self.settledSearchStates.contains($0.searchState ?? "") && $0.pendingState == nil }.count }
+    /// Search states the server will not change by itself: polling stops for them.
+    private static let settledSearchStates: Set<String> = ["ready", "empty", "limited"]
+    /// Checks of search visibility per document, and the wait between them (15 s, 30 s, then 60 s).
+    private static let maxReadinessChecks = 10
+    private static func readinessDelay(afterChecks checks: Int) -> TimeInterval { min(60, 15 * pow(2, Double(max(0, checks - 1)))) }
     var searchableCount: Int { state.entries.values.filter { $0.completed && $0.searchState == "ready" && $0.pendingState == nil }.count }
     var registeredCount: Int { state.entries.values.filter { $0.completed && $0.pendingState == nil }.count }
     var stateSummary: String { enabled ? "検索可能 \(searchableCount)件・検索反映待ち \(waitingCount)件・登録待ち \(pendingCount)件" : (state.pendingRevoke ? "停止処理の反映待ち" : "自動資料検索はオフ") }
@@ -92,6 +108,11 @@ final class RAGLibrarySyncService {
         let data = owner.flatMap { defaults.data(forKey: "ragManaged-" + $0) }
         state = data.flatMap { try? JSONDecoder().decode(RAGLibrarySyncState.self, from: $0) } ?? RAGLibrarySyncState()
         isManaged = data != nil; available = false; controlChecked = false; errorMessage = nil
+        // A new process starts with a fresh budget of readiness checks. The counters used to survive a
+        // restart, so a document whose first checks ran out stayed "waiting" for good.
+        for id in state.entries.keys where !Self.settledSearchStates.contains(state.entries[id]?.searchState ?? "") {
+            state.entries[id]?.readinessAttempts = 0; state.entries[id]?.readinessAfter = nil
+        }
     }
     @discardableResult private func save() -> Bool {
         guard let owner = loadedPartition, partition() == owner, let data = try? JSONEncoder().encode(state) else { return false }
@@ -349,9 +370,9 @@ final class RAGLibrarySyncService {
                     continue
                 }
                 state.entries[id]?.retryAfter = nil; state.entries[id]?.retryAttempts = 0; _ = save()
-                if state.entries[id]?.completed == true, state.entries[id]?.searchState != "ready",
-                   (state.entries[id]?.readinessAttempts ?? 0) <= 3 {
-                    scheduleRetry(notebooks: notebooks, context: context, delay: 15)
+                if state.entries[id]?.completed == true, !Self.settledSearchStates.contains(state.entries[id]?.searchState ?? ""),
+                   (state.entries[id]?.readinessAttempts ?? 0) < Self.maxReadinessChecks {
+                    scheduleRetry(notebooks: notebooks, context: context, delay: Self.readinessDelay(afterChecks: state.entries[id]?.readinessAttempts ?? 1))
                 }
             }
             state.controlRetryAfter = nil; state.controlRetryAttempts = 0; _ = save()
@@ -422,16 +443,20 @@ final class RAGLibrarySyncService {
     }
     private func refreshReadiness(_ id: String) async throws {
         guard let entry = state.entries[id], entry.completed, let source = entry.sourceId else { return }
-        if entry.searchState == "ready" || (entry.readinessAttempts ?? 0) > 3 { return }
+        if Self.settledSearchStates.contains(entry.searchState ?? "") || (entry.readinessAttempts ?? 0) >= Self.maxReadinessChecks { return }
         if let deadline = entry.readinessAfter, deadline > now() { return }
         let owner = loadedPartition, epoch = state.consentEpoch, readinessOperation = operation
         let reply = try await client.readiness(source)
         guard foreground, owner == partition(), loadedPartition == owner, operation == readinessOperation, enabled, state.consentEpoch == epoch,
               state.entries[id]?.sourceId == source, state.entries[id]?.pendingState == nil else { return }
         let expected = entry.sourceHash
-        state.entries[id]?.searchState = reply.state == "ready" && reply.sourceHash == expected && expected.count == 64 ? "ready" : "waiting"
-        state.entries[id]?.readinessAttempts = (entry.readinessAttempts ?? 0) + 1
-        state.entries[id]?.readinessAfter = now().addingTimeInterval(15)
+        let checks = (entry.readinessAttempts ?? 0) + 1
+        if reply.state == "ready" && reply.sourceHash == expected && expected.count == 64 { state.entries[id]?.searchState = "ready" }
+        else if reply.state == "empty" { state.entries[id]?.searchState = "empty" }
+        else if reply.reason == "check_limit" { state.entries[id]?.searchState = "limited" }
+        else { state.entries[id]?.searchState = "waiting" }
+        state.entries[id]?.readinessAttempts = checks
+        state.entries[id]?.readinessAfter = now().addingTimeInterval(Self.readinessDelay(afterChecks: checks))
         _ = save()
     }
     private func sync(_ notebook: Notebook) async throws {

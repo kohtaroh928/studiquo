@@ -112,6 +112,12 @@ struct RAGAutomaticLibraryControls: View {
                             case .waiting:
                                 Label("登録済み・検索反映待ち", systemImage: "checkmark.circle")
                                     .font(.caption).foregroundStyle(.secondary)
+                            case .empty:
+                                Label("検索できる文字がありません(文字認識を確認してください)", systemImage: "exclamationmark.circle")
+                                    .font(.caption).foregroundStyle(.orange)
+                            case .unverified:
+                                Label("登録済み・大きいため検索への反映を確認できません", systemImage: "questionmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
                             case .inProgress(let value):
                                 ProgressView(value: value) { Text("登録中 \(Int(value * 100))%").font(.caption) }
                                     .accessibilityIdentifier("rag-auto-gauge-\(notebook.ragDocumentID)")
