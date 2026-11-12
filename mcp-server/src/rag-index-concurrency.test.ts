@@ -14,5 +14,5 @@ test('pages of one batch are embedded concurrently (bounded) and all become read
 test('a failing page stops new pages and in-flight pages settle before the error surfaces',async()=>{
  const env=qualityEnvironment(),key=await accountKey('owner'),original=env.AI.run;let calls=0,active=0;
  env.AI.run=async(...a)=>{const n=++calls;active++;try{await new Promise(r=>setTimeout(r,10));if(n===1)throw new Error('embedding_unavailable');return await original(...a);}finally{active--;}};
- try{await assert.rejects(indexSource(env,key,source(10)),/embedding_unavailable/);assert.equal(active,0);const seen=calls;await new Promise(r=>setTimeout(r,50));assert.equal(calls,seen);assert.ok(seen<10);}finally{env.ADMIN_DB.db.close();}
+ try{await assert.rejects(indexSource(env,key,source(10)),/embedding_unavailable/);assert.equal(active,0);const seen=calls;await new Promise(r=>setTimeout(r,50));assert.equal(calls,seen);assert.ok(seen<=6);}finally{env.ADMIN_DB.db.close();}
 });

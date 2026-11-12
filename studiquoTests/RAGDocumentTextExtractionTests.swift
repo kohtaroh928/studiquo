@@ -148,6 +148,6 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
    return .init(lines:[],failed:false)
   },accountPartition:{"synthetic"})
   do { _ = try await service.extractManaged(notebook,whileEligible:{checks+=1;if checks>=3{throw Lost()}});XCTFail("Must stop") } catch { XCTAssertTrue(error is Lost) }
-  XCTAssertLessThan(gauge.total,20)
+  XCTAssertLessThanOrEqual(gauge.total,RAGIndexingService.ocrConcurrency+2)
  }
 }

@@ -438,7 +438,11 @@ export async function indexSource(env: any, key: any, payload: any) {
       while (!failed && nextPage < pages.length) {
         const page = pages[nextPage++];
         try { await processPage(page); }
-        catch (error) { if (!failed) { failed = true; failure = error; } }
+        catch (error) {
+          // index_cancelled wins so the caller's error classification does not depend on arrival order.
+          if (!failed || (error as any)?.message === "index_cancelled") failure = error;
+          failed = true;
+        }
       }
     }));
     if (failed) throw failure;
