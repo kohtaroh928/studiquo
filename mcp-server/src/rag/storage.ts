@@ -21,9 +21,21 @@ export async function getVectors(env: any, ids: any) {
     vectors.push(...await env.RAG_VECTORIZE.getByIds(ids.slice(offset, offset + 20)));
   return vectors;
 }
-const PAGE_CONCURRENCY = 5;
+const PAGE_CONCURRENCY = 3;
+// Embedding calls can fail transiently under load; retry a few times before failing the page. Vector
+// writes are not retried here: their write-ahead journal already covers a lost response.
+const RETRY_DELAYS_MS = [250, 1000];
+async function retryTransient<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); }
+    catch (error) {
+      if (attempt >= RETRY_DELAYS_MS.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
 export async function embeddings(env: any, text: any) {
-  const response = await env.AI.run(MODELS.embedding, { text });
+  const response: any = await retryTransient<any>(() => env.AI.run(MODELS.embedding, { text }));
   const values = response?.data;
   if (
     !Array.isArray(values) ||

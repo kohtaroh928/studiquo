@@ -38,6 +38,7 @@ final class RAGLibrarySyncService {
     private(set) var busy = false
     /// Stage text for the busy indicator (page text extraction / upload). Never contains document content.
     private(set) var progressText: String?
+    private var transientAttempts = 0
     /// In-memory 0...1 progress per document id while it is being registered (text reading 0-50%, upload 50-100%).
     private(set) var liveProgress: [String: Double] = [:]
     enum DocumentStatus: Equatable {
@@ -354,13 +355,25 @@ final class RAGLibrarySyncService {
                 }
             }
             state.controlRetryAfter = nil; state.controlRetryAttempts = 0; _ = save()
-            errorMessage = nil
+            errorMessage = nil; transientAttempts = 0
         } catch is CancellationError { /* Cursor remains durable; retry next foreground. */ }
         catch WorkerAIProvider.ProviderError.http(let status, _) where status == 429 {
             guard operation == reconciliationOperation else { return }
             errorMessage = "登録の混雑を待っています。自動で再試行します。"
             if let delay = recordRateLimit(document: activeDocument) {
                 scheduleRetry(notebooks: notebooks, context: context, delay: delay)
+            }
+        }
+        catch WorkerAIProvider.ProviderError.http(let status, _) where (500...599).contains(status) {
+            // A transient server failure (for example a busy model) must not leave a long registration
+            // stalled until the next app launch; the upload resumes from the last confirmed page.
+            guard operation == reconciliationOperation else { return }
+            transientAttempts += 1
+            if transientAttempts <= 6 {
+                errorMessage = "サーバーが一時的に混み合っています。自動で再試行します。"
+                scheduleRetry(notebooks: notebooks, context: context, delay: min(60, 5 * pow(2.0, Double(transientAttempts - 1))))
+            } else {
+                errorMessage = "登録は完了していません。次の接続時に再試行します。"
             }
         }
         catch { errorMessage = "登録は完了していません。次の接続時に再試行します。" }
