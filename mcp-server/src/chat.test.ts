@@ -4332,3 +4332,27 @@ test("the operator actions are unavailable, not open, when the admin database is
   assert.ok([503, 403].includes(response.status), `answered ${response.status}`);
   assert.notEqual(response.status, 200);
 });
+
+test("a session whose account starts being deleted while it registers does not leave a chat user behind", async () => {
+  const env = environment();
+  const token = freshToken("dl");
+  let flipped = false;
+  const data = env.STUDIQUO_DATA;
+  const originalGet = data.get.bind(data);
+  data.get = async (key: string, type?: string) => {
+    if (flipped && key.startsWith("account-deletion:")) return type === "json" ? { status: "deleting", generation: 0 } : "{}";
+    return originalGet(key, type);
+  };
+  const registry = env.USER_REGISTRY;
+  const originalGetByName = registry.getByName.bind(registry);
+  registry.getByName = (name: string) => {
+    const stub = originalGetByName(name);
+    const ensureUser = stub.ensureUser.bind(stub);
+    return Object.assign(Object.create(stub), { ensureUser: async (...args: unknown[]) => { const user = await ensureUser(...args); flipped = true; return user; } });
+  };
+  const response = await worker.fetch(request("/api/chat/me", { method: "POST", token, body: { name: "Late" } }), env, noopCtx);
+  assert.equal(response.status, 401);
+  flipped = false;
+  const left = [...(env._kv as Map<string, string>).keys()].filter(key => key.startsWith("chat:"));
+  assert.deepEqual(left, [], "no chat record outlives the deletion");
+});

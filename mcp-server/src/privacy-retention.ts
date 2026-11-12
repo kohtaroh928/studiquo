@@ -27,6 +27,10 @@ export async function queueRevenueCatDeletion(env: Env, identity: string, now = 
 
 export async function retryRevenueCatDeletion(env: Env, key: string, job: { identity: string | number | boolean; }, fetcher = fetch) {
   if (!env.REVENUECAT_SECRET_API_KEY) return false;
+  // A person who signed up again after deleting has this job dropped (mintSession).
+  // Read it once more right before the DELETE, so a job dropped since the sweep
+  // picked it up does not erase the new subscription.
+  if (!(await env.STUDIQUO_DATA.get(key))) return true;
   const response = await fetcher(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(job.identity)}`, {
     method: "DELETE",
     headers: { authorization: `Bearer ${env.REVENUECAT_SECRET_API_KEY}` },

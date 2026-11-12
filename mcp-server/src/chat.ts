@@ -4,7 +4,7 @@ import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared, bodyText, bodyNumber } from "./http.ts";
-import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.ts";
+import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX, accountIsUnavailable } from "./session.ts";
 import { handleGroupRoutes } from "./groups.ts";
 import { sendPush } from "./push.ts";
 import { chatMessageNotification } from "./message-notification.ts";
@@ -234,6 +234,18 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     }
     // Checked here: the registry (a Durable Object) turns it into text with String().
     const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, bodyText(body?.name, null), parseStudyStats(body), body?.bio);
+    // A session issued just before a deletion can get here after the deletion has
+    // erased the chat user, and the call above would make it again. A record with no
+    // friends, requests or groups is only what this call just made, so it goes
+    // again; one with contacts is left for the deletion, which must read it to
+    // clean up the other side.
+    if (await accountIsUnavailable(env, session.sub)) {
+      if (!user.friends?.length && !user.incomingRequests?.length && !user.outgoingRequests?.length && !user.groups?.length) {
+        await Promise.all([`chat:user:${key}`, `chat:code:${user.code}`, `chat:linktoken:${user.linkToken}`, `chat-identity-of:${key}`]
+          .map(storageKey => env.STUDIQUO_DATA.delete(storageKey)));
+      }
+      return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    }
     // So a report about this chat user can be traced to the account an operator
     // may suspend (moderation-actions.ts); the chat key alone can't be reversed.
     const identityLink = `chat-identity-of:${key}`;
