@@ -36,6 +36,8 @@ final class RAGLibrarySyncService {
     private(set) var available = false
     private(set) var controlChecked = false
     private(set) var busy = false
+    /// Stage text for the busy indicator (page text extraction / upload). Never contains document content.
+    private(set) var progressText: String?
     private(set) var errorMessage: String?
     private(set) var isManaged = false
     var enabled: Bool { state.enabled && !state.pendingRevoke && state.processorConsentVersion == RAGConsent.version && RAGConsent.isGranted && AIDataDisclosure.hasBeenAcknowledged }
@@ -258,7 +260,7 @@ final class RAGLibrarySyncService {
         if busy { pendingReconciliation = (notebooks, context); return }
         busy = true
         defer {
-            busy = false
+            busy = false; progressText = nil
             if let next = pendingReconciliation {
                 pendingReconciliation = nil
                 Task { await self.reconcile(notebooks: next.0, context: next.1) }
@@ -418,7 +420,12 @@ final class RAGLibrarySyncService {
         let structuredPages = structured.map(RAGStructuredAttachment.pagePayloads)
         let pages: [RAGIndexingService.PageText]
         if let structured { pages = structured.pages.map { .init(pageNumber: $0.pageNumber, text: $0.text) } }
-        else { pages = try await extractor.extractManaged(notebook, whileEligible: check) }
+        else {
+            pages = try await extractor.extractManaged(notebook, whileEligible: check, onProgress: { [weak self] done, total in
+                self?.progressText = "ページの文字を読み取り中 \(done)/\(total)ページ"
+            })
+            progressText = nil
+        }
         try check()
         let hash = try RAGIndexingService.sourceHash(pages)
         let remote = try await client.document(id); try check()
@@ -466,6 +473,7 @@ final class RAGLibrarySyncService {
             guard !batch.isEmpty else { throw RAGIndexingService.IndexError.oversized }
             try await client.upload(body(batch)); try check()
             entry.nextPage += batch.count; state.entries[id] = entry
+            progressText = "送信中 \(entry.nextPage)/\(pages.count)ページ"
             guard save() else { throw RAGIndexingService.IndexError.disabled }
         }
         try check(); entry.completed = true; entry.searchState = "waiting"; state.entries[id] = entry; _ = save()

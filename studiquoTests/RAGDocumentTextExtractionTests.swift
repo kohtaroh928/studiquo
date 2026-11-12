@@ -150,4 +150,13 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   do { _ = try await service.extractManaged(notebook,whileEligible:{checks+=1;if checks>=3{throw Lost()}});XCTFail("Must stop") } catch { XCTAssertTrue(error is Lost) }
   XCTAssertLessThanOrEqual(gauge.total,RAGIndexingService.ocrConcurrency+2)
  }
+
+ func testManagedExtractionReportsProgressUpToTotal() async throws {
+  let notebook=Notebook(title:"Generated progress scan");let image=imageData()
+  for i in 0..<6 { notebook.addPage(NotePage(order:i,backgroundImageData:image)) }
+  let service=RAGIndexingService(recognizer:{_ in .init(lines:[],failed:false)},accountPartition:{"synthetic"})
+  var seen:[Int]=[];var totals=Set<Int>()
+  _=try await service.extractManaged(notebook,whileEligible:{},onProgress:{done,total in seen.append(done);totals.insert(total)})
+  XCTAssertEqual(seen,Array(1...6));XCTAssertEqual(totals,[6])
+ }
 }

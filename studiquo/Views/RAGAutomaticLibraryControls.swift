@@ -85,7 +85,13 @@ struct RAGAutomaticLibraryControls: View {
                 Text("自動登録は現在利用できません。通常のAIチャットは利用できます。")
                     .font(.footnote)
             }
-            if service.busy { ProgressView("PDFの登録を処理中") }
+            if service.busy {
+                if let progress = service.progressText {
+                    ProgressView { Text(verbatim: progress) }.accessibilityIdentifier("rag-auto-stage")
+                } else {
+                    ProgressView("PDFの登録を処理中")
+                }
+            }
             Text("登録済み：\(service.registeredCount)件・検索可能：\(service.searchableCount)件・検索反映待ち：\(service.waitingCount)件・未登録：\(service.pendingCount)件")
                 .font(.caption)
                 .accessibilityIdentifier("rag-auto-progress")

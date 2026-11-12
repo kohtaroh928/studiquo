@@ -318,7 +318,8 @@ final class RAGIndexingService {
     }
 
     /// Reuses the PDF native-text/OCR path without legacy consent or legacy source IDs.
-    func extractManaged(_ notebook: Notebook, whileEligible: () throws -> Void) async throws -> [PageText] {
+    func extractManaged(_ notebook: Notebook, whileEligible: () throws -> Void,
+                        onProgress: ((Int, Int) -> Void)? = nil) async throws -> [PageText] {
         let pages = notebook.sortedPages
         // OCR dominates scanned PDFs and runs off the main actor, so a few pages run at once.
         // Page data is read lazily here (main actor), eligibility is re-checked after every
@@ -342,6 +343,7 @@ final class RAGIndexingService {
             for _ in 0..<Self.ocrConcurrency { startNext() }
             while let (offset, text) = try await group.next() {
                 ocrText[offset] = text
+                onProgress?(ocrText.count, pages.count)
                 try whileEligible(); try Task.checkCancellation()
                 startNext()
             }
