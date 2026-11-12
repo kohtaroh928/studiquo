@@ -305,6 +305,58 @@ final class RAGLibrarySyncTests: XCTestCase {
         XCTAssertNil(service.sourceID(for: notebook))
     }
 
+    private func tombstoneClient(deletedIDs: @escaping () -> Set<String>, counts: @escaping (String) -> Void) -> RAGControlClient {
+        var epoch = 0
+        return RAGControlClient(transport: { request in
+            let path = request.url!.path
+            var reply: [String: Any]
+            if path.hasSuffix("/consent") {
+                if request.httpMethod != "GET" { epoch += 1 }
+                reply = ["enabled": epoch > 0, "consentEpoch": epoch, "available": true]
+            } else if path.hasSuffix("/state") {
+                counts(request.httpMethod == "GET" ? "state" : "invalidate")
+                let deleted = deletedIDs().contains { path.contains($0) }
+                reply = deleted ? ["generation": 2, "state": "deleted", "sourceId": NSNull()] : ["generation": 0, "state": "missing", "sourceId": NSNull()]
+            } else if path.hasSuffix("/prepare") {
+                counts("prepare"); reply = ["generation": 1, "sourceId": "new-source"]
+            } else if path.hasSuffix("/readiness") || path.contains("/readiness") {
+                reply = ["state": "waiting"]
+            } else { counts("upload"); reply = [:] }
+            return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body); return request
+        })
+    }
+    func testReallowedPDFWithDeletedServerIDGetsFreshDocumentIDAndRegisters() async throws {
+        let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let notebook = pdf(); container.mainContext.insert(notebook)
+        let oldID = notebook.ragDocumentID
+        var calls: [String: Int] = [:]
+        let client = tombstoneClient(deletedIDs: { [oldID] in [oldID] }, counts: { calls[$0, default: 0] += 1 })
+        let service = RAGLibrarySyncService(client: client, defaults: UserDefaults(suiteName: UUID().uuidString)!, partition: { "owner" })
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [notebook])
+        await service.manualEnqueue(notebook, context: container.mainContext)
+        await waitUntil("registration with a fresh ID") { (calls["upload"] ?? 0) > 0 }
+        XCTAssertNotEqual(notebook.ragDocumentID, oldID)
+        XCTAssertGreaterThan(calls["prepare"] ?? 0, 0)
+        XCTAssertEqual(calls["invalidate"] ?? 0, 0)
+    }
+    func testDeletedPDFThatWasNotReallowedDoesNotBlockLaterPDFs() async throws {
+        let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let blocked = pdf(); let later = pdf("later text"); later.title = "Later"
+        container.mainContext.insert(blocked); container.mainContext.insert(later)
+        let blockedID = blocked.ragDocumentID
+        var calls: [String: Int] = [:]
+        let client = tombstoneClient(deletedIDs: { [blockedID] in [blockedID] }, counts: { calls[$0, default: 0] += 1 })
+        let service = RAGLibrarySyncService(client: client, defaults: UserDefaults(suiteName: UUID().uuidString)!, partition: { "owner" })
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [blocked, later])
+        await service.reconcile(notebooks: [blocked, later], context: container.mainContext)
+        XCTAssertGreaterThan(calls["upload"] ?? 0, 0)
+        XCTAssertEqual(blocked.ragDocumentID, blockedID)
+    }
     func testLockInvalidationRunsWhileUploadIsSuspended() async throws {
         let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))

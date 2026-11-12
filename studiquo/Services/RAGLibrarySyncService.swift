@@ -326,18 +326,26 @@ final class RAGLibrarySyncService {
             guard remote.enabled, remote.consentEpoch == state.consentEpoch, remote.available == true else { state.enabled = false; _ = save(); return }
             for notebook in notebooks where selected(notebook) {
                 try Task.checkCancellation()
-                let id = notebook.ragDocumentID
+                var id = notebook.ragDocumentID
                 activeDocument = id
                 if let retry = state.entries[id]?.retryAfter, retry > now() {
                     scheduleRetry(notebooks: notebooks, context: context, delay: retry.timeIntervalSince(now()))
                     return
                 }
-                if let entry = state.entries[id], entry.completed, entry.pendingState == nil,
-                   entry.fingerprint == Self.fingerprint(notebook) {
-                    try await refreshReadiness(id)
-                } else {
-                    try await sync(notebook)
-                    try await refreshReadiness(id)
+                do {
+                    if let entry = state.entries[id], entry.completed, entry.pendingState == nil,
+                       entry.fingerprint == Self.fingerprint(notebook) {
+                        try await refreshReadiness(id)
+                    } else {
+                        try await sync(notebook)
+                        id = notebook.ragDocumentID  // a re-allowed PDF may have received a new document ID
+                        activeDocument = id
+                        try await refreshReadiness(id)
+                    }
+                } catch RAGIndexingService.IndexError.locked {
+                    // This PDF cannot be registered right now (excluded, changed or tombstoned). It must not
+                    // block the PDFs queued behind it.
+                    continue
                 }
                 state.entries[id]?.retryAfter = nil; state.entries[id]?.retryAttempts = 0; _ = save()
                 if state.entries[id]?.completed == true, state.entries[id]?.searchState != "ready",
@@ -414,7 +422,8 @@ final class RAGLibrarySyncService {
         _ = save()
     }
     private func sync(_ notebook: Notebook) async throws {
-        let owner = loadedPartition, epoch = state.consentEpoch, syncOperation = operation, id = notebook.ragDocumentID, fingerprint = Self.fingerprint(notebook)
+        let owner = loadedPartition, epoch = state.consentEpoch, syncOperation = operation, fingerprint = Self.fingerprint(notebook)
+        var id = notebook.ragDocumentID
         func check() throws {
             guard partition() == owner, loadedPartition == owner, operation == syncOperation else { throw RAGIndexingService.IndexError.accountChanged }
             guard foreground, enabled, state.consentEpoch == epoch else { throw RAGIndexingService.IndexError.locked }
@@ -433,6 +442,15 @@ final class RAGLibrarySyncService {
             _ = try await client.invalidate(id, state: "eligible", generation: current.generation, epoch: epoch)
             try check(); state.entries[id]?.sourceId = nil; state.entries[id]?.completed = false
             guard save() else { throw RAGIndexingService.IndexError.disabled }
+        }
+        // A deleted document ID is a permanent server tombstone and can never be restored. Find out
+        // before the long text reading, and give a re-allowed PDF a fresh document identity.
+        let preflight = try await client.document(id); try check()
+        if preflight.state == "deleted" {
+            guard state.entries[id]?.restoreRequested == true else { throw RAGIndexingService.IndexError.locked }
+            try rotateDocumentIdentity(notebook, from: id)
+            id = notebook.ragDocumentID
+            try check()
         }
         let structured = try RAGStructuredAttachment.prepared(notebook)
         if structured != nil {
@@ -545,6 +563,19 @@ final class RAGLibrarySyncService {
         var narrowed = requested
         narrowed.sourceIds = allowed.sorted()
         return narrowed
+    }
+    /// The server keeps a deleted document ID as a permanent tombstone. A PDF the user re-allowed gets a
+    /// new ID (the old entry is dropped; the server already holds it as deleted) and keeps its place in the registration scope.
+    private func rotateDocumentIdentity(_ notebook: Notebook, from old: String) throws {
+        let new = UUID().uuidString
+        notebook.ragDocumentID = new
+        state.entries[old] = nil
+        var fresh = RAGLibrarySyncState.Entry(); fresh.restoreRequested = nil
+        state.entries[new] = fresh
+        state.selectedAtGrant = state.selectedAtGrant.map { $0 == old ? new : $0 }
+        state.excluded = state.excluded.filter { $0 != old }
+        try notebook.modelContext?.save()
+        guard save() else { throw RAGIndexingService.IndexError.disabled }
     }
     func isWithinScope(_ notebook: Notebook) -> Bool {
         load(); return matches(state.scope, notebook)
