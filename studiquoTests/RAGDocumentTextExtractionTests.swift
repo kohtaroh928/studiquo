@@ -159,4 +159,37 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   _=try await service.extractManaged(notebook,whileEligible:{},onProgress:{done,total in seen.append(done);totals.insert(total)})
   XCTAssertEqual(seen,Array(1...6));XCTAssertEqual(totals,[6])
  }
+
+ func testOCRPageCacheResumesWithoutReadingCachedPagesAgain() async throws {
+  let root=FileManager.default.temporaryDirectory.appendingPathComponent("ocr-cache-\(UUID().uuidString)")
+  defer{try? FileManager.default.removeItem(at:root)}
+  let notebook=Notebook(title:"Generated resumable scan");let image=imageData()
+  for i in 0..<8 { let page=NotePage(order:i,backgroundImageData:image);page.recognizedText="文字層\(i)";notebook.addPage(page) }
+  let cache=RAGOCRPageCache(root:root,owner:"synthetic",fingerprint:"fp-1")
+  let first=Gauge()
+  struct Stop:Error{};var checks=0
+  let interrupted=RAGIndexingService(recognizer:{_ in first.enter();defer{first.leave()};try? await Task.sleep(for:.milliseconds(20));return .init(lines:[.init(text:"画像内の追加テキスト",confidence:1)],failed:false)},accountPartition:{"synthetic"})
+  do{_=try await interrupted.extractManaged(notebook,whileEligible:{checks+=1;if checks>=4{throw Stop()}},cache:cache);XCTFail("Must stop")}catch{XCTAssertTrue(error is Stop)}
+  let cached=(0..<8).filter{cache.read($0) != nil}.count
+  XCTAssertGreaterThan(cached,0);XCTAssertLessThan(cached,8)
+  let second=Gauge()
+  let resumed=RAGIndexingService(recognizer:{_ in second.enter();defer{second.leave()};return .init(lines:[.init(text:"画像内の追加テキスト",confidence:1)],failed:false)},accountPartition:{"synthetic"})
+  let pages=try await resumed.extractManaged(notebook,whileEligible:{},cache:cache)
+  XCTAssertEqual(second.total,8-cached);XCTAssertEqual(pages.count,8)
+  for (i,p) in pages.enumerated() { XCTAssertTrue(p.text.hasPrefix("文字層\(i)"),p.text) }
+  let third=Gauge()
+  let again=RAGIndexingService(recognizer:{_ in third.enter();defer{third.leave()};return .init(lines:[],failed:false)},accountPartition:{"synthetic"})
+  let same=try await again.extractManaged(notebook,whileEligible:{},cache:cache)
+  XCTAssertEqual(third.total,0);XCTAssertEqual(same.map(\.text),pages.map(\.text))
+ }
+ func testOCRPageCacheIsScopedAndRemovable() {
+  let root=FileManager.default.temporaryDirectory.appendingPathComponent("ocr-cache-\(UUID().uuidString)")
+  defer{try? FileManager.default.removeItem(at:root)}
+  let a=RAGOCRPageCache(root:root,owner:"a",fingerprint:"fp");let b=RAGOCRPageCache(root:root,owner:"b",fingerprint:"fp");let other=RAGOCRPageCache(root:root,owner:"a",fingerprint:"fp2")
+  a.write("本文A",offset:0);b.write("本文B",offset:0);other.write("別版",offset:0)
+  XCTAssertEqual(a.read(0),"本文A");XCTAssertEqual(b.read(0),"本文B");XCTAssertNil(a.read(1))
+  a.pruneOthers();XCTAssertEqual(a.read(0),"本文A");XCTAssertNil(other.read(0));XCTAssertEqual(b.read(0),"本文B")
+  a.removeAll();XCTAssertNil(a.read(0));XCTAssertEqual(b.read(0),"本文B")
+  RAGOCRPageCache.removeAll(root:root,owner:"b");XCTAssertNil(b.read(0))
+ }
 }

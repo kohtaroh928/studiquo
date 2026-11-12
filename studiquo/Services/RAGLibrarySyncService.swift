@@ -171,6 +171,7 @@ final class RAGLibrarySyncService {
             let reply = try await client.setConsent(enabled: false, epoch: remote.consentEpoch)
             guard owner == partition(), operation == revokeOperation else { return }
             state.consentEpoch = reply.consentEpoch; state.pendingRevoke = false
+            if let owner { RAGOCRPageCache.removeAll(owner: owner) }
             for key in state.entries.keys {
                 state.entries[key]?.sourceId = nil; state.entries[key]?.completed = false
                 if state.entries[key]?.pendingState == "eligible" { state.entries[key]?.pendingState = nil }
@@ -233,6 +234,7 @@ final class RAGLibrarySyncService {
         entry.pendingState = target; entry.completed = false; entry.sourceId = nil
         state.entries[notebook.ragDocumentID] = entry
         if target == "excluded", !state.excluded.contains(notebook.ragDocumentID) { state.excluded.append(notebook.ragDocumentID) }
+        if target == "excluded", let owner = loadedPartition { RAGOCRPageCache.removeAll(owner: owner) }
         _ = save(); notify()
         startInvalidationFlush()
     }
@@ -441,10 +443,12 @@ final class RAGLibrarySyncService {
         let pages: [RAGIndexingService.PageText]
         if let structured { pages = structured.pages.map { .init(pageNumber: $0.pageNumber, text: $0.text) } }
         else {
+            let ocrCache = owner.map { RAGOCRPageCache(owner: $0, fingerprint: fingerprint) }
+            ocrCache?.pruneOthers()
             pages = try await extractor.extractManaged(notebook, whileEligible: check, onProgress: { [weak self] done, total in
                 self?.progressText = "ページの文字を読み取り中 \(done)/\(total)ページ"
                 self?.liveProgress[id] = 0.5 * Double(done) / Double(max(1, total))
-            })
+            }, cache: ocrCache)
             progressText = nil; liveProgress[id] = 0.5
         }
         try check()
@@ -498,6 +502,7 @@ final class RAGLibrarySyncService {
             liveProgress[id] = 0.5 + 0.5 * Double(entry.nextPage) / Double(max(1, pages.count))
             guard save() else { throw RAGIndexingService.IndexError.disabled }
         }
+        if let owner { RAGOCRPageCache(owner: owner, fingerprint: fingerprint).removeAll() }
         try check(); entry.completed = true; entry.searchState = "waiting"; state.entries[id] = entry; _ = save()
     }
     func manualEnqueue(_ notebook: Notebook, context: ModelContext) async {
