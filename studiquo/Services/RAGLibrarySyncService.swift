@@ -47,9 +47,12 @@ final class RAGLibrarySyncService {
         load()
         let id = notebook.ragDocumentID
         if state.excluded.contains(id) { return .excluded }
-        guard let entry = state.entries[id], entry.pendingState == nil else { return .queued }
-        if entry.completed { return entry.searchState == "ready" ? .ready : .waiting }
+        let entry = state.entries[id]
+        if entry?.pendingState != nil { return .queued }
+        if entry?.completed == true { return entry?.searchState == "ready" ? .ready : .waiting }
+        // The first run has no entry until text reading finishes, so live progress comes first.
         if let live = liveProgress[id] { return .inProgress(live) }
+        guard let entry else { return .queued }
         if entry.nextPage > 0, let total = entry.totalPages, total > 0 {
             return .inProgress(0.5 + 0.5 * min(1, Double(entry.nextPage) / Double(total)))
         }
