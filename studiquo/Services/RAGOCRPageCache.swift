@@ -5,7 +5,7 @@ import CryptoKit
 /// instead of re-reading every page. The directory is keyed by account and by the notebook
 /// fingerprint (which covers the page images and text), so a changed PDF never reuses old text.
 /// It lives in Caches (not backed up, purgeable by the system), is never uploaded, and is removed
-/// when registration completes, access is revoked, or a PDF is excluded.
+/// when registration completes, access is revoked, a PDF is excluded, or it has not been used for a week.
 struct RAGOCRPageCache: Sendable {
     static var defaultRoot: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("RAGOCR", isDirectory: true)
@@ -37,10 +37,14 @@ struct RAGOCRPageCache: Sendable {
     }
     /// Removes this notebook's cache.
     func removeAll() { try? FileManager.default.removeItem(at: directory) }
-    /// Removes caches of earlier versions of other notebooks for this account, keeping this one.
-    func pruneOthers(keeping active: Set<String> = []) {
-        guard let items = try? FileManager.default.contentsOfDirectory(at: ownerDirectory, includingPropertiesForKeys: nil) else { return }
-        for item in items where item != directory && !active.contains(item.lastPathComponent) { try? FileManager.default.removeItem(at: item) }
+    /// Removes caches that have not been touched for a long time (abandoned or edited PDFs). Other PDFs
+    /// that are still being registered are never removed by age alone.
+    func pruneStale(olderThan age: TimeInterval = 7 * 24 * 3600, now: Date = Date()) {
+        guard let items = try? FileManager.default.contentsOfDirectory(at: ownerDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for item in items where item != directory {
+            let modified = (try? item.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if now.timeIntervalSince(modified) > age { try? FileManager.default.removeItem(at: item) }
+        }
     }
     static func removeAll(root: URL = RAGOCRPageCache.defaultRoot, owner: String) {
         try? FileManager.default.removeItem(at: ownerDirectory(root: root, owner: owner))

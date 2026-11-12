@@ -462,7 +462,7 @@ final class RAGLibrarySyncService {
         if let structured { pages = structured.pages.map { .init(pageNumber: $0.pageNumber, text: $0.text) } }
         else {
             let ocrCache = owner.map { RAGOCRPageCache(owner: $0, fingerprint: fingerprint) }
-            ocrCache?.pruneOthers()
+            ocrCache?.pruneStale()
             pages = try await extractor.extractManaged(notebook, whileEligible: check, onProgress: { [weak self] done, total in
                 self?.progressText = "ページの文字を読み取り中 \(done)/\(total)ページ"
                 self?.liveProgress[id] = 0.5 * Double(done) / Double(max(1, total))

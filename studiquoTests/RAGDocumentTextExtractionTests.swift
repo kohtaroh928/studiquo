@@ -188,7 +188,8 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   let a=RAGOCRPageCache(root:root,owner:"a",fingerprint:"fp");let b=RAGOCRPageCache(root:root,owner:"b",fingerprint:"fp");let other=RAGOCRPageCache(root:root,owner:"a",fingerprint:"fp2")
   a.write("本文A",offset:0);b.write("本文B",offset:0);other.write("別版",offset:0)
   XCTAssertEqual(a.read(0),"本文A");XCTAssertEqual(b.read(0),"本文B");XCTAssertNil(a.read(1))
-  a.pruneOthers();XCTAssertEqual(a.read(0),"本文A");XCTAssertNil(other.read(0));XCTAssertEqual(b.read(0),"本文B")
+  a.pruneStale();XCTAssertEqual(a.read(0),"本文A");XCTAssertEqual(other.read(0),"別版");XCTAssertEqual(b.read(0),"本文B")
+  a.pruneStale(olderThan:-1);XCTAssertEqual(a.read(0),"本文A");XCTAssertNil(other.read(0));XCTAssertEqual(b.read(0),"本文B")
   a.removeAll();XCTAssertNil(a.read(0));XCTAssertEqual(b.read(0),"本文B")
   RAGOCRPageCache.removeAll(root:root,owner:"b");XCTAssertNil(b.read(0))
  }
