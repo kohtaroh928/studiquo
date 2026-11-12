@@ -582,7 +582,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
           if (clientGone) return;
           writer.write(encoder.encode(": keepalive\n\n")).catch(() => { clientGone = true; });
         }, 15000);
-        (keepalive as any).unref?.();
+        (keepalive as { unref?: () => void }).unref?.();
       }
       if (ragStatus) await writer.write(encoder.encode(`data: ${JSON.stringify({ ragStatus })}\n\n`));
       if (citations.length) await writer.write(encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`));

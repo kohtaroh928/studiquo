@@ -24,14 +24,14 @@ const review = z.strictObject({
   isStudyRelevant: z.boolean(), explanationMarkdown: z.string(),
   quiz: z.array(z.strictObject({ question: z.string(), answer: z.string() })),
 });
-const schemas = new Map<string, any>([['rubric', rubric], ['grade', grade], ['review', review]]);
+const schemas = new Map<string, z.ZodType>([['rubric', rubric], ['grade', grade], ['review', review]]);
 export const MAX_STRUCTURED_OUTPUT_BYTES = 131072;
-function fail() { throw new Error('invalid_structured_output'); }
+function fail(): never { throw new Error('invalid_structured_output'); }
 
 export function structuredOutputJSONSchema(name: any) {
   const schema = schemas.get(name);
   if (!schema) fail();
-  const { $schema, ...json } = z.toJSONSchema(schema as any);
+  const { $schema, ...json } = z.toJSONSchema(schema);
   return json;
 }
 
