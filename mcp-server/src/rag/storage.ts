@@ -21,6 +21,7 @@ export async function getVectors(env: any, ids: any) {
     vectors.push(...await env.RAG_VECTORIZE.getByIds(ids.slice(offset, offset + 20)));
   return vectors;
 }
+const PAGE_CONCURRENCY = 5;
 export async function embeddings(env: any, text: any) {
   const response = await env.AI.run(MODELS.embedding, { text });
   const values = response?.data;
@@ -291,7 +292,9 @@ export async function indexSource(env: any, key: any, payload: any) {
       key,
       sourceId,
     ).run();
-    for (const page of pages) {
+    // Pages are independent (distinct rows/vector IDs); process them concurrently. Each page keeps its own
+    // alive()/lease checks. On the first failure no new page starts and in-flight pages settle before rethrowing.
+    const processPage = async (page: any) => {
       if (!(await alive())) throw new Error("index_cancelled");
       const pageHash = structured?.pages.get(page.pageNumber).pageHash ?? await sha256Hex(page.text);
       const existing = await db
@@ -314,7 +317,7 @@ export async function indexSource(env: any, key: any, payload: any) {
         old.every((r: any) => r.ready === 1)
       ) {
         skipped++;
-        continue;
+        return;
       }
       await cacheExisting(old);
       const children = structured?.pages.get(page.pageNumber).children ?? contextualChildren(stripInvisible(page.text).text, title);
@@ -429,7 +432,16 @@ export async function indexSource(env: any, key: any, payload: any) {
         INDEX_FORMAT_VERSION,
         contextHash,
       ).run();
-    }
+    };
+    let nextPage = 0, failure: any, failed = false;
+    await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, pages.length) }, async () => {
+      while (!failed && nextPage < pages.length) {
+        const page = pages[nextPage++];
+        try { await processPage(page); }
+        catch (error) { if (!failed) { failed = true; failure = error; } }
+      }
+    }));
+    if (failed) throw failure;
     // Drop pages removed by a shorter revision.
     const excess = await all(
       db,

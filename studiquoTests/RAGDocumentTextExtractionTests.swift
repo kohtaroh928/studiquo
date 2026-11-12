@@ -118,4 +118,36 @@ final class RAGDocumentTextExtractionTests: XCTestCase {
   }
   do { _ = try await task.value;XCTFail("Must cancel") } catch { XCTAssertTrue(error is CancellationError);XCTAssertEqual(uploads,0) }
  }
+
+ private final class Gauge: @unchecked Sendable {
+  private let lock=NSLock();private var active=0;private(set) var peak=0;private(set) var total=0
+  func enter(){lock.lock();active+=1;total+=1;peak=max(peak,active);lock.unlock()}
+  func leave(){lock.lock();active-=1;lock.unlock()}
+ }
+ func testManagedExtractionRunsOCRConcurrentlyButKeepsPageOrder() async throws {
+  let notebook=Notebook(title:"Generated concurrent scan");let image=imageData()
+  for i in 0..<8 { let page=NotePage(order:i,backgroundImageData:image);page.recognizedText="文字層\(i)";notebook.addPage(page) }
+  let gauge=Gauge()
+  let service=RAGIndexingService(recognizer:{_ in
+   gauge.enter();defer{gauge.leave()}
+   try? await Task.sleep(for:.milliseconds(40))
+   return .init(lines:[.init(text:"画像内の追加テキスト",confidence:1)],failed:false)
+  },accountPartition:{"synthetic"})
+  let pages=try await service.extractManaged(notebook,whileEligible:{})
+  XCTAssertEqual(pages.map(\.pageNumber),Array(1...8));XCTAssertEqual(gauge.total,8)
+  for (i,p) in pages.enumerated() { XCTAssertTrue(p.text.hasPrefix("文字層\(i)"),p.text) }
+  XCTAssertGreaterThan(gauge.peak,1);XCTAssertLessThanOrEqual(gauge.peak,RAGIndexingService.ocrConcurrency)
+ }
+ func testManagedExtractionStopsStartingPagesWhenEligibilityIsLost() async throws {
+  let notebook=Notebook(title:"Generated ineligible scan");let image=imageData()
+  for i in 0..<20 { notebook.addPage(NotePage(order:i,backgroundImageData:image)) }
+  let gauge=Gauge();struct Lost:Error{};var checks=0
+  let service=RAGIndexingService(recognizer:{_ in
+   gauge.enter();defer{gauge.leave()}
+   try? await Task.sleep(for:.milliseconds(20))
+   return .init(lines:[],failed:false)
+  },accountPartition:{"synthetic"})
+  do { _ = try await service.extractManaged(notebook,whileEligible:{checks+=1;if checks>=3{throw Lost()}});XCTFail("Must stop") } catch { XCTAssertTrue(error is Lost) }
+  XCTAssertLessThan(gauge.total,20)
+ }
 }
