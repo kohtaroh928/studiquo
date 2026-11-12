@@ -73,6 +73,31 @@ regen_project() {
   if [ -f "$MAIN/project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
     (cd "$MAIN" && xcodegen generate >/dev/null)
   fi
+  reload_xcode_project
+}
+
+# Xcode keeps the project it loaded earlier, so after the checkout switches and
+# the project is regenerated it can build stale sources ("Cannot find ... in
+# scope"). If Xcode has the main project open, close and reopen it so the user
+# does not have to. Skip with STUDIQUO_NO_XCODE_RELOAD=1.
+reload_xcode_project() {
+  [ "${STUDIQUO_NO_XCODE_RELOAD:-}" = "1" ] && return 0
+  command -v osascript >/dev/null 2>&1 || return 0
+  local proj="$MAIN/studiquo.xcodeproj"
+  pgrep -x Xcode >/dev/null 2>&1 || return 0
+  local open_now
+  open_now=$(osascript -e 'tell application "Xcode" to get path of every workspace document' 2>/dev/null || true)
+  case "$open_now" in
+    *"$proj"*) ;;
+    *) return 0 ;;
+  esac
+  if osascript -e "tell application \"Xcode\" to close (first workspace document whose path is \"$proj\")" >/dev/null 2>&1; then
+    sleep 1
+    open -a Xcode "$proj" >/dev/null 2>&1 || true
+    echo "Xcodeで開いていた確認枠のプロジェクトを開き直しました。"
+  else
+    echo "Xcodeのプロジェクトを自動で閉じられませんでした。閉じて開き直してください。"
+  fi
 }
 
 restore_main() { # $1=戻り先
