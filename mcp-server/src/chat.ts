@@ -233,17 +233,16 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
       return json({ error: "Bio must be a string of at most 500 characters." }, 400);
     }
     // Checked here: the registry (a Durable Object) turns it into text with String().
+    const existedBefore = (await env.STUDIQUO_DATA.get(`chat:user:${key}`)) !== null;
     const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, bodyText(body?.name, null), parseStudyStats(body), body?.bio);
     // A session issued just before a deletion can get here after the deletion has
-    // erased the chat user, and the call above would make it again. A record with no
-    // friends, requests or groups is only what this call just made, so it goes
-    // again; one with contacts is left for the deletion, which must read it to
-    // clean up the other side.
-    if (await accountIsUnavailable(env, session.sub)) {
-      if (!user.friends?.length && !user.incomingRequests?.length && !user.outgoingRequests?.length && !user.groups?.length) {
-        await Promise.all([`chat:user:${key}`, `chat:code:${user.code}`, `chat:linktoken:${user.linkToken}`, `chat-identity-of:${key}`]
-          .map(storageKey => env.STUDIQUO_DATA.delete(storageKey)));
-      }
+    // erased the chat user, and the call above would make it again. Only a record
+    // this call just made is taken back: an existing one is the deletion's (or an
+    // operator's) to deal with, since the deletion reads it to clean up the other
+    // side and to find the avatar.
+    if (!existedBefore && await accountIsUnavailable(env, session.sub)) {
+      await Promise.all([`chat:user:${key}`, `chat:code:${user.code}`, `chat:linktoken:${user.linkToken}`]
+        .map(storageKey => env.STUDIQUO_DATA.delete(storageKey)));
       return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     }
     // So a report about this chat user can be traced to the account an operator
