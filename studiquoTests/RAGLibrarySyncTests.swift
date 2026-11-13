@@ -463,6 +463,71 @@ final class RAGLibrarySyncTests: XCTestCase {
         service.setForeground(false)
     }
 
+    /// A control client whose readiness reply is whatever `readiness()` returns at that moment.
+    private func readinessClient(_ readiness: @escaping () -> [String: Any]) -> RAGControlClient {
+        var epoch = 0, generation = 0, sourceHash = ""
+        return RAGControlClient(transport: { request in
+            let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            var reply: [String: Any]
+            let path = request.url!.path
+            if path.hasSuffix("/consent") {
+                if request.httpMethod != "GET" { epoch += 1 }; reply = ["enabled": true, "consentEpoch": epoch, "available": true]
+            } else if path.hasSuffix("/readiness") {
+                reply = readiness(); if reply["state"] as? String == "ready" { reply["sourceHash"] = sourceHash }
+            }
+            else if path.hasSuffix("/state") { reply = ["state": generation == 0 ? "missing" : "eligible", "generation": generation] }
+            else if path.hasSuffix("/prepare") {
+                generation = 1; sourceHash = body["sourceHash"] as! String; reply = ["sourceId": "source", "generation": 1]
+            } else { reply = [:] }
+            return (try JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }, requestFactory: { path, body, _ in
+            var request = URLRequest(url: URL(string: "https://example.invalid/" + path)!)
+            request.httpBody = try JSONSerialization.data(withJSONObject: body); return request
+        })
+    }
+    private func registered(_ client: RAGControlClient, defaults: UserDefaults, clock: @escaping () -> Date = Date.init,
+                            sleep: @escaping (TimeInterval) async throws -> Void = { _ in throw CancellationError() }) async throws -> (RAGLibrarySyncService, Notebook, ModelContainer) {
+        let container = try ModelContainer(for: Notebook.self, NotePage.self, Folder.self, PageElement.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let notebook = pdf(); container.mainContext.insert(notebook)
+        let service = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" }, now: clock, sleep: sleep)
+        try await service.grant(scope: .allPDFs, includeFuture: true, context: container.mainContext, notebooks: [notebook])
+        await service.reconcile(notebooks: [notebook], context: container.mainContext)
+        return (service, notebook, container)  // the caller keeps the in-memory store alive
+    }
+    func testEmptySourceIsReportedAsNoTextNotAsWaiting() async throws {
+        let (service, notebook, container) = try await registered(readinessClient({ ["state": "empty"] }), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        XCTAssertEqual(service.status(for: notebook), .empty)
+        XCTAssertEqual(service.waitingCount, 0)
+        service.setForeground(false); withExtendedLifetime(container) {}
+    }
+    func testSourceTooLargeToVerifyIsReportedAsUnverifiedNotAsWaiting() async throws {
+        let (service, notebook, container) = try await registered(readinessClient({ ["state": "waiting", "reason": "check_limit"] }), defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        XCTAssertEqual(service.status(for: notebook), .unverified)
+        XCTAssertEqual(service.waitingCount, 0)
+        service.setForeground(false); withExtendedLifetime(container) {}
+    }
+    func testWaitingDocumentGetsAFreshCheckBudgetAfterRestart() async throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        var currentTime = Date(timeIntervalSince1970: 100), ready = false, calls = 0
+        let client = readinessClient { calls += 1; return ready ? ["state": "ready"] : ["state": "waiting", "reason": "vector_pending"] }
+        let (first, notebook, container) = try await registered(client, defaults: defaults, clock: { currentTime })
+        // Use up every check in this process.
+        for _ in 0..<12 { currentTime = currentTime.addingTimeInterval(120); await first.reconcile(notebooks: [notebook], context: container.mainContext) }
+        XCTAssertEqual(first.status(for: notebook), .waiting)
+        let spent = calls
+        currentTime = currentTime.addingTimeInterval(120)
+        await first.reconcile(notebooks: [notebook], context: container.mainContext)
+        XCTAssertEqual(calls, spent, "The budget is spent, so no further check is made in this process")
+        first.setForeground(false)
+        // A new process (a new service on the same stored state) checks again, and now finds it ready.
+        ready = true
+        let relaunched = RAGLibrarySyncService(client: client, defaults: defaults, partition: { "owner" }, now: { currentTime }, sleep: { _ in throw CancellationError() })
+        await relaunched.reconcile(notebooks: [notebook], context: container.mainContext)
+        XCTAssertEqual(relaunched.status(for: notebook), .ready)
+        relaunched.setForeground(false)
+    }
+
     func testFolderScopeIncludesDescendantsButExcludesFutureAndOtherFolders() throws {
         let parent = Folder(name: "Synthetic parent"), child = Folder(name: "Synthetic child")
         parent.ensureRAGIdentity(); child.ensureRAGIdentity(); child.parent = parent

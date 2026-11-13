@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { qualityEnvironment, qualitySource } from './rag-quality-fixture.ts';
 import { accountKey, indexSource, deleteSource, deleteAccountRAG } from './rag/storage.ts';
 import { handleRAG } from './rag/index.ts';
+import { sourceReadiness } from './rag/readiness.ts';
 const session = { sub: 'readiness-synthetic-owner' };
 async function fixture(pages = 1) {
   const env = qualityEnvironment();
@@ -103,7 +104,29 @@ test('empty source and bounded check never claim searchable', async () => {
   // All rows are owner-scoped synthetic metadata; no model calls for the bound test.
   const insert = env.ADMIN_DB.db.prepare('INSERT INTO rag_chunks(chunk_id,account_key,source_id,page_number,ordinal,page_hash,chunk_hash,text,search_text,ready) VALUES(?,?,?,1,0,?,?,?, ?,1)');
   for (let i=0; i<1001; i++) insert.run(`synthetic-${i}`, key, 'quality-source', 'a', 'a', '', '');
-  assert.equal((await status(env)).body.reason, 'check_limit');
+  // Past the lookup bound the check samples; rows with no vectors can never be reported searchable.
+  const result = (await status(env)).body;
+  assert.equal(result.state, 'waiting');
+  assert.equal(result.reason, 'vector_pending');
+});
+test('a source past the lookup bound becomes ready from a sample instead of waiting forever', async () => {
+  const { env, key } = await fixture(40);
+  const full = await sourceReadiness(env, key, 'quality-source');
+  assert.equal(full.state, 'ready');
+  // Force the sampled path with a bound far below the source's chunk count.
+  const sampled = await sourceReadiness(env, key, 'quality-source', 5);
+  assert.equal(sampled.state, 'ready');
+  assert.equal(sampled.sourceHash, full.sourceHash);
+});
+test('the sampled check still refuses a source with an unfinished chunk or a missing vector', async () => {
+  const { env, key } = await fixture(40);
+  env.ADMIN_DB.db.prepare('UPDATE rag_chunks SET ready=0 WHERE account_key=? AND source_id=? AND page_number=17').run(key, 'quality-source');
+  assert.equal((await sourceReadiness(env, key, 'quality-source', 5)).reason, 'upload_incomplete');
+  env.ADMIN_DB.db.prepare('UPDATE rag_chunks SET ready=1 WHERE account_key=? AND source_id=? AND page_number=17').run(key, 'quality-source');
+  const get = env.RAG_VECTORIZE.getByIds;
+  env.RAG_VECTORIZE.getByIds = async ids => (await get.call(env.RAG_VECTORIZE, ids)).slice(1);
+  const result = await sourceReadiness(env, key, 'quality-source', 5);
+  assert.notEqual(result.state, 'ready');
 });
 
 test('100-page folder moves obey ID lookup bounds and reuse embeddings', async () => {

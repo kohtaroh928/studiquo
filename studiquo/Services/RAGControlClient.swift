@@ -50,7 +50,7 @@ struct RAGControlClient {
             "expectedGeneration": generation, "consentEpoch": epoch, "sourceHash": hash, "title": title,
             "folderId": folder as Any? ?? NSNull(), "totalPages": total], consent: true)
     }
-    struct Readiness: Decodable { let state: String; let sourceHash: String? }
+    struct Readiness: Decodable { let state: String; let sourceHash: String?; var reason: String? = nil }
     func readiness(_ sourceId: String) async throws -> Readiness {
         try await request("api/rag/sources/\(sourceId)/readiness", method: "GET", consent: true)
     }
