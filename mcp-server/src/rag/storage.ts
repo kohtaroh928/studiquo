@@ -306,7 +306,14 @@ export async function indexSource(env: any, key: any, payload: any) {
     ).run();
     // Pages are independent (distinct rows/vector IDs); process them concurrently. Each page keeps its own
     // alive()/lease checks. On the first failure no new page starts and in-flight pages settle before rethrowing.
-    const processPage = async (page: any) => {
+    // Embedding is the slow, independent part and runs concurrently. D1 preparation and the vector/ready
+    // commit run in page order (gated on the previous page), so row and vector insertion order, and with it
+    // tie-breaking between identical pages, does not depend on timing.
+    const makeGate = () => { let release!: () => void; const done = new Promise<void>((resolve) => { release = resolve; }); return { done, release }; };
+    const prepGates = pages.map(makeGate), commitGates = pages.map(makeGate);
+    const processPage = async (page: any, index: number) => {
+      try {
+      if (index > 0) await prepGates[index - 1].done;
       if (!(await alive())) throw new Error("index_cancelled");
       const pageHash = structured?.pages.get(page.pageNumber).pageHash ?? await sha256Hex(page.text);
       const existing = await db
@@ -375,7 +382,9 @@ export async function indexSource(env: any, key: any, payload: any) {
       );
       const needed = new Set(pending.map((c: any) => c.chunk_id));
       const toEmbed = chunks.filter((c) => needed.has(c.id));
+      prepGates[index].release();
       // Bound model calls; no page body or embedding input is ever logged.
+      const embeddedBatches: { batch: any[]; missing: any[]; values: any[] }[] = [];
       for (let i = 0; i < toEmbed.length; i += 16) {
         const batch = toEmbed.slice(i, i + 16);
         const missing = batch.filter((c) => !cachedVectors.has(c.embeddingHash));
@@ -390,6 +399,10 @@ export async function indexSource(env: any, key: any, payload: any) {
         const values = batch.map(
           (c) => cachedVectors.get(c.embeddingHash) ?? fresh.get(c.id),
         );
+        embeddedBatches.push({ batch, missing, values });
+      }
+      if (index > 0) await commitGates[index - 1].done;
+      for (const { batch, missing, values } of embeddedBatches) {
         if (!(await alive())) throw new Error("index_cancelled");
         await journaledUpsert(env, key, sourceId, lease,
           batch.map((c, j) => ({
@@ -444,12 +457,16 @@ export async function indexSource(env: any, key: any, payload: any) {
         INDEX_FORMAT_VERSION,
         contextHash,
       ).run();
+      } finally {
+        prepGates[index].release();
+        commitGates[index].release();
+      }
     };
     let nextPage = 0, failure: any, failed = false;
     await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, pages.length) }, async () => {
       while (!failed && nextPage < pages.length) {
-        const page = pages[nextPage++];
-        try { await processPage(page); }
+        const index = nextPage++;
+        try { await processPage(pages[index], index); }
         catch (error) {
           // index_cancelled wins so the caller's error classification does not depend on arrival order.
           if (!failed || (error as any)?.message === "index_cancelled") failure = error;
