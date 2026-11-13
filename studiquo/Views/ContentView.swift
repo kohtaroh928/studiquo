@@ -800,9 +800,7 @@ private struct AppSettingsForm: View {
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
     @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
-    @State private var showsAIDataDisclosure = false
-    @State private var showsPrivacyPolicy = false
-    @State private var showsTermsOfUse = false
+    @State private var showsLegalHub = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
     @State private var showsRAGManagement = false
@@ -961,11 +959,10 @@ private struct AppSettingsForm: View {
     private var privacySections: some View {
         extras.privacy
             Section {
-                Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                Button("規約・プライバシー") { showsLegalHub = true }
+                    .accessibilityIdentifier("settings-legal-hub")
                 Button("資料検索の保存データと許可") { showsRAGManagement = true }
                     .accessibilityIdentifier("settings-rag-data")
-                Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
-                Button("利用規約を見る") { showsTermsOfUse = true }
             } header: {
                 Text("プライバシー")
             } footer: {
@@ -1003,9 +1000,7 @@ private struct AppSettingsForm: View {
 
     private var settingsSheets: some ViewModifier {
         SettingsSheets(
-            showsAIDataDisclosure: $showsAIDataDisclosure,
-            showsPrivacyPolicy: $showsPrivacyPolicy,
-            showsTermsOfUse: $showsTermsOfUse,
+            showsLegalHub: $showsLegalHub,
             showsSubscriptionPlans: $showsSubscriptionPlans,
             showsAccountDeletion: $showsAccountDeletion,
             showsRAGManagement: $showsRAGManagement
@@ -1016,9 +1011,7 @@ private struct AppSettingsForm: View {
 /// The sheets the settings rows open, kept out of the form so they are
 /// attached to whichever category form is on screen.
 private struct SettingsSheets: ViewModifier {
-    @Binding var showsAIDataDisclosure: Bool
-    @Binding var showsPrivacyPolicy: Bool
-    @Binding var showsTermsOfUse: Bool
+    @Binding var showsLegalHub: Bool
     @Binding var showsSubscriptionPlans: Bool
     @Binding var showsAccountDeletion: Bool
     @Binding var showsRAGManagement: Bool
@@ -1026,20 +1019,8 @@ private struct SettingsSheets: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $showsAIDataDisclosure) {
-                AIDataDisclosureView(onAcknowledge: { ageBand in
-                    AIDataDisclosure.acknowledge(ageBand: ageBand)
-                    showsAIDataDisclosure = false
-                }, onDecline: {
-                    AIDataDisclosure.revoke()
-                    showsAIDataDisclosure = false
-                })
-            }
-            .sheet(isPresented: $showsPrivacyPolicy) {
-                PrivacyPolicyView()
-            }
-            .sheet(isPresented: $showsTermsOfUse) {
-                TermsOfUseView()
+            .sheet(isPresented: $showsLegalHub) {
+                LegalHubView()
             }
             .sheet(isPresented: $showsSubscriptionPlans) {
                 SubscriptionPlansView()
@@ -1910,7 +1891,7 @@ private struct AIDataDisclosureGate: ViewModifier {
 
 /// The first-launch (and update-time, for an existing install that never
 /// saw this) explanation of what AI features send off-device, and to whom.
-private struct AIDataDisclosureView: View {
+struct AIDataDisclosureView: View {
     let onAcknowledge: (AIAgeBand) -> Void
     let onDecline: () -> Void
     var onDismiss: (() -> Void)? = nil
