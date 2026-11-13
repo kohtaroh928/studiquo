@@ -36,6 +36,29 @@ final class RAGLibrarySyncService {
     private(set) var available = false
     private(set) var controlChecked = false
     private(set) var busy = false
+    /// Stage text for the busy indicator (page text extraction / upload). Never contains document content.
+    private(set) var progressText: String?
+    private var transientAttempts = 0
+    /// In-memory 0...1 progress per document id while it is being registered (text reading 0-50%, upload 50-100%).
+    private(set) var liveProgress: [String: Double] = [:]
+    enum DocumentStatus: Equatable {
+        case excluded, queued, inProgress(Double), waiting, ready
+    }
+    func status(for notebook: Notebook) -> DocumentStatus {
+        load()
+        let id = notebook.ragDocumentID
+        if state.excluded.contains(id) { return .excluded }
+        let entry = state.entries[id]
+        if entry?.pendingState != nil { return .queued }
+        if entry?.completed == true { return entry?.searchState == "ready" ? .ready : .waiting }
+        // The first run has no entry until text reading finishes, so live progress comes first.
+        if let live = liveProgress[id] { return .inProgress(live) }
+        guard let entry else { return .queued }
+        if entry.nextPage > 0, let total = entry.totalPages, total > 0 {
+            return .inProgress(0.5 + 0.5 * min(1, Double(entry.nextPage) / Double(total)))
+        }
+        return .queued
+    }
     private(set) var errorMessage: String?
     private(set) var isManaged = false
     var enabled: Bool { state.enabled && !state.pendingRevoke && state.processorConsentVersion == RAGConsent.version && RAGConsent.isGranted && AIDataDisclosure.hasBeenAcknowledged }
@@ -149,6 +172,7 @@ final class RAGLibrarySyncService {
             let reply = try await client.setConsent(enabled: false, epoch: remote.consentEpoch)
             guard owner == partition(), operation == revokeOperation else { return }
             state.consentEpoch = reply.consentEpoch; state.pendingRevoke = false
+            if let owner { RAGOCRPageCache.removeAll(owner: owner) }
             for key in state.entries.keys {
                 state.entries[key]?.sourceId = nil; state.entries[key]?.completed = false
                 if state.entries[key]?.pendingState == "eligible" { state.entries[key]?.pendingState = nil }
@@ -211,6 +235,7 @@ final class RAGLibrarySyncService {
         entry.pendingState = target; entry.completed = false; entry.sourceId = nil
         state.entries[notebook.ragDocumentID] = entry
         if target == "excluded", !state.excluded.contains(notebook.ragDocumentID) { state.excluded.append(notebook.ragDocumentID) }
+        if target == "excluded", let owner = loadedPartition { RAGOCRPageCache.removeAll(owner: owner) }
         _ = save(); notify()
         startInvalidationFlush()
     }
@@ -258,7 +283,7 @@ final class RAGLibrarySyncService {
         if busy { pendingReconciliation = (notebooks, context); return }
         busy = true
         defer {
-            busy = false
+            busy = false; progressText = nil; liveProgress.removeAll()
             if let next = pendingReconciliation {
                 pendingReconciliation = nil
                 Task { await self.reconcile(notebooks: next.0, context: next.1) }
@@ -302,18 +327,26 @@ final class RAGLibrarySyncService {
             guard remote.enabled, remote.consentEpoch == state.consentEpoch, remote.available == true else { state.enabled = false; _ = save(); return }
             for notebook in notebooks where selected(notebook) {
                 try Task.checkCancellation()
-                let id = notebook.ragDocumentID
+                var id = notebook.ragDocumentID
                 activeDocument = id
                 if let retry = state.entries[id]?.retryAfter, retry > now() {
                     scheduleRetry(notebooks: notebooks, context: context, delay: retry.timeIntervalSince(now()))
                     return
                 }
-                if let entry = state.entries[id], entry.completed, entry.pendingState == nil,
-                   entry.fingerprint == Self.fingerprint(notebook) {
-                    try await refreshReadiness(id)
-                } else {
-                    try await sync(notebook)
-                    try await refreshReadiness(id)
+                do {
+                    if let entry = state.entries[id], entry.completed, entry.pendingState == nil,
+                       entry.fingerprint == Self.fingerprint(notebook) {
+                        try await refreshReadiness(id)
+                    } else {
+                        try await sync(notebook)
+                        id = notebook.ragDocumentID  // a re-allowed PDF may have received a new document ID
+                        activeDocument = id
+                        try await refreshReadiness(id)
+                    }
+                } catch RAGIndexingService.IndexError.locked {
+                    // This PDF cannot be registered right now (excluded, changed or tombstoned). It must not
+                    // block the PDFs queued behind it.
+                    continue
                 }
                 state.entries[id]?.retryAfter = nil; state.entries[id]?.retryAttempts = 0; _ = save()
                 if state.entries[id]?.completed == true, state.entries[id]?.searchState != "ready",
@@ -322,13 +355,25 @@ final class RAGLibrarySyncService {
                 }
             }
             state.controlRetryAfter = nil; state.controlRetryAttempts = 0; _ = save()
-            errorMessage = nil
+            errorMessage = nil; transientAttempts = 0
         } catch is CancellationError { /* Cursor remains durable; retry next foreground. */ }
         catch WorkerAIProvider.ProviderError.http(let status, _) where status == 429 {
             guard operation == reconciliationOperation else { return }
             errorMessage = "登録の混雑を待っています。自動で再試行します。"
             if let delay = recordRateLimit(document: activeDocument) {
                 scheduleRetry(notebooks: notebooks, context: context, delay: delay)
+            }
+        }
+        catch WorkerAIProvider.ProviderError.http(let status, _) where (500...599).contains(status) {
+            // A transient server failure (for example a busy model) must not leave a long registration
+            // stalled until the next app launch; the upload resumes from the last confirmed page.
+            guard operation == reconciliationOperation else { return }
+            transientAttempts += 1
+            if transientAttempts <= 6 {
+                errorMessage = "サーバーが一時的に混み合っています。自動で再試行します。"
+                scheduleRetry(notebooks: notebooks, context: context, delay: min(60, 5 * pow(2.0, Double(transientAttempts - 1))))
+            } else {
+                errorMessage = "登録は完了していません。次の接続時に再試行します。"
             }
         }
         catch { errorMessage = "登録は完了していません。次の接続時に再試行します。" }
@@ -390,7 +435,8 @@ final class RAGLibrarySyncService {
         _ = save()
     }
     private func sync(_ notebook: Notebook) async throws {
-        let owner = loadedPartition, epoch = state.consentEpoch, syncOperation = operation, id = notebook.ragDocumentID, fingerprint = Self.fingerprint(notebook)
+        let owner = loadedPartition, epoch = state.consentEpoch, syncOperation = operation, fingerprint = Self.fingerprint(notebook)
+        var id = notebook.ragDocumentID
         func check() throws {
             guard partition() == owner, loadedPartition == owner, operation == syncOperation else { throw RAGIndexingService.IndexError.accountChanged }
             guard foreground, enabled, state.consentEpoch == epoch else { throw RAGIndexingService.IndexError.locked }
@@ -410,6 +456,15 @@ final class RAGLibrarySyncService {
             try check(); state.entries[id]?.sourceId = nil; state.entries[id]?.completed = false
             guard save() else { throw RAGIndexingService.IndexError.disabled }
         }
+        // A deleted document ID is a permanent server tombstone and can never be restored. Find out
+        // before the long text reading, and give a re-allowed PDF a fresh document identity.
+        let preflight = try await client.document(id); try check()
+        if preflight.state == "deleted" {
+            guard state.entries[id]?.restoreRequested == true else { throw RAGIndexingService.IndexError.locked }
+            try rotateDocumentIdentity(notebook, from: id)
+            id = notebook.ragDocumentID
+            try check()
+        }
         let structured = try RAGStructuredAttachment.prepared(notebook)
         if structured != nil {
             guard try await client.supportsStructuredIngest() else { throw RAGIndexingService.IndexError.disabled }
@@ -418,7 +473,15 @@ final class RAGLibrarySyncService {
         let structuredPages = structured.map(RAGStructuredAttachment.pagePayloads)
         let pages: [RAGIndexingService.PageText]
         if let structured { pages = structured.pages.map { .init(pageNumber: $0.pageNumber, text: $0.text) } }
-        else { pages = try await extractor.extractManaged(notebook, whileEligible: check) }
+        else {
+            let ocrCache = owner.map { RAGOCRPageCache(owner: $0, fingerprint: fingerprint) }
+            ocrCache?.pruneStale()
+            pages = try await extractor.extractManaged(notebook, whileEligible: check, onProgress: { [weak self] done, total in
+                self?.progressText = "ページの文字を読み取り中 \(done)/\(total)ページ"
+                self?.liveProgress[id] = 0.5 * Double(done) / Double(max(1, total))
+            }, cache: ocrCache)
+            progressText = nil; liveProgress[id] = 0.5
+        }
         try check()
         let hash = try RAGIndexingService.sourceHash(pages)
         let remote = try await client.document(id); try check()
@@ -442,7 +505,7 @@ final class RAGLibrarySyncService {
         let prepared = try await client.prepare(id, requestId: entry.requestId, generation: entry.expectedGeneration,
             epoch: epoch, hash: hash, title: notebook.title, folder: notebook.folder?.ragID, total: pages.count)
         try check(); guard let source = prepared.sourceId else { throw WorkerAIProvider.ProviderError.malformedResponse }
-        entry.sourceId = source; entry.generation = prepared.generation; entry.settledState = nil; entry.restoreRequested = nil; state.entries[id] = entry
+        entry.totalPages = pages.count; entry.sourceId = source; entry.generation = prepared.generation; entry.settledState = nil; entry.restoreRequested = nil; state.entries[id] = entry
         guard save() else { throw RAGIndexingService.IndexError.disabled }
         while entry.nextPage < pages.count {
             try check(); try Task.checkCancellation()
@@ -466,8 +529,11 @@ final class RAGLibrarySyncService {
             guard !batch.isEmpty else { throw RAGIndexingService.IndexError.oversized }
             try await client.upload(body(batch)); try check()
             entry.nextPage += batch.count; state.entries[id] = entry
+            progressText = "送信中 \(entry.nextPage)/\(pages.count)ページ"
+            liveProgress[id] = 0.5 + 0.5 * Double(entry.nextPage) / Double(max(1, pages.count))
             guard save() else { throw RAGIndexingService.IndexError.disabled }
         }
+        if let owner { RAGOCRPageCache(owner: owner, fingerprint: fingerprint).removeAll() }
         try check(); entry.completed = true; entry.searchState = "waiting"; state.entries[id] = entry; _ = save()
     }
     func manualEnqueue(_ notebook: Notebook, context: ModelContext) async {
@@ -510,6 +576,19 @@ final class RAGLibrarySyncService {
         var narrowed = requested
         narrowed.sourceIds = allowed.sorted()
         return narrowed
+    }
+    /// The server keeps a deleted document ID as a permanent tombstone. A PDF the user re-allowed gets a
+    /// new ID (the old entry is dropped; the server already holds it as deleted) and keeps its place in the registration scope.
+    private func rotateDocumentIdentity(_ notebook: Notebook, from old: String) throws {
+        let new = UUID().uuidString
+        notebook.ragDocumentID = new
+        state.entries[old] = nil
+        var fresh = RAGLibrarySyncState.Entry(); fresh.restoreRequested = nil
+        state.entries[new] = fresh
+        state.selectedAtGrant = state.selectedAtGrant.map { $0 == old ? new : $0 }
+        state.excluded = state.excluded.filter { $0 != old }
+        try notebook.modelContext?.save()
+        guard save() else { throw RAGIndexingService.IndexError.disabled }
     }
     func isWithinScope(_ notebook: Notebook) -> Bool {
         load(); return matches(state.scope, notebook)

@@ -85,7 +85,13 @@ struct RAGAutomaticLibraryControls: View {
                 Text("自動登録は現在利用できません。通常のAIチャットは利用できます。")
                     .font(.footnote)
             }
-            if service.busy { ProgressView("PDFの登録を処理中") }
+            if service.busy {
+                if let progress = service.progressText {
+                    ProgressView { Text(verbatim: progress) }.accessibilityIdentifier("rag-auto-stage")
+                } else {
+                    ProgressView("PDFの登録を処理中")
+                }
+            }
             Text("登録済み：\(service.registeredCount)件・検索可能：\(service.searchableCount)件・検索反映待ち：\(service.waitingCount)件・未登録：\(service.pendingCount)件")
                 .font(.caption)
                 .accessibilityIdentifier("rag-auto-progress")
@@ -95,18 +101,49 @@ struct RAGAutomaticLibraryControls: View {
         if service.isManaged {
             Section("対象PDF・除外") {
                 ForEach(eligible) { notebook in
-                    HStack {
-                        Text(notebook.title)
-                        Spacer()
-                        if service.isExcluded(notebook) || service.sourceID(for: notebook) == nil {
-                            Button("このPDFを再許可") {
-                                Task { await service.manualEnqueue(notebook, context: context) }
-                            }.accessibilityIdentifier("rag-auto-include-\(notebook.ragDocumentID)")
-                        } else {
-                            Button("検索から除外", role: .destructive) {
-                                service.invalidate(notebook: notebook, state: "excluded")
-                            }.accessibilityIdentifier("rag-auto-exclude-\(notebook.ragDocumentID)")
+                    let status = service.status(for: notebook)
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(notebook.title)
+                            switch status {
+                            case .ready:
+                                Label("登録済み・検索可能", systemImage: "checkmark.circle.fill")
+                                    .font(.caption).foregroundStyle(.green)
+                            case .waiting:
+                                Label("登録済み・検索反映待ち", systemImage: "checkmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            case .inProgress(let value):
+                                ProgressView(value: value) { Text("登録中 \(Int(value * 100))%").font(.caption) }
+                                    .accessibilityIdentifier("rag-auto-gauge-\(notebook.ragDocumentID)")
+                            case .queued:
+                                ProgressView(value: 0) { Text("登録待ち").font(.caption) }
+                                    .accessibilityIdentifier("rag-auto-gauge-\(notebook.ragDocumentID)")
+                            case .excluded:
+                                Label("検索から除外中", systemImage: "minus.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
+                        Spacer()
+                        Menu {
+                            if status == .excluded {
+                                Button("このPDFを再許可") {
+                                    Task { await service.manualEnqueue(notebook, context: context) }
+                                }.accessibilityIdentifier("rag-auto-include-\(notebook.ragDocumentID)")
+                            } else {
+                                if status != .ready {
+                                    Button("もう一度登録する") {
+                                        Task { await service.manualEnqueue(notebook, context: context) }
+                                    }.accessibilityIdentifier("rag-auto-retry-\(notebook.ragDocumentID)")
+                                }
+                                Button("検索から除外", role: .destructive) {
+                                    service.invalidate(notebook: notebook, state: "excluded")
+                                }.accessibilityIdentifier("rag-auto-exclude-\(notebook.ragDocumentID)")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle").font(.title3)
+                        }
+                        .accessibilityLabel("その他")
+                        .accessibilityIdentifier("rag-auto-more-\(notebook.ragDocumentID)")
                     }
                 }
                 Text("除外の反映を待っている間は資料検索を停止します。必要な資料だけを再許可する場合は「このPDFを再許可」を選んでください。")

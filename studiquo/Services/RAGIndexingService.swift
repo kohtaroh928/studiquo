@@ -318,15 +318,47 @@ final class RAGIndexingService {
     }
 
     /// Reuses the PDF native-text/OCR path without legacy consent or legacy source IDs.
-    func extractManaged(_ notebook: Notebook, whileEligible: () throws -> Void) async throws -> [PageText] {
-        var result: [PageText] = []
-        for (offset, page) in notebook.sortedPages.enumerated() {
-            try whileEligible(); try Task.checkCancellation()
-            var text = page.backgroundImageData == nil ? "" : page.recognizedText
-            if let data = page.backgroundImageData {
-                text = await RAGDocumentTextExtractionService.extract(nativeText: text, imageData: data, recognizer: recognizer).text
-                try whileEligible(); try Task.checkCancellation()
+    func extractManaged(_ notebook: Notebook, whileEligible: () throws -> Void,
+                        onProgress: ((Int, Int) -> Void)? = nil,
+                        cache: RAGOCRPageCache? = nil) async throws -> [PageText] {
+        let pages = notebook.sortedPages
+        // OCR dominates scanned PDFs and runs off the main actor, so a few pages run at once.
+        // Page data is read lazily here (main actor), eligibility is re-checked after every
+        // completed page, and a failed check cancels the pages still in flight.
+        let recognizer = self.recognizer
+        var ocrText: [Int: String] = [:]
+        try whileEligible(); try Task.checkCancellation()
+        try await withThrowingTaskGroup(of: (Int, String).self) { group in
+            var next = 0
+            func startNext() {
+                while next < pages.count {
+                    let offset = next; next += 1
+                    guard let data = pages[offset].backgroundImageData else { continue }
+                    if let cached = cache?.read(offset) {
+                        ocrText[offset] = cached
+                        onProgress?(ocrText.count, pages.count)
+                        continue
+                    }
+                    let native = pages[offset].recognizedText
+                    group.addTask {
+                        (offset, await RAGDocumentTextExtractionService.extract(nativeText: native, imageData: data, recognizer: recognizer).text)
+                    }
+                    return
+                }
             }
+            for _ in 0..<Self.ocrConcurrency { startNext() }
+            while let (offset, text) = try await group.next() {
+                ocrText[offset] = text
+                cache?.write(text, offset: offset)
+                onProgress?(ocrText.count, pages.count)
+                try whileEligible(); try Task.checkCancellation()
+                startNext()
+            }
+        }
+        var result: [PageText] = []
+        for (offset, page) in pages.enumerated() {
+            try whileEligible(); try Task.checkCancellation()
+            var text = page.backgroundImageData == nil ? "" : (ocrText[offset] ?? page.recognizedText)
             if page.backgroundImageData == nil || page.drawingData != nil {
                 let ink = await HandwritingRecognitionService.recognize(drawingData: page.drawingData,
                     pageSize: CGSize(width: page.pageWidth, height: page.pageHeight))
@@ -339,6 +371,7 @@ final class RAGIndexingService {
         }
         return result
     }
+    static let ocrConcurrency = 3
     /// Bounded foreground polling. A timeout stays waiting and never reuploads text.
     func waitUntilSearchable(sourceId: String, expectedHash: String? = nil,
                              maxAttempts: Int = 18,
