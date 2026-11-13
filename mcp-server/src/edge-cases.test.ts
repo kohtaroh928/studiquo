@@ -261,3 +261,60 @@ test("a RevenueCat erasure job dropped after the sweep picked it up (the person 
   assert.equal(await retryRevenueCatDeletion(env, "privacy-rc-delete:a", { identity: "email:x@example.com" }, fetcher), true);
   assert.equal(calls, 0, "the new subscription is not erased");
 });
+
+test("re-signing in via mintSession clears queued RevenueCat deletion jobs for all linked identities before an in-flight sweep reaches retryRevenueCatDeletion", async () => {
+  const { mintSession } = await import("./session.ts");
+  const { sha256Hex } = await import("./auth.ts");
+  const store = new Map<string, string>();
+  const primary = "email:returning@example.com";
+  const alias = "google:returning-sub";
+  const primaryHash = await sha256Hex(primary);
+  const aliasHash = await sha256Hex(alias);
+  store.set(`account-deletion:${primaryHash}`, JSON.stringify({
+    status: "deleted",
+    generation: 1,
+    identityHashes: [primaryHash, aliasHash],
+  }));
+  store.set(`privacy-rc-delete:${primaryHash}`, JSON.stringify({ identity: primary }));
+  store.set(`privacy-rc-delete:${aliasHash}`, JSON.stringify({ identity: alias }));
+  store.set("privacy-rc-delete:other-user", JSON.stringify({ identity: "email:other@example.com" }));
+
+  const env = partialEnv({
+    REVENUECAT_SECRET_API_KEY: "sk_test",
+    STUDIQUO_DATA: {
+      async get(key: string, type?: string) {
+        const raw = store.get(key) ?? null;
+        return raw !== null && type === "json" ? JSON.parse(raw) : raw;
+      },
+      async put(key: string, value: string) { store.set(key, value); },
+      async delete(key: string) { store.delete(key); },
+    },
+  });
+
+  // The sweep has already listed all three jobs before the returning user signs in.
+  const pickedJobs = [
+    { key: `privacy-rc-delete:${primaryHash}`, job: { identity: primary } },
+    { key: `privacy-rc-delete:${aliasHash}`, job: { identity: alias } },
+    { key: "privacy-rc-delete:other-user", job: { identity: "email:other@example.com" } },
+  ];
+
+  // Now the user signs back in before the sweep fires the HTTP DELETE calls.
+  const newToken = await mintSession(env, primary);
+  assert.equal(typeof newToken, "string");
+
+  const deletedSubscriberUrls: string[] = [];
+  const fetcher = (async (url: string) => {
+    deletedSubscriberUrls.push(url);
+    return new Response(null, { status: 200 });
+  }) as unknown as typeof fetch;
+
+  for (const { key, job } of pickedJobs) {
+    assert.equal(await retryRevenueCatDeletion(env, key, job, fetcher), true);
+  }
+  assert.deepEqual(
+    deletedSubscriberUrls,
+    ["https://api.revenuecat.com/v1/subscribers/email%3Aother%40example.com"],
+    "neither the primary identity nor the linked alias of the returning customer is deleted at RevenueCat",
+  );
+  assert.equal(store.has("privacy-rc-delete:other-user"), false);
+});
